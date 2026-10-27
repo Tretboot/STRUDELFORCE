@@ -1,0 +1,21 @@
+{
+ "format": "sfsong/1",
+ "title": "selftest",
+ "bpm": 125,
+ "steps_per_cycle": 16,
+ "cycles": 4,
+ "tracks": [
+  {
+   "name": "bass",
+   "pattern": "<c2 eb2 g2 f2> [g2 c3 eb3 g3]*2 <ab1 bb1 c2 d2>",
+   "instrument": "saw",
+   "gain": 50
+  },
+  {
+   "name": "kick",
+   "pattern": "c3 ~ c3 ~",
+   "instrument": "kick",
+   "gain": 64
+  }
+ ]
+}

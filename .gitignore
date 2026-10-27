@@ -1,0 +1,48 @@
+# =============================================================
+# STRUDELFORCE .gitignore — GitHub-Baseline (2026-10-27)
+# Regel: nur Quellen, Docs, Tools und kleine Referenz-Assets
+# kommittieren. Build-Produkte, Handoff-ZIPs, lokale 68k-Dist
+# und die lizenzierte TFMX-Bibliothek bleiben local-only.
+# =============================================================
+
+# --- Build-Produkte (Windows) ---
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+s_startup.tmp
+msvc_build_log.txt
+local_c_test_report.txt
+PHASE1_AUDIO_SELFTEST.txt
+tests/LAST_KIWI_TEST_RUN.txt
+
+# --- Audio-/Sim-Test-Ausgaben (root) ---
+/*.wav
+/*.raw
+
+# --- Amiga-Toolchain & ADF-Distribution (lokal generiert) ---
+amiga_dist/
+strudelforce.amiga
+strudelforce.adf
+*.adf
+
+# --- Lizenzierte / lokale Assets (NICHT committen) ---
+TFMX Professional/
+releases/
+archive/
+STRUDELFORCE_Merged_*.zip
+
+# --- Handoff-Artefakte ---
+MANIFEST.json
+*.zip
+ClaudeRun/
+
+# --- Python ---
+__pycache__/
+*.pyc
+
+# --- IDE ---
+.idea/
+# .vscode/ wird GENERIERT (gen_sources.py: tasks/launch/settings/amiga/extensions)
+# und ist Teil der GitHub-Baseline — bewusst NICHT ignoriert.

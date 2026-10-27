@@ -1,0 +1,4 @@
+{
+  "includePath": ["${workspaceFolder}", "${workspaceFolder}/src"],
+  "defines": ["M68K", "AMIGA"]
+}
