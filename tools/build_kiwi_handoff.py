@@ -5,10 +5,11 @@ build_kiwi_handoff.py - STRUDELFORCE Kiwi Cloud Handoff Packer
 Erstellt ein optimal gepacktes Handoff-ZIP fuer Kiwi Cloud Sandboxes
 gemaess KIWI_SURVIVAL_GUIDE.md und docs/KIWI_PERSISTENCE_GUIDE.md.
 
-Optionen:
-  python tools/build_kiwi_handoff.py --curated    # Top Action-Klassiker (~6.5 MB ZIP, empfohlen)
-  python tools/build_kiwi_handoff.py --full       # Alle 355 spielbaren TFMX Tracks (~17.7 MB ZIP)
-  python tools/build_kiwi_handoff.py --out <zip>  # Ziel-Dateiname angeben
+Modi:
+  python tools/build_kiwi_handoff.py --lite       # (Standard) Top 12 Action-Klassiker (~4.0 MB ZIP, optimal fuer Cloud)
+  python tools/build_kiwi_handoff.py --curated    # Top 25 Action-Klassiker (~8.5 MB ZIP)
+  python tools/build_kiwi_handoff.py --full       # Alle 355 spielbaren TFMX Tracks (~16.0 MB ZIP)
+  python tools/build_kiwi_handoff.py --pack-return # Fuer Kiwi Cloud: Exportiert modifizierte Quellen & Assets
 """
 import sys
 import os
@@ -17,22 +18,25 @@ import hashlib
 import zipfile
 import time
 
-CURATED_ACTION_GAMES = {
+ELITE_ACTION_GAMES = {
     "Turrican 2",
     "Turrican 3",
     "Apidya",
     "Jim Power",
     "Z-Out",
-    "Hard'n'Heavy",
     "Battle Isle",
+    "Hard'n'Heavy",
     "BC Kid",
     "Gem X",
+    "Metal Law",
+    "PP Hammer",
+    "Quik And Silva"
+}
+
+CURATED_ACTION_GAMES = ELITE_ACTION_GAMES | {
     "Gem Z",
     "Master Blazer",
-    "Metal Law",
     "Mr. Nutz",
-    "PP Hammer",
-    "Quik And Silva",
     "Denny",
     "Flies",
     "Fly Harder",
@@ -45,9 +49,18 @@ CURATED_ACTION_GAMES = {
     "Monkey Island"
 }
 
+TOP_ACTION_MODS = {
+    "wing_commander_regularcombat.mod",
+    "wing_commander_intensecombat.mod",
+    "wing_commander_strikemission.mod",
+    "wing_commander_flyingtobattle.mod",
+    "wing_commander_scrambleii.mod",
+    "wing_commander_overallvictory.mod"
+}
+
 SKIP_DIRS = {
     ".git", "__pycache__", "build", ".kiwi_probe",
-    "archive", "releases", "Kickstart", "tmp_obj"
+    "archive", "releases", "Kickstart", "tmp_obj", "tmp_kiwi_stage"
 }
 
 SKIP_EXT = {
@@ -62,7 +75,7 @@ def sha256_file(path):
             h.update(chunk)
     return h.hexdigest()
 
-def collect_files(root_dir, mode="curated"):
+def collect_files(root_dir, mode="lite"):
     files_to_pack = {}  # relpath -> abspath
     stats = {
         "code_files": 0,
@@ -74,9 +87,9 @@ def collect_files(root_dir, mode="curated"):
         "total_raw": 0
     }
 
-    # 1. Sammle Projektdateien (ohne TFMX Professional)
+    # 1. Sammle Projektdateien (ohne TFMX Professional und ohne MOD)
     for root, dirs, files in os.walk(root_dir):
-        dirs[:] = sorted([d for d in dirs if d not in SKIP_DIRS and d != "TFMX Professional"])
+        dirs[:] = sorted([d for d in dirs if d not in SKIP_DIRS and d not in {"TFMX Professional", "MOD"}])
         for f in sorted(files):
             ext = os.path.splitext(f)[1].lower()
             if ext in SKIP_EXT:
@@ -96,29 +109,44 @@ def collect_files(root_dir, mode="curated"):
                 stats["doc_files"] += 1
             elif ext in {".json", ".dat"}:
                 stats["asset_files"] += 1
-            elif ext == ".mod":
+
+    # 2. MOD-Dateien auswaehlen
+    mod_root = os.path.join(root_dir, "MOD")
+    if os.path.isdir(mod_root):
+        for root, dirs, files in os.walk(mod_root):
+            for f in sorted(files):
+                if not f.lower().endswith(".mod"):
+                    continue
+                # In Lite-Modus nur Top-Combat MODs aufnehmen
+                if mode == "lite" and f not in TOP_ACTION_MODS:
+                    continue
+                fp = os.path.join(root, f)
+                rel = os.path.relpath(fp, root_dir).replace("\\", "/")
+                sz = os.path.getsize(fp)
+                files_to_pack[rel] = fp
+                stats["total_raw"] += sz
                 stats["mod_files"] += 1
 
-    # 2. Sammle TFMX Professional Tracks (nur Ordner mit vorhandenen .sam Samples!)
+    # 3. TFMX Professional Tracks auswaehlen (nur mit vorhandenen .sam Samples!)
     tfmx_root = os.path.join(root_dir, "TFMX Professional")
-    if os.path.isdir(tfmx_root):
+    if os.path.isdir(tfmx_root) and mode != "return":
         for game_folder in sorted(os.listdir(tfmx_root)):
             g_path = os.path.join(tfmx_root, game_folder)
             if not os.path.isdir(g_path):
                 continue
 
-            # In Curated-Modus nur Top-Klassiker aufnehmen
-            if mode == "curated" and game_folder not in CURATED_ACTION_GAMES:
+            if mode == "lite" and game_folder not in ELITE_ACTION_GAMES:
+                continue
+            elif mode == "curated" and game_folder not in CURATED_ACTION_GAMES:
                 continue
 
             g_files = os.listdir(g_path)
             sam_files = [f for f in g_files if f.lower().endswith(".sam")]
             if not sam_files:
-                # Ohne .sam Samples ist der Track stumm -> ueberspringen
-                continue
+                continue  # Ohne Samples nicht spielbar
 
             tfx_files = [f for f in g_files if f.lower().endswith(".tfx")]
-            for f in tfx_files + sam_files:
+            for f in sorted(tfx_files + sam_files):
                 fp = os.path.join(g_path, f)
                 rel = os.path.relpath(fp, root_dir).replace("\\", "/")
                 sz = os.path.getsize(fp)
@@ -131,14 +159,14 @@ def collect_files(root_dir, mode="curated"):
 
     return files_to_pack, stats
 
-def build_handoff(mode="curated", out_path=None):
+def build_handoff(mode="lite", out_path=None):
     root_dir = os.path.abspath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if not out_path:
         out_path = os.path.join(root_dir, f"STRUDELFORCE_kiwi_handoff_{mode}.zip")
 
-    print("=" * 68)
+    print("=" * 70)
     print(f"STRUDELFORCE KIWI CLOUD HANDOFF PACKER (Modus: {mode.upper()})")
-    print("=" * 68)
+    print("=" * 70)
 
     files_to_pack, stats = collect_files(root_dir, mode=mode)
 
@@ -172,7 +200,6 @@ def build_handoff(mode="curated", out_path=None):
 
     manifest_json_str = json.dumps(manifest_data, indent=2, sort_keys=True)
 
-    # In temporaere Datei im Root schreiben fuer Standalone-Sichtbarkeit
     manifest_path = os.path.join(root_dir, "MANIFEST.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(manifest_json_str)
@@ -181,9 +208,7 @@ def build_handoff(mode="curated", out_path=None):
     print(f"\nPacke ZIP nach: {out_path}")
     base_prefix = "STRUDELFORCE_Master"
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        # 1. Manifest
         zf.writestr(f"{base_prefix}/MANIFEST.json", manifest_json_str)
-        # 2. Alle gesammelten Dateien
         for rel, absp in sorted(files_to_pack.items()):
             arcname = f"{base_prefix}/{rel}"
             zf.write(absp, arcname)
@@ -193,9 +218,12 @@ def build_handoff(mode="curated", out_path=None):
 
     print(f"  -> ZIP-Groesse : {zip_size / (1024 * 1024):.2f} MB ({zip_size} Bytes)")
     print(f"  -> Kompression : {ratio:.1f}% Platzersparnis")
-    print(f"  -> Kiwi Budget : {zip_size / (1024 * 1024):.2f} MB / 18.00 MB Limit ({'OK' if zip_size < 18*1024*1024 else 'WARNUNG: Limit ueberschritten'})")
+    
+    target_budget = 5.0 if mode == "lite" else 18.0
+    budget_ok = (zip_size / (1024 * 1024)) <= target_budget
+    print(f"  -> Ziel-Budget : {zip_size / (1024 * 1024):.2f} MB / {target_budget:.2f} MB Limit ({'OK - PERFEKT!' if budget_ok else 'WARNUNG: Ueberschritten'})")
 
-    # Verifikation des erstellten ZIPs
+    # Verifikation
     print("\nVerifiziere ZIP-Integritaet gegen MANIFEST.json...")
     with zipfile.ZipFile(out_path, "r") as zf:
         names = zf.namelist()
@@ -213,23 +241,27 @@ def build_handoff(mode="curated", out_path=None):
 
     if not missing and not corrupted:
         print(f"  [PASS] Alle {len(manifest_entries)} Dateien im ZIP sind 100% intakt und sha256-verifiziert!")
-        print("=" * 68)
+        print("=" * 70)
         return True
     else:
         print(f"  [FAIL] Verifikation fehlgeschlagen: {len(missing)} missing, {len(corrupted)} corrupted!")
-        print("=" * 68)
+        print("=" * 70)
         return False
 
 if __name__ == "__main__":
-    mode = "curated"
+    mode = "lite"
     out = None
     args = sys.argv[1:]
     i = 0
     while i < len(args):
-        if args[i] == "--full":
-            mode = "full"
+        if args[i] == "--lite":
+            mode = "lite"
         elif args[i] == "--curated":
             mode = "curated"
+        elif args[i] == "--full":
+            mode = "full"
+        elif args[i] == "--pack-return":
+            mode = "return"
         elif args[i] == "--out" and i + 1 < len(args):
             out = args[i + 1]
             i += 1

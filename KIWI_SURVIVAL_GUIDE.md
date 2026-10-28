@@ -203,34 +203,43 @@ static inline const char *get_text(TextID id) {
 
 ---
 
-## 10. CHECKLISTE FÜR NEUE SESSIONS
+## 10. CHECKLISTE FÜR NEUE SESSIONS & ROUNDTRIP
+
+### Vorbereitung des Handoffs (Lokal):
+- [ ] `build_msvc.bat` und `test_suite.exe` (32 Checks) ausführen
+- [ ] `python tools/build_kiwi_handoff.py --lite` ausführen
+- [ ] `STRUDELFORCE_kiwi_handoff_lite.zip` (4.26 MB, 53 TFMX Tracks + 6 MODs) in die Cloud laden
 
 ### Beim Start einer neuen KIWI-Session:
-- [ ] `kiwi_injector_v2.py` oder `force_extract.py` ausführen
-- [ ] Verzeichnisse `/mnt/data/src`, `/mnt/data/assets`, `/mnt/data/tools` prüfen
-- [ ] `PROJECT_BIBLE.md` und `WORKFLOW_ESSAY.md` lesen für Kontext
+- [ ] `python tools/kiwi_bootstrap.py` ausführen (erstellt Verzeichnisse & verifiziert Hashes)
+- [ ] `PROJECT_BIBLE.md` und `docs/KIWI_HANDOFF_WORKFLOW.md` lesen für Kontext
 - [ ] Zero-Chat-Dump Protokoll aktivieren
 - [ ] Max 3-5 Subagenten delegieren
 - [ ] `create_file` für alle Datei-Operationen verwenden
 - [ ] Mega-Atomic Calls für komplexe Änderungen
 - [ ] C89/C99 Regeln einhalten (Zero-Float, Zero-Malloc)
 
-### Vor dem Export (Escape Pod):
-- [ ] `.o` Dateien und Build-Artefakte löschen
-- [ ] `KIWI_SURVIVAL_GUIDE.md` aktualisieren
-- [ ] `github_exporter.py` ausführen
-- [ ] `strudelforce_master_export.zip` verifizieren
-- [ ] Dateigröße und Pfad dokumentieren
+### Vor dem Export aus der Cloud (Return):
+- [ ] `.o` Dateien und temporäre Build-Artefakte löschen
+- [ ] `python tools/build_kiwi_handoff.py --pack-return --out strudelforce_cloud_export.zip`
+- [ ] Export-ZIP herunterladen
+
+### Re-Integration lokal (VS Code / Antigravity):
+- [ ] Dry-Run: `python tools/kiwi_reconcile.py strudelforce_cloud_export.zip`
+- [ ] Anwenden mit automatischem Backup: `python tools/kiwi_reconcile.py strudelforce_cloud_export.zip --apply`
+- [ ] Lokale Verifikation: `build_msvc.bat` und `test_suite.exe` (32 PASS)
+- [ ] Git commit & push
 
 ---
 
 ## KONTAKT / NEXT STEPS
 
 Bei Unsicherheiten:
-1. `PROJECT_BIBLE.md` lesen (Architektur-Vision)
-2. `WORKFLOW_ESSAY.md` lesen (Iteration-Historie)
-3. Code-Review mit `kiwi_toolkit.py lint` durchführen
-4. Bei kritischen Issues: Manual Intervention
+1. `docs/KIWI_HANDOFF_WORKFLOW.md` lesen (Detail-Anleitung für den Roundtrip)
+2. `PROJECT_BIBLE.md` lesen (Architektur-Vision)
+3. `WORKFLOW_ESSAY.md` lesen (Iteration-Historie)
+4. Code-Review mit `kiwi_toolkit.py lint` durchführen
+5. Bei kritischen Issues: Manual Intervention
 
 ---
 

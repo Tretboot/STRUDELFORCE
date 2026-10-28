@@ -29,3 +29,4 @@ for g, info in sorted_games:
 
 print("-" * 55)
 print(f"TOTAL: {total_tfx} .tfx, {total_sam} .sam | {total_raw/1024/1024:.2f} MB raw")
+
