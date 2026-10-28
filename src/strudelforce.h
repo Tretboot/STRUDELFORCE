@@ -218,7 +218,7 @@ typedef struct {
     uint8_t kind; /* 0: solid catwalk, 1: stone pillar, 2: hazard */
 } LevelPlatform;
 
-#define MAX_LEVEL_PLATFORMS 16
+#define MAX_LEVEL_PLATFORMS 32
 
 typedef struct GameState {
     /* Spieler */

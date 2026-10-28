@@ -149,39 +149,89 @@ void core_setup_platforms(GameState *s) {
     } while(0)
 
     if (b == 0) {
-        /* Chrome Tempest: Staggered Industrial Catwalks */
-        ADD_PLAT(8, 5, 22, 1, 0);
-        ADD_PLAT(60, 5, 22, 1, 0);
-        ADD_PLAT(30, 11, 30, 1, 0);
-        ADD_PLAT(16, 17, 18, 1, 0);
-        ADD_PLAT(56, 17, 18, 1, 0);
+        /* Chrome Tempest: Multi-Tier Industrial Outpost (Turrican 2 World 1 Benchmark) */
+        /* Tier 1: Low Catwalks & Bunkers */
+        ADD_PLAT(4, 4, 16, 1, 0);
+        ADD_PLAT(24, 5, 14, 1, 0);
+        ADD_PLAT(42, 5, 14, 1, 0);
+        ADD_PLAT(58, 4, 12, 1, 0);
+        /* Tier 2: Mid Fortress Girders & Conveyors */
+        ADD_PLAT(8, 10, 16, 1, 0);
+        ADD_PLAT(28, 11, 18, 1, 0);
+        ADD_PLAT(50, 10, 16, 1, 0);
+        /* Tier 3: High Skyway Bridges & Watchtowers */
+        ADD_PLAT(4, 16, 14, 1, 0);
+        ADD_PLAT(22, 17, 20, 1, 0);
+        ADD_PLAT(46, 16, 14, 1, 0);
+        ADD_PLAT(60, 20, 10, 1, 0);
+        /* Tier 4: Apex Command Citadel */
+        ADD_PLAT(26, 22, 20, 1, 0);
     } else if (b == 1) {
-        /* The Great Bath: Ancient Stepped Aqueduct & Altar */
-        ADD_PLAT(10, 4, 18, 1, 1);
-        ADD_PLAT(62, 4, 18, 1, 1);
-        ADD_PLAT(24, 9, 42, 1, 1);
-        ADD_PLAT(36, 15, 18, 1, 1);
+        /* The Great Bath: Ancient Stepped Aqueduct & Caverns (Turrican 2 World 2) */
+        /* Tier 1: Submerged Cistern Slabs */
+        ADD_PLAT(2, 3, 16, 1, 1);
+        ADD_PLAT(22, 4, 14, 1, 1);
+        ADD_PLAT(40, 3, 16, 1, 1);
+        ADD_PLAT(58, 4, 12, 1, 1);
+        /* Tier 2: Lower Colonnade & Stepped Vaults */
+        ADD_PLAT(8, 8, 16, 1, 1);
+        ADD_PLAT(28, 9, 20, 1, 1);
+        ADD_PLAT(52, 8, 16, 1, 1);
+        /* Tier 3: High Terraces & Sacred Altar with Great Bath Chest */
+        ADD_PLAT(12, 14, 14, 1, 1);
+        ADD_PLAT(32, 15, 18, 1, 1); /* Chest Platform */
+        ADD_PLAT(54, 14, 14, 1, 1);
+        /* Tier 4: Stalactite Dome Arch */
+        ADD_PLAT(22, 20, 28, 1, 1);
     } else if (b == 2) {
-        /* Mechanical Hive: Biomechanical Girders */
-        ADD_PLAT(6, 6, 24, 1, 0);
-        ADD_PLAT(60, 6, 24, 1, 0);
-        ADD_PLAT(24, 12, 42, 1, 0);
-        ADD_PLAT(12, 18, 20, 1, 0);
-        ADD_PLAT(58, 18, 20, 1, 0);
+        /* Mechanical Hive: Biomechanical Factory Spire (Turrican 3 World 1) */
+        /* Tier 1: Smelter & Belt Girders */
+        ADD_PLAT(6, 5, 16, 1, 0);
+        ADD_PLAT(26, 6, 14, 1, 0);
+        ADD_PLAT(44, 5, 16, 1, 0);
+        ADD_PLAT(62, 5, 10, 1, 0);
+        /* Tier 2: Biomechanical Spine & Piston Bridges */
+        ADD_PLAT(10, 11, 16, 1, 0);
+        ADD_PLAT(30, 12, 18, 1, 0);
+        ADD_PLAT(52, 11, 16, 1, 0);
+        /* Tier 3: Cooling Duct Walkways */
+        ADD_PLAT(6, 17, 14, 1, 0);
+        ADD_PLAT(24, 18, 22, 1, 0);
+        ADD_PLAT(50, 17, 14, 1, 0);
+        /* Tier 4: Hive Mind Core Reactor */
+        ADD_PLAT(26, 23, 20, 1, 0);
     } else if (b == 3) {
-        /* Volcanic / Air Combat: Floating Magma Basalts */
-        ADD_PLAT(12, 5, 18, 1, 2);
-        ADD_PLAT(60, 5, 18, 1, 2);
-        ADD_PLAT(30, 10, 30, 1, 2);
-        ADD_PLAT(18, 16, 20, 1, 2);
-        ADD_PLAT(52, 16, 20, 1, 2);
+        /* Volcanic / Air Combat: Floating Magma Basalts (Turrican 2 World 3) */
+        /* Tier 1: Low Magma Stepping Basalts */
+        ADD_PLAT(10, 4, 16, 1, 2);
+        ADD_PLAT(32, 5, 16, 1, 2);
+        ADD_PLAT(54, 4, 16, 1, 2);
+        /* Tier 2: Mid Floating Magma Islands */
+        ADD_PLAT(6, 10, 18, 1, 2);
+        ADD_PLAT(28, 11, 20, 1, 2);
+        ADD_PLAT(52, 10, 18, 1, 2);
+        /* Tier 3: High Ash Cloud Columns */
+        ADD_PLAT(14, 16, 16, 1, 2);
+        ADD_PLAT(36, 17, 18, 1, 2);
+        ADD_PLAT(56, 16, 14, 1, 2);
+        /* Tier 4: Caldera Rim Skyway */
+        ADD_PLAT(24, 22, 24, 1, 2);
     } else {
-        /* Cyber Fortress: Multi-Tier Battlements */
-        ADD_PLAT(8, 5, 22, 1, 0);
-        ADD_PLAT(60, 5, 22, 1, 0);
-        ADD_PLAT(26, 11, 38, 1, 0);
-        ADD_PLAT(14, 17, 18, 1, 0);
-        ADD_PLAT(58, 17, 18, 1, 0);
+        /* Cyber Fortress: Multi-Tier Battlements (Alien Citadel World 5) */
+        /* Tier 1: Outer Wall Defenses */
+        ADD_PLAT(6, 4, 16, 1, 0);
+        ADD_PLAT(26, 5, 16, 1, 0);
+        ADD_PLAT(50, 4, 18, 1, 0);
+        /* Tier 2: Citadel Bastion Ramparts */
+        ADD_PLAT(10, 10, 18, 1, 0);
+        ADD_PLAT(32, 11, 20, 1, 0);
+        ADD_PLAT(54, 10, 16, 1, 0);
+        /* Tier 3: Forcefield Walkways & Turret Perches */
+        ADD_PLAT(8, 16, 16, 1, 0);
+        ADD_PLAT(28, 17, 22, 1, 0);
+        ADD_PLAT(52, 16, 16, 1, 0);
+        /* Tier 4: Mother Alien Command Throne */
+        ADD_PLAT(22, 22, 28, 1, 0);
     }
     #undef ADD_PLAT
 }

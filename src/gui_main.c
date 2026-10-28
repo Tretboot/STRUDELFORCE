@@ -149,6 +149,8 @@ static char s_strudel_input[512] = "<c3 eb3 g3 f3> [g3 c4 eb4 g4]*2 <ab2 bb2 c3 
 static int  s_strudel_cursor = 48;
 static char s_status_msg[128] = "STRUDELFORCE Studio bereit. Druecke F1 fuer Spiel, F2 fuer Explorer.";
 
+static void credits_init(void);
+
 /* --- Grafik-Hilfsfunktionen --- */
 
 static inline void set_pixel(int x, int y, uint32_t c) {
@@ -468,6 +470,135 @@ static int draw_button(int x, int y, int w, int h, const char *label, int hovere
     return 1;
 }
 
+/* ============================================================================
+ * EMBEDDED CHRIS HUELSBECK TFMX & MOD MASTER TRACKS
+ * Direkt in der EXE gespeichert: Null Ladezeiten, null Disk-Abhaengigkeiten!
+ * Multi-Subsongs: Chris Huelsbecks geniale Technik fuer unterbrechungsfreie
+ * Uebergaenge zwischen Erkundung, Boss, Level-Clear und Game-Over!
+ * ============================================================================ */
+typedef struct {
+    const char *name;
+    const uint8_t *tfx;
+    uint32_t tfx_len;
+    const uint8_t *sam;
+    uint32_t sam_len;
+    int is_mod;
+} EmbeddedTrack;
+
+static const EmbeddedTrack EMBEDDED_TRACKS[] = {
+    { EMB_TFMX_APIDYA_MEADOW_NAME,    EMB_TFMX_APIDYA_MEADOW,    sizeof(EMB_TFMX_APIDYA_MEADOW),    EMB_SAM_APIDYA_MEADOW,    sizeof(EMB_SAM_APIDYA_MEADOW),    0 }, /* 0: Apidya Meadow (Intro) */
+    { EMB_TFMX_APIDYA_BOSSPANIC_NAME,  EMB_TFMX_APIDYA_BOSSPANIC,  sizeof(EMB_TFMX_APIDYA_BOSSPANIC),  EMB_SAM_APIDYA_BOSSPANIC,  sizeof(EMB_SAM_APIDYA_BOSSPANIC),  0 }, /* 1: Apidya Bosspanic */
+    { EMB_TFMX_T2_LOAD_NAME,          EMB_TFMX_T2_LOAD,          sizeof(EMB_TFMX_T2_LOAD),          EMB_SAM_T2_LOAD,          sizeof(EMB_SAM_T2_LOAD),          0 }, /* 2: Turrican 2 Loader */
+    { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 3: Turrican 2 Desert */
+    { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 4: Turrican 2 Cave */
+    { EMB_TFMX_T3_LOADER_NAME,        EMB_TFMX_T3_LOADER,        sizeof(EMB_TFMX_T3_LOADER),        EMB_SAM_T3_LOADER,        sizeof(EMB_SAM_T3_LOADER),        0 }, /* 5: Turrican 3 Loader */
+    { EMB_TFMX_T3_FACTORY_NAME,       EMB_TFMX_T3_FACTORY,       sizeof(EMB_TFMX_T3_FACTORY),       EMB_SAM_T3_FACTORY,       sizeof(EMB_SAM_T3_FACTORY),       0 }, /* 6: Turrican 3 Factory */
+    { EMB_TFMX_T3_DUNGEONS_NAME,      EMB_TFMX_T3_DUNGEONS,      sizeof(EMB_TFMX_T3_DUNGEONS),      EMB_SAM_T3_DUNGEONS,      sizeof(EMB_SAM_T3_DUNGEONS),      0 }, /* 7: Turrican 3 Dungeons */
+    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                      0,                                1 }, /* 8: Wing Commander Combat */
+    { EMB_MOD_WC_OVERALLVICTORY_NAME, EMB_MOD_WC_OVERALLVICTORY, sizeof(EMB_MOD_WC_OVERALLVICTORY), NULL,                      0,                                1 }, /* 9: Wing Commander Victory */
+};
+#define EMBEDDED_TRACK_COUNT (int)(sizeof(EMBEDDED_TRACKS) / sizeof(EMBEDDED_TRACKS[0]))
+
+static int s_current_subsong = 0;
+static int s_last_subsong_reason = -1;
+
+/* In-EXE-Track abspielen (ohne Festplatten-/Dateizugriff) */
+static int music_play_embedded(int idx, int subsong) {
+    if (idx < 0 || idx >= EMBEDDED_TRACK_COUNT) idx = 0;
+    const EmbeddedTrack *t = &EMBEDDED_TRACKS[idx];
+    s_mod_active = 0;
+    s_tfmx_active = 0;
+
+    if (t->is_mod) {
+        if (mod_player_load_mem(&s_mod, t->tfx, t->tfx_len)) {
+            mod_player_start(&s_mod, GAME_AUDIO_RATE);
+            s_mod_active = 1;
+            s_current_subsong = 0;
+            strncpy(s_current_track_name, t->name, sizeof(s_current_track_name) - 1);
+            s_current_track_name[sizeof(s_current_track_name) - 1] = '\0';
+            strcpy(s_current_track_type, "MOD");
+            s_music_toast_timer = 180;
+            snprintf(s_status_msg, sizeof(s_status_msg), "MUSIK [MOD]: %s", s_current_track_name);
+            return 1;
+        }
+    } else {
+        if (tfmx_player_load_mem(&s_tfmx, t->tfx, t->tfx_len, (const int8_t *)t->sam, t->sam_len)) {
+            if (subsong < 0) {
+                subsong = (s_tfmx.num_subsongs > 0) ? (int)(s_music_rng % s_tfmx.num_subsongs) : 0;
+            } else if (subsong >= s_tfmx.num_subsongs) {
+                subsong = 0;
+            }
+            s_current_subsong = subsong;
+            tfmx_player_start(&s_tfmx, (uint8_t)subsong);
+            s_tfmx_active = 1;
+            strncpy(s_current_track_name, t->name, sizeof(s_current_track_name) - 1);
+            s_current_track_name[sizeof(s_current_track_name) - 1] = '\0';
+            strcpy(s_current_track_type, "TFMX");
+            s_music_toast_timer = 180;
+            if (s_tfmx.num_subsongs > 1) {
+                snprintf(s_status_msg, sizeof(s_status_msg), "TFMX [%d/%d]: %s",
+                         subsong + 1, s_tfmx.num_subsongs, s_current_track_name);
+            } else {
+                snprintf(s_status_msg, sizeof(s_status_msg), "TFMX: %s", s_current_track_name);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Reaktiver Subsong-Wechsel (z.B. Normal -> Boss -> LevelClear) */
+static void music_subsong_switch(int subsong) {
+    if (!s_tfmx_active || !s_tfmx.loaded || s_tfmx.num_subsongs <= 1) return;
+    if (subsong < 0) subsong = 0;
+    if (subsong >= s_tfmx.num_subsongs) subsong = 0;
+    if (s_current_subsong == subsong) return;
+
+    s_current_subsong = subsong;
+    tfmx_player_start(&s_tfmx, (uint8_t)subsong);
+    s_music_toast_timer = 180;
+    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX SUBSONG [%d/%d]: %s",
+             s_current_subsong + 1, s_tfmx.num_subsongs, s_current_track_name);
+}
+
+/* Manueller Subsong-Zyklus (Taste K, SHIFT+M oder Gamepad RS+Y) */
+static void music_subsong_next(void) {
+    if (!s_tfmx_active || !s_tfmx.loaded || s_tfmx.num_subsongs <= 1) return;
+    int next = (s_current_subsong + 1) % s_tfmx.num_subsongs;
+    s_current_subsong = next;
+    tfmx_player_start(&s_tfmx, (uint8_t)next);
+    s_music_toast_timer = 180;
+    snprintf(s_status_msg, sizeof(s_status_msg), "MANUELLER SUBSONG [%d/%d]: %s",
+             s_current_subsong + 1, s_tfmx.num_subsongs, s_current_track_name);
+}
+
+
+/* Shuffle / Frankenstein Sample-Swap: Kombiniert TFX-Pattern von Track A mit SAM-Bank von Track B */
+static char s_frankenstein_status[128] = "";
+
+static void explorer_shuffle_swap(void) {
+    int tfx_idx = rand() % 8; /* 0..7 sind die 8 TFMX-Tracks */
+    int sam_idx = rand() % 8;
+    if (sam_idx == tfx_idx) sam_idx = (tfx_idx + 1 + (rand() % 7)) % 8;
+
+    const EmbeddedTrack *trk_tfx = &EMBEDDED_TRACKS[tfx_idx];
+    const EmbeddedTrack *trk_sam = &EMBEDDED_TRACKS[sam_idx];
+
+    s_exp_mod_playing = 0;
+    s_exp_playing = 0;
+    tfmx_player_stop(&s_exp_tfmx);
+
+    if (tfmx_player_load_mem(&s_exp_tfmx, trk_tfx->tfx, trk_tfx->tfx_len,
+                             (const int8_t *)trk_sam->sam, trk_sam->sam_len)) {
+        s_exp_subsong = 0;
+        tfmx_player_start(&s_exp_tfmx, 0);
+        s_exp_playing = 1;
+        snprintf(s_frankenstein_status, sizeof(s_frankenstein_status),
+                 "FRANKEN-SWAP: TFX [%s] x SAM [%s]", trk_tfx->name, trk_sam->name);
+        snprintf(s_status_msg, sizeof(s_status_msg), "%s", s_frankenstein_status);
+    }
+}
+
 /* --- Explorer Dateiverwaltung --- */
 
 static void explorer_scan_directory(const char *dir_path) {
@@ -479,11 +610,37 @@ static void explorer_scan_directory(const char *dir_path) {
     s_explorer_selected = 0;
     s_explorer_scroll = 0;
     strncpy(s_current_dir, dir_path, sizeof(s_current_dir) - 1);
+    s_current_dir[sizeof(s_current_dir) - 1] = '\0';
+
+    /* Virtueller Ordner: Eingebaute Soundtracks aus der EXE */
+    if (strcmp(dir_path, "<ROM: EINGEBAUTE SOUNDTRACKS>") == 0) {
+        strcpy(s_explorer_items[0].name, "..");
+        strcpy(s_explorer_items[0].path, "..");
+        s_explorer_items[0].is_dir = 1;
+        s_num_explorer_items = 1;
+
+        for (int i = 0; i < EMBEDDED_TRACK_COUNT; i++) {
+            if (s_num_explorer_items >= MAX_EXPLORER_ITEMS) break;
+            snprintf(s_explorer_items[s_num_explorer_items].name, 63, "[ROM] %s", EMBEDDED_TRACKS[i].name);
+            snprintf(s_explorer_items[s_num_explorer_items].path, 259, "ROM:%d", i);
+            s_explorer_items[s_num_explorer_items].is_dir = 0;
+            s_num_explorer_items++;
+        }
+        return;
+    }
 
     /* Zuerst ".." Eintrag falls nicht Root */
     if (strcmp(dir_path, ".") != 0 && strcmp(dir_path, "TFMX Professional") != 0) {
         strcpy(s_explorer_items[s_num_explorer_items].name, "..");
         strcpy(s_explorer_items[s_num_explorer_items].path, "..");
+        s_explorer_items[s_num_explorer_items].is_dir = 1;
+        s_num_explorer_items++;
+    }
+
+    /* Virtuellen ROM-Ordner an oberster Stelle verfuegbar machen */
+    if (strcmp(dir_path, ".") == 0 && s_num_explorer_items < MAX_EXPLORER_ITEMS) {
+        strcpy(s_explorer_items[s_num_explorer_items].name, "[ROM: EINGEBAUTE SOUNDTRACKS]");
+        strcpy(s_explorer_items[s_num_explorer_items].path, "<ROM: EINGEBAUTE SOUNDTRACKS>");
         s_explorer_items[s_num_explorer_items].is_dir = 1;
         s_num_explorer_items++;
     }
@@ -506,7 +663,7 @@ static void explorer_scan_directory(const char *dir_path) {
     } while (FindNextFileA(hFind, &fd));
     FindClose(hFind);
 
-    /* Danach TFX und STRUDEL Dateien einlesen */
+    /* Danach TFX, STRUDEL und MOD Dateien einlesen */
     hFind = FindFirstFileA(search_pattern, &fd);
     if (hFind != INVALID_HANDLE_VALUE) {
         do {
@@ -641,83 +798,42 @@ static int music_load_index(int idx) {
     }
 }
 
-/* In-EXE-Tracks (ohne Disk) — Intro + Jukebox-Fallback (src/embedded_music.h, generiert). */
-static void music_play_embedded(int kind) {
-    s_mod_active = 0;
-    s_tfmx_active = 0;
-    if (kind == 0) {
-        if (tfmx_player_load_mem(&s_tfmx, EMB_TFMX_APIDYA_MEADOW, EMB_TFMX_APIDYA_MEADOW_LEN,
-                                 (const int8_t *)EMB_SAM_APIDYA_MEADOW, EMB_SAM_APIDYA_MEADOW_LEN)) {
-            tfmx_player_start(&s_tfmx, 0);
-            s_tfmx_active = 1;
-            strncpy(s_current_track_name, EMB_TFMX_APIDYA_MEADOW_NAME, sizeof(s_current_track_name) - 1);
-            strcpy(s_current_track_type, "TFMX");
-            s_music_toast_timer = 180;
-            snprintf(s_status_msg, sizeof(s_status_msg), "INTRO: %s (in EXE, Original-Samples)", s_current_track_name);
-        }
-    } else if (kind == 1) {
-        if (mod_player_load_mem(&s_mod, EMB_MOD_WC_REGULARCOMBAT, EMB_MOD_WC_REGULARCOMBAT_LEN)) {
-            mod_player_start(&s_mod, GAME_AUDIO_RATE);
-            s_mod_active = 1;
-            strncpy(s_current_track_name, EMB_MOD_WC_REGULARCOMBAT_NAME, sizeof(s_current_track_name) - 1);
-            strcpy(s_current_track_type, "MOD");
-            s_music_toast_timer = 180;
-            snprintf(s_status_msg, sizeof(s_status_msg), "MUSIK: %s (in EXE)", s_current_track_name);
-        }
-    } else {
-        if (mod_player_load_mem(&s_mod, EMB_MOD_WC_OVERALLVICTORY, EMB_MOD_WC_OVERALLVICTORY_LEN)) {
-            mod_player_start(&s_mod, GAME_AUDIO_RATE);
-            s_mod_active = 1;
-            strncpy(s_current_track_name, EMB_MOD_WC_OVERALLVICTORY_NAME, sizeof(s_current_track_name) - 1);
-            strcpy(s_current_track_type, "MOD");
-            s_music_toast_timer = 180;
-            snprintf(s_status_msg, sizeof(s_status_msg), "MUSIK: %s (in EXE)", s_current_track_name);
-        }
-    }
-}
-
 static void music_play_campaign_level(int level) {
-    static const char *t2_tracks[5] = {
-        "TFMX Professional\\Turrican 2\\Turrican 2 - World 1 - Dessert.tfx",
-        "TFMX Professional\\Turrican 2\\Turrican 2 - World 2 - Cave.tfx",
-        "TFMX Professional\\Turrican 2\\Turrican 2 - World 4 - Factory.tfx",
-        "TFMX Professional\\Turrican 2\\Turrican 2 - World 3 - Flight.tfx",
-        "TFMX Professional\\Turrican 2\\Turrican 2 - World 5 - Aliens.tfx"
-    };
+    static const int camp_map[5] = { 3, 4, 6, 7, 1 };
     int idx = (level >= 1 && level <= 5) ? (level - 1) : 0;
-    const char *path = t2_tracks[idx];
+    int emb_id = camp_map[idx];
 
-    s_mod_active = 0;
-    s_tfmx_active = 0;
-    if (tfmx_player_load(&s_tfmx, path, NULL)) {
-        const char *fn = strrchr(path, '\\');
-        char *dot;
-        tfmx_player_start(&s_tfmx, 0);
-        s_tfmx_active = 1;
-        strncpy(s_current_track_name, fn ? fn + 1 : path, sizeof(s_current_track_name) - 1);
-        dot = strrchr(s_current_track_name, '.');
-        if (dot) *dot = '\0';
-        strcpy(s_current_track_type, "TFMX");
-        s_music_toast_timer = 180;
-        snprintf(s_status_msg, sizeof(s_status_msg), "LEVEL %d: %s [TFMX]", level, s_current_track_name);
-        return;
+    s_last_subsong_reason = -1;
+    if (music_play_embedded(emb_id, 0)) {
+        snprintf(s_status_msg, sizeof(s_status_msg), "LEVEL %d: %s", level, s_current_track_name);
     }
-    music_play_embedded(idx % 3);
 }
 
-/* Deterministischer Zufalls-Song aus der Library (eigener LCG, kein Core-RNG). */
+/* Deterministischer Zufalls-Song aus der Library oder Embedded (mit zufaelligem Subsong!) */
 static void music_play_next(void) {
+    s_last_subsong_reason = -1;
     if (s_playlist_count <= 0) {
-        music_play_embedded((int)(s_last_wave % 3));
+        int r_idx = (int)(s_music_rng % (uint32_t)EMBEDDED_TRACK_COUNT);
+        music_play_embedded(r_idx, -1);
         return;
     }
     for (int attempt = 0; attempt < 12; attempt++) {
         uint32_t seed = 0x5EED5EEDu + (uint32_t)(s_last_wave + s_gui_frame + attempt * 17) * 2654435761u;
         s_music_rng = seed * 1664525u + 1013904223u;
         int idx = (int)(s_music_rng % (uint32_t)s_playlist_count);
-        if (music_load_index(idx)) return;
+        if (music_load_index(idx)) {
+            if (s_tfmx_active && s_tfmx.num_subsongs > 1) {
+                int r_sub = (int)(s_music_rng % s_tfmx.num_subsongs);
+                s_current_subsong = r_sub;
+                tfmx_player_start(&s_tfmx, (uint8_t)r_sub);
+                snprintf(s_status_msg, sizeof(s_status_msg), "TFMX [%d/%d]: %s",
+                         r_sub + 1, s_tfmx.num_subsongs, s_current_track_name);
+            }
+            return;
+        }
     }
-    music_play_embedded((int)(s_last_wave % 3));
+    int r_idx = (int)(s_music_rng % (uint32_t)EMBEDDED_TRACK_COUNT);
+    music_play_embedded(r_idx, -1);
 }
 
 /* Soundgodizer-Presets (F5 schaltet durch: AUS -> BASS -> WARM -> OVERDRIVE) */
@@ -775,7 +891,7 @@ static void menu_activate(void) {
         case 2: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
         case 3: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
         case 4: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
-        default: s_gui_state = GUI_STATE_CREDITS; break;
+        default: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
     }
 }
 
@@ -819,8 +935,14 @@ static void render_top_bar(void) {
     /* Sound Status */
     {
         char aud[160];
-        snprintf(aud, sizeof(aud), "AUDIO: 16574 Hz STEREO | 8-VOICE PAULA | SOUNDGODIZER: %s [F5]",
-                 god_mode_name());
+        if (s_tfmx_active && s_tfmx.num_subsongs > 1) {
+            snprintf(aud, sizeof(aud), "AUDIO: TFMX [SUB %d/%d] | %s [F5]",
+                     s_current_subsong + 1, s_tfmx.num_subsongs, god_mode_name());
+        } else if (s_mod_active) {
+            snprintf(aud, sizeof(aud), "AUDIO: MOD STEREO | %s [F5]", god_mode_name());
+        } else {
+            snprintf(aud, sizeof(aud), "AUDIO: 16574 Hz PAULA | %s [F5]", god_mode_name());
+        }
         draw_string(WIN_W - 560, 14, aud, s_god_mode ? 0xFF40FF : 0x40FF80, 1);
     }
 }
@@ -829,6 +951,9 @@ static void render_status_bar(void) {
     draw_rect(0, WIN_H - 24, WIN_W, 24, 0x000A18);
     draw_rect_outline(0, WIN_H - 24, WIN_W, 24, 0x003060);
     draw_string(12, WIN_H - 16, s_status_msg, 0x80D0FF, 1);
+    if (s_gui_state == GUI_STATE_GAME) {
+        draw_string(WIN_W - 480, WIN_H - 16, "[M] TRACK  [K/SHIFT+M] SUBSONG  [F5] GODIZER", 0x60A0C0, 1);
+    }
 }
 
 /* --- Turrican-2-Style UI: 2-Ton-Schrift mit Schlagschatten --- */
@@ -987,49 +1112,388 @@ static void render_state_loading(void) {
     render_status_bar();
 }
 
-/* --- GUI_STATE_CREDITS: scrollender Abspann --- */
-static void render_state_credits(void) {
-    static const char *lines[] = {
-        "PROGRAMM, DESIGN & PRODUKTION",
-        "    Frank Mitzkatis",
-        "",
-        "AI CODING AGENTS",
-        "    Qwen 3.8 27B     (Fruehe Entwicklung)",
-        "    Cline 3.4 122B   (Implementierung & Test)",
-        "    Claude 5.5 Opus  (Architektur & Review)",
-        "    Gemini 4 Argon   (Experiment & Analyse)",
-        "    Gemini 3.8 Flash (Schnelle Iterationen)",
-        "",
-        "SPECIAL THANKS",
-        "    Chris Huelbeck - fuer den besten Soundtrack",
-        "    unserer Kindheit. Danke!",
-        "",
-        "    Turrican 2 / Alien Breed / Bitmap Brothers",
-        "    Amiga-Community 1985-1993",
-        "",
-        "STRUDELFORCE 2026 - MADE ON THE AMIGA 500 (50HZ PAL)",
-        "",
-        "DRUECKE ESC ODER ENTER ZURUECK ZUM MENUE"
-    };
-    int n = (int)(sizeof(lines) / sizeof(lines[0]));
-    int line_h = 22;
-    int total = WIN_H + n * line_h + 100;
-    int off = s_gui_frame / 2;                 /* 0.5 px pro Frame */
-    int y0 = (total - off) % total - n * line_h - 100;
-    int i;
+/* ============================================================================
+ * CREDITS & ARTIFACT ARCHIVE SYSTEM
+ * - 3D Parallax Perspective Starfield (Retro Amiga Demoscene Style)
+ * - Strukturierte Credits mit Disclaimer & GitHub Bugreport-Aufruf
+ * - Live-Scrolling von WORKFLOW_ESSAY.md & captains_log.md
+ * - TFMX Embedded Track Progression & Level Complete Fanfare
+ * ============================================================================ */
 
-    clear_screen(0x000000);
-    for (i = 0; i < n; i++) {
-        int ly = y0 + 160 + i * line_h;
-        if (ly < 90 || ly > WIN_H - 30) continue;
-        if (lines[i][0] == '\0') continue;
-        if (lines[i][0] == ' ') {
-            draw_string(240, ly, lines[i], 0xFFE09060, 1);      /* Namen: warm orange */
-        } else {
-            draw_title(WIN_W / 2, ly, lines[i], 1);             /* Rubriken: 2-Ton   */
+#define STAR_COUNT 350
+typedef struct {
+    int x, y, z;
+    int prev_z;
+    uint32_t color;
+} Star3D;
+
+static Star3D s_stars[STAR_COUNT];
+static int    s_starfield_initialized = 0;
+
+static void init_starfield(void) {
+    for (int i = 0; i < STAR_COUNT; i++) {
+        s_stars[i].x = (rand() % 1600) - 800;
+        s_stars[i].y = (rand() % 1200) - 600;
+        s_stars[i].z = 1 + (rand() % 1000);
+        s_stars[i].prev_z = s_stars[i].z;
+        int r = rand() % 8;
+        if (r == 0) s_stars[i].color = 0xFFD060;      /* Warm Gold */
+        else if (r == 1) s_stars[i].color = 0x60D0FF; /* Ice Cyan */
+        else if (r == 2) s_stars[i].color = 0xE090FF; /* Amiga Violett */
+        else s_stars[i].color = 0xFFFFFF;             /* Brilliant Weiss */
+    }
+    s_starfield_initialized = 1;
+}
+
+static void update_and_render_starfield(int speed) {
+    if (!s_starfield_initialized) init_starfield();
+
+    int cx = WIN_W / 2;
+    int cy = WIN_H / 2;
+
+    /* Subtiler Amiga Copper-Hintergrundverlauf */
+    for (int y = 0; y < WIN_H; y++) {
+        uint32_t bg_c;
+        if (y < 60) bg_c = 0x02030A;
+        else if (y > WIN_H - 60) bg_c = 0x020410;
+        else bg_c = 0x000206;
+        for (int x = 0; x < WIN_W; x++) {
+            s_pixels[y * WIN_W + x] = bg_c;
         }
     }
-    render_status_bar();
+
+    for (int i = 0; i < STAR_COUNT; i++) {
+        s_stars[i].prev_z = s_stars[i].z;
+        s_stars[i].z -= speed;
+
+        if (s_stars[i].z <= 1) {
+            s_stars[i].z += 1000;
+            s_stars[i].prev_z = s_stars[i].z;
+            s_stars[i].x = (rand() % 1600) - 800;
+            s_stars[i].y = (rand() % 1200) - 600;
+        } else if (s_stars[i].z > 1000) {
+            s_stars[i].z -= 1000;
+            s_stars[i].prev_z = s_stars[i].z;
+        }
+
+        int sx = cx + (s_stars[i].x * 360) / s_stars[i].z;
+        int sy = cy + (s_stars[i].y * 360) / s_stars[i].z;
+
+        if (sx >= 0 && sx < WIN_W && sy >= 0 && sy < WIN_H) {
+            uint32_t col = s_stars[i].color;
+            if (s_stars[i].z > 600) {
+                set_pixel(sx, sy, rgb_mod(col, 0.40f));
+            } else if (s_stars[i].z > 250) {
+                set_pixel(sx, sy, rgb_mod(col, 0.75f));
+            } else {
+                set_pixel(sx, sy, col);
+                if (sx > 0) set_pixel(sx - 1, sy, rgb_mod(col, 0.6f));
+                if (sx < WIN_W - 1) set_pixel(sx + 1, sy, rgb_mod(col, 0.6f));
+                if (sy > 0) set_pixel(sx, sy - 1, rgb_mod(col, 0.6f));
+                if (sy < WIN_H - 1) set_pixel(sx, sy + 1, rgb_mod(col, 0.6f));
+            }
+
+            /* Warp-Streifen bei hoeherer Geschwindigkeit */
+            if (speed >= 4) {
+                int px = cx + (s_stars[i].x * 360) / s_stars[i].prev_z;
+                int py = cy + (s_stars[i].y * 360) / s_stars[i].prev_z;
+                if (px >= 0 && px < WIN_W && py >= 0 && py < WIN_H) {
+                    set_pixel((sx + px) / 2, (sy + py) / 2, rgb_mod(col, 0.5f));
+                }
+            }
+        }
+    }
+}
+
+#define MAX_CREDIT_LINES 6000
+#define CREDIT_LINE_LEN  88
+
+static char s_credit_lines[MAX_CREDIT_LINES][CREDIT_LINE_LEN];
+static int  s_credit_line_count = 0;
+static int  s_credit_scroll_y = 0;
+static int  s_credit_paused = 0;
+static int  s_credit_speed = 1;
+static int  s_credit_music_step = 0;
+static int  s_credit_music_timer = 0;
+static int  s_credit_fanfare_played = 0;
+static const int s_credit_playlist[] = { 4, 3, 7, 6, 0, 2 }; /* Cave, Desert, Dungeons, Factory, Meadow, Loader */
+#define CREDIT_PLAYLIST_COUNT 6
+
+static void credits_add_line(const char *text) {
+    if (s_credit_line_count >= MAX_CREDIT_LINES) return;
+    char *dst = s_credit_lines[s_credit_line_count++];
+    strncpy(dst, text ? text : "", CREDIT_LINE_LEN - 1);
+    dst[CREDIT_LINE_LEN - 1] = '\0';
+}
+
+static void credits_add_wrapped(const char *text) {
+    if (!text) { credits_add_line(""); return; }
+    char sanitized[2048];
+    int si = 0;
+    /* UTF-8 Umlaute sauber in ASCII transkribieren fuer fehlerfreie Bitmap-Font Anzeige */
+    for (int i = 0; text[i] && si < (int)sizeof(sanitized) - 4; ) {
+        unsigned char c = (unsigned char)text[i];
+        if (c == 0xC3) {
+            unsigned char c2 = (unsigned char)text[i + 1];
+            if (c2 == 0xA4) { sanitized[si++] = 'a'; sanitized[si++] = 'e'; i += 2; continue; }
+            if (c2 == 0xB6) { sanitized[si++] = 'o'; sanitized[si++] = 'e'; i += 2; continue; }
+            if (c2 == 0xBC) { sanitized[si++] = 'u'; sanitized[si++] = 'e'; i += 2; continue; }
+            if (c2 == 0x84) { sanitized[si++] = 'A'; sanitized[si++] = 'e'; i += 2; continue; }
+            if (c2 == 0x96) { sanitized[si++] = 'O'; sanitized[si++] = 'e'; i += 2; continue; }
+            if (c2 == 0x9C) { sanitized[si++] = 'U'; sanitized[si++] = 'e'; i += 2; continue; }
+            if (c2 == 0x9F) { sanitized[si++] = 's'; sanitized[si++] = 's'; i += 2; continue; }
+        } else if (c == 0xE2) {
+            unsigned char c2 = (unsigned char)text[i + 1];
+            unsigned char c3 = (unsigned char)text[i + 2];
+            if (c2 == 0x80 && (c3 == 0x94 || c3 == 0x93)) { sanitized[si++] = '-'; sanitized[si++] = '-'; i += 3; continue; }
+            if (c2 == 0x86 && c3 == 0x92) { sanitized[si++] = '-'; sanitized[si++] = '>'; i += 3; continue; }
+        }
+        if (c >= 32 && c <= 126) sanitized[si++] = (char)c;
+        else if (c == ' ' || c == '\t') sanitized[si++] = ' ';
+        i++;
+    }
+    sanitized[si] = '\0';
+
+    const char *p = sanitized;
+    while (*p) {
+        while (*p == '\r' || *p == '\n') p++;
+        if (!*p) break;
+        int len = (int)strlen(p);
+        if (len <= 74) {
+            credits_add_line(p);
+            break;
+        }
+        int split = 74;
+        while (split > 30 && p[split] != ' ') split--;
+        if (split <= 30) split = 74;
+        char tmp[CREDIT_LINE_LEN];
+        int copylen = (split < CREDIT_LINE_LEN - 1) ? split : CREDIT_LINE_LEN - 1;
+        strncpy(tmp, p, copylen);
+        tmp[copylen] = '\0';
+        credits_add_line(tmp);
+        p += split;
+        while (*p == ' ') p++;
+    }
+}
+
+static int credits_append_file(const char *filename, const char *section_title) {
+    FILE *f = fopen(filename, "rt");
+    if (!f) return 0;
+    credits_add_line("");
+    credits_add_line("============================================================================");
+    credits_add_line(section_title);
+    credits_add_line("============================================================================");
+    credits_add_line("");
+
+    char buf[1024];
+    while (fgets(buf, sizeof(buf), f)) {
+        int l = (int)strlen(buf);
+        while (l > 0 && (buf[l - 1] == '\r' || buf[l - 1] == '\n')) buf[--l] = '\0';
+        credits_add_wrapped(buf);
+        if (s_credit_line_count >= MAX_CREDIT_LINES - 50) break;
+    }
+    fclose(f);
+    return 1;
+}
+
+static void credits_init(void) {
+    s_credit_line_count = 0;
+    s_credit_scroll_y = 0;
+    s_credit_paused = 0;
+    s_credit_speed = 1;
+    s_credit_music_step = 0;
+    s_credit_music_timer = 0;
+    s_credit_fanfare_played = 0;
+
+    init_starfield();
+
+    credits_add_line("");
+    credits_add_line("============================================================================");
+    credits_add_line("                         STRUDELFORCE 0.3.0");
+    credits_add_line("           RETRO 2.5D VOXEL-SHOOTER & CYBER-PAULA AUDIO ENGINE");
+    credits_add_line("                  COMMODORE AMIGA 500 HOMMAGE (50HZ PAL)");
+    credits_add_line("============================================================================");
+    credits_add_line("");
+    credits_add_line("PROGRAMMIERUNG, AUDIO-SYSTEM & GESAMTLEITUNG");
+    credits_add_line("    Frank Mitzkatis");
+    credits_add_line("");
+    credits_add_line("AI CODING PARTNER & SCHWARM-AGENTEN");
+    credits_add_line("    Qwen 3.8 27B      (Fruehe Kern-Experimente & Prototypen)");
+    credits_add_line("    Cline 3.4 122B    (Monolithische Konsolidierung & Build-Flow)");
+    credits_add_line("    Claude 5.5 Opus   (Architektur-Audit, Review & Refactoring)");
+    credits_add_line("    Gemini 4 Argon    (Mod-Oracle & Fixed-Point Verifikation)");
+    credits_add_line("    Gemini 3.8 Flash  (Multi-Subsongs, Kamera-Tracking & Voxel-Overhaul)");
+    credits_add_line("");
+    credits_add_line("WICHTIGER EXPERIMENTELLER HINWEIS & DISCLAIMER");
+    credits_add_line("    Alle hier enthaltenen Implementierungen:");
+    credits_add_line("    - 8-Stimmen Cyber-Paula Hardware-Mixer (16574 Hz)");
+    credits_add_line("    - TFMX 1.5/Pro/7V Replayer mit Macro-Synthese");
+    credits_add_line("    - ProTracker MOD 4-Kanal Replayer");
+    credits_add_line("    - 2.5D Voxel-Szenen-Planer (Zero-Float!)");
+    credits_add_line("    - Strudel Cleanroom AST & Mini-Notation");
+    credits_add_line("    - 16.16 Fixed-Point Physik & 50Hz Simulations-Loop");
+    credits_add_line("    - Soundgodizer DSP Post-Effekt-Kette");
+    credits_add_line("    sind hochgradig experimentell und 'Work in Progress'.");
+    credits_add_line("    Sie funktionieren vermutlich alle nur so halb!");
+    credits_add_line("");
+    credits_add_line("    Wenn du Glitches, Sound-Knackser, Timing-Probleme oder");
+    credits_add_line("    Abstuerze findest: BITTE GERNE EINEN BUGREPORT EINREICHEN!");
+    credits_add_line("    GitHub: https://github.com/Tretboot/STRUDELFORCE_Master");
+    credits_add_line("");
+    credits_add_line("BESONDERER DANK (SPECIAL THANKS)");
+    credits_add_line("    Chris Huelsbeck  -  fuer die legendaeren Soundtracks unserer");
+    credits_add_line("                        Kindheit (Turrican 1-3, Apidya, Great Bath).");
+    credits_add_line("                        Danke fuer deine Musik und Inspiration!");
+    credits_add_line("");
+    credits_add_line("    Manfred Trenz, Rainbow Arts, Factor 5, The Bitmap Brothers,");
+    credits_add_line("    DMA Design, Psygnosis und die weltweite Amiga-Community.");
+    credits_add_line("");
+    credits_add_line("TASTATUR- & CONTROLLER-STEUERUNG IM ABSPANN:");
+    credits_add_line("    [ LEERTASTE ]     Pause / Weiter");
+    credits_add_line("    [ PFEIL UNTEN ]   Schneller vorwaerts scrollen (Warp-Speed)");
+    credits_add_line("    [ PFEIL OBEN ]    Rueckwaerts scrollen");
+    credits_add_line("    [ M ]             Naechster Soundtrack");
+    credits_add_line("    [ ESC / ENTER ]   Zurueck zum Hauptmenue");
+    credits_add_line("");
+
+    if (!credits_append_file("WORKFLOW_ESSAY.md", "    TEIL 1: WORKFLOW ESSAY (ARCHITEKTUR & FORSCHUNGSBERICHT)")) {
+        credits_append_file("docs/WORKFLOW_ESSAY.md", "    TEIL 1: WORKFLOW ESSAY (ARCHITEKTUR & FORSCHUNGSBERICHT)");
+    }
+
+    if (!credits_append_file("captains_log.md", "    TEIL 2: CAPTAIN'S LOG (FORSCHUNGSTAGEBUCH)")) {
+        credits_append_file("docs/captains_log.md", "    TEIL 2: CAPTAIN'S LOG (FORSCHUNGSTAGEBUCH)");
+    }
+
+    credits_add_line("");
+    credits_add_line("============================================================================");
+    credits_add_line("    ENDE DER DOKUMENTATION - VIELEN DANK FUERS LESEN UND SPIELEN!");
+    credits_add_line("============================================================================");
+    credits_add_line("");
+    credits_add_line("             STRUDELFORCE 0.3.0  -  50HZ PAL FOREVER");
+    credits_add_line("                      AMIGA RULEZ THE WORLD!");
+    credits_add_line("");
+    credits_add_line("           [ ESC ] ODER [ ENTER ] DRUECKEN FUERS HAUPTMENUE");
+    credits_add_line("");
+
+    /* Musik-Start mit Turrican 2 Cave (Track 4) */
+    s_credit_music_step = 0;
+    music_play_embedded(s_credit_playlist[0], 0);
+}
+
+static void pad_credits_poll(void) {
+    XINPUT_STATE xs;
+    if (XInputGetState(0, &xs) != ERROR_SUCCESS) return;
+    if (xs.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START)) {
+        s_gui_state = GUI_STATE_MENU;
+        music_play_embedded(0, 0);
+        return;
+    }
+    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_RIGHT_SHOULDER)) || xs.Gamepad.sThumbLY < -4000) {
+        s_credit_scroll_y += 6;
+    }
+    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_LEFT_SHOULDER)) || xs.Gamepad.sThumbLY > 4000) {
+        s_credit_scroll_y -= 5;
+        if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
+    }
+    static int prev_y = 0;
+    int y_btn = (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
+    if (y_btn && !prev_y) {
+        s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
+        music_play_embedded(s_credit_playlist[s_credit_music_step], 0);
+    }
+    prev_y = y_btn;
+}
+
+static void render_state_credits(void) {
+    pad_credits_poll();
+
+    int star_speed = s_credit_paused ? 0 : 2;
+    if (GetKeyState(VK_DOWN) & 0x8000) star_speed = 8;
+    if (GetKeyState(VK_UP) & 0x8000)   star_speed = -4;
+
+    update_and_render_starfield(star_speed);
+
+    /* Abgedunkeltes Zentrum fuer optimale Text-Lesbarkeit */
+    int panel_w = 780;
+    int panel_x = (WIN_W - panel_w) / 2;
+    for (int y = 30; y < WIN_H - 26; y++) {
+        uint32_t *row = &s_pixels[y * WIN_W];
+        for (int x = panel_x; x < panel_x + panel_w; x++) {
+            row[x] = rgb_mod(row[x], 0.28f);
+        }
+    }
+    draw_rect_outline(panel_x - 1, 30, panel_w + 2, WIN_H - 56, 0x003060);
+
+    /* Text-Scroll-Berechnung */
+    int line_h = 20;
+    int total_scroll = s_credit_line_count * line_h + WIN_H + 80;
+
+    if (!s_credit_paused) {
+        s_credit_scroll_y += 1;
+        s_credit_music_timer++;
+        if (s_credit_music_timer >= 1800) { /* ca. 36 Sekunden pro Track */
+            s_credit_music_timer = 0;
+            s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
+            music_play_embedded(s_credit_playlist[s_credit_music_step], 0);
+        }
+    }
+
+    if (s_credit_scroll_y >= total_scroll) {
+        s_credit_scroll_y = total_scroll;
+        if (!s_credit_fanfare_played) {
+            s_credit_fanfare_played = 1;
+            music_play_embedded(3, 2); /* Turrican 2 Desert Subsong 2 = LEVEL COMPLETE FANFARE! */
+        }
+    }
+
+    /* Linien zeichnen */
+    for (int i = 0; i < s_credit_line_count; i++) {
+        int ly = WIN_H - 40 - s_credit_scroll_y + i * line_h;
+        if (ly < 25 || ly > WIN_H - 35) continue;
+        const char *l = s_credit_lines[i];
+        if (!l || l[0] == '\0') continue;
+
+        if (strncmp(l, "===", 3) == 0) {
+            draw_rect(panel_x + 20, ly + 9, panel_w - 40, 2, 0xFF4080);
+        } else if (strncmp(l, "    TEIL", 8) == 0 || strncmp(l, "                         STRUDELFORCE", 37) == 0) {
+            draw_title(WIN_W / 2, ly, l, 1);
+        } else if (l[0] == '#') {
+            draw_string(panel_x + 30, ly, l, 0xFFFF40, 1);
+        } else if (strncmp(l, "    ", 4) == 0) {
+            draw_string(panel_x + 40, ly, l, 0xFF60D0FF, 1);
+        } else if (l[0] >= 'A' && l[0] <= 'Z' && strchr(l, ':') != NULL) {
+            draw_string(panel_x + 30, ly, l, 0xFFFFA040, 1);
+        } else {
+            draw_string(panel_x + 30, ly, l, 0xFFD0D8E0, 1);
+        }
+    }
+
+    /* Wenn Fanfare getriggert: Auszeichnung anzeigen */
+    if (s_credit_fanfare_played) {
+        draw_rect(panel_x + 10, WIN_H / 2 - 40, panel_w - 20, 80, 0xEE001020);
+        draw_rect_outline(panel_x + 10, WIN_H / 2 - 40, panel_w - 20, 80, 0x00FF80);
+        draw_title(WIN_W / 2, WIN_H / 2 - 25, "LEVEL COMPLETE - ARTEFAKTE VOLLSTAENDIG!", 2);
+        draw_string(WIN_W / 2 - 190, WIN_H / 2 + 10, "[ ENTER ] ODER [ ESC ] ZURUECK ZUM HAUPTMENUE", 0xFFFF40, 1);
+    }
+
+    /* Top HUD */
+    draw_rect(0, 0, WIN_W, 30, 0xEE000814);
+    draw_rect(0, 29, WIN_W, 1, 0x004080);
+    draw_string(20, 10, "STRUDELFORCE 0.3.0  -  CREDITS & ARTEFAKT-DOKUMENTATION", 0xFFE040, 1);
+    char mus_info[128];
+    snprintf(mus_info, sizeof(mus_info), "AUDIO: [%s] %s %s",
+             s_current_track_type, s_current_track_name, s_credit_paused ? "[PAUSE]" : "");
+    draw_string(WIN_W - (int)strlen(mus_info) * 8 - 20, 10, mus_info, 0x60D0FF, 1);
+
+    /* Bottom HUD */
+    draw_rect(0, WIN_H - 26, WIN_W, 26, 0xEE000814);
+    draw_rect(0, WIN_H - 26, WIN_W, 1, 0x004080);
+    draw_string(20, WIN_H - 18, "[ESC/ENTER] Menue   [LEERTASTE] Pause   [PFEIL OBEN/UNTEN] Tempo   [M] Musik", 0xA0A0A0, 1);
+    int pct = total_scroll > 0 ? (s_credit_scroll_y * 100) / total_scroll : 0;
+    if (pct > 100) pct = 100;
+    char pct_str[32];
+    snprintf(pct_str, sizeof(pct_str), "FORTSCHRITT: %3d%%", pct);
+    draw_string(WIN_W - (int)strlen(pct_str) * 8 - 20, WIN_H - 18, pct_str, 0x00FF80, 1);
 }
 
 /* Kampagne-Biome-Paletten (vollstaendige Definition vor render_tab_game) */
@@ -1236,6 +1700,142 @@ static void draw_player_warrior(int px, int foot_y, int facing, int on_ground, i
     draw_line(gun_x + 3, gun_y - 1, gun_x + 11, gun_y - 1, 0x00B0E0);
 }
 
+/* ============================================================================
+ * TURRICAN 2 ENEMY SILHOUETTES & VOXEL SHADING
+ * Gesetz 2: Reine Farbpaletten, directional face-shading, unverwechselbare Formen.
+ * ============================================================================ */
+
+/* 1. Grunt Drone (ENEMY_WALKER): 4-beiniger Boden-Krabbler mit rotem Zyklopen-Auge */
+static void draw_enemy_walker(int ex, int ey, int frame, int dir) {
+    uint32_t shell_main = 0x782888;
+    uint32_t shell_hi   = 0xA040B8;
+    uint32_t shell_dark = 0x481858;
+    int step = (frame / 5) % 4;
+    int l1 = (step == 0 || step == 2) ? 4 : 1;
+    int l2 = (step == 1 || step == 3) ? 4 : 1;
+
+    /* 4 Gelenk-Beine (Krallen zum Boden) */
+    draw_line(ex - 8, ey + 4, ex - 14, ey + 12 - l1, shell_dark);
+    draw_line(ex - 14, ey + 12 - l1, ex - 16, ey + 18, shell_dark);
+    draw_line(ex - 4, ey + 4, ex - 8, ey + 12 - l2, shell_main);
+    draw_line(ex - 8, ey + 12 - l2, ex - 10, ey + 18, shell_main);
+    draw_line(ex + 4, ey + 4, ex + 8, ey + 12 - l1, shell_main);
+    draw_line(ex + 8, ey + 12 - l1, ex + 10, ey + 18, shell_main);
+    draw_line(ex + 8, ey + 4, ex + 14, ey + 12 - l2, shell_dark);
+    draw_line(ex + 14, ey + 12 - l2, ex + 16, ey + 18, shell_dark);
+
+    /* Gepanzerter Chitin-/Metall-Körper */
+    draw_voxel(ex - 10, ey, 20, 10, 4, shell_main);
+    draw_rect(ex - 8, ey - 1, 16, 2, shell_hi);
+
+    /* Bedrohliches leuchtendes Zyklopen-Auge (Rot mit weißem Reflex) */
+    int eye_x = ex + (dir > 0 ? 3 : -7);
+    draw_voxel(eye_x, ey + 2, 6, 5, 2, 0xFF1020);
+    set_pixel(eye_x + (dir > 0 ? 3 : 1), ey + 3, 0xFFFFFF);
+
+    /* Sensor-Antenne */
+    draw_line(ex, ey - 1, ex + dir * 3, ey - 5, shell_hi);
+    if ((frame / 8) % 2 == 0) set_pixel(ex + dir * 3, ey - 6, 0xFFFF40);
+}
+
+/* 2. Aerial Seeker (ENEMY_SHOOTER): Roter Delta-Flügel Jäger mit Cyan-Triebwerk */
+static void draw_enemy_shooter(int ex, int ey, int frame, int dir) {
+    uint32_t hull_main = 0xC82028;
+    uint32_t hull_hi   = 0xFF5050;
+    uint32_t hull_dark = 0x781018;
+
+    /* Schwebendes Auf- und Abbewegen */
+    int hover = (int)(sinf((float)frame * 0.12f) * 3.0f);
+    ey += hover;
+
+    /* Delta-Flügel Rumpf */
+    draw_voxel(ex - 12, ey + 2, 24, 8, 4, hull_main);
+    draw_voxel(ex - 6, ey - 3, 12, 6, 3, hull_main);
+    draw_rect(ex - 10, ey + 1, 20, 2, hull_hi);
+    draw_rect(ex - 12, ey + 9, 24, 2, hull_dark);
+
+    /* Angewinkelte Flügelspitzen */
+    draw_voxel(ex - 15, ey, 4, 10, 2, hull_dark);
+    draw_voxel(ex + 11, ey, 4, 10, 2, hull_dark);
+
+    /* Cockpit-Sensorvisor */
+    int vis_x = ex + (dir > 0 ? 3 : -7);
+    draw_voxel(vis_x, ey, 5, 4, 2, 0x00E0FF);
+    set_pixel(vis_x + 1, ey + 1, 0xFFFFFF);
+
+    /* Untergehängte Zwillings-Laserkanonen */
+    draw_voxel(ex - 8, ey + 10, 4, 5, 2, 0xD4AF37);
+    draw_voxel(ex + 4, ey + 10, 4, 5, 2, 0xD4AF37);
+
+    /* Pulsierender Cyan-Triebwerksstrahl nach hinten */
+    int jet_x = ex - dir * 14;
+    int flen = 4 + (frame % 5);
+    draw_rect(jet_x - (dir > 0 ? flen : 0), ey + 4, flen, 3, 0x00FFFF);
+    draw_rect(jet_x - (dir > 0 ? flen - 2 : 0), ey + 5, flen - 2, 1, 0xFFFFFF);
+    if ((frame / 3) % 2 == 0) {
+        set_pixel(jet_x - dir * (flen + 2), ey + 4, 0x00A0FF);
+        set_pixel(jet_x - dir * (flen + 4), ey + 5, 0x0050C0);
+    }
+}
+
+/* 3. Tank Golem (ENEMY_TANK): Schwerer Kettenpanzer (Mini-Boss) mit Boss-Health-Bar */
+static void draw_enemy_tank(int ex, int ey, int hp, int max_hp, int frame, int dir) {
+    uint32_t steel_main = 0x4A5868;
+    uint32_t steel_hi   = 0x788C9C;
+    uint32_t steel_dark = 0x2A3440;
+    uint32_t tread_col  = 0x1A2028;
+
+    /* Schwere Kettenlaufwerke (36x10) */
+    draw_voxel(ex - 18, ey + 10, 36, 10, 6, tread_col);
+    /* Animierte Kettenglieder & Rollen */
+    for (int k = 0; k < 4; k++) {
+        int rx = ex - 14 + k * 8;
+        draw_rect(rx, ey + 13, 5, 5, 0x506070);
+        draw_rect(rx + 1, ey + 14, 3, 3, 0x8090A0);
+    }
+    /* Kettenstreifen oben */
+    draw_rect(ex - 17, ey + 9, 34, 2, 0x303840);
+
+    /* Abgeschrägte Panzerwanne */
+    draw_voxel(ex - 15, ey + 2, 30, 9, 5, steel_main);
+    draw_rect(ex - 13, ey + 1, 26, 2, steel_hi);
+
+    /* Massiver Zwillings-Kanonenturm */
+    draw_voxel(ex - 10, ey - 6, 20, 9, 4, 0x5A6C7E);
+    draw_rect(ex - 8, ey - 7, 16, 2, 0x889CB0);
+
+    /* Schweres Zwillings-Plasmageschütz */
+    int gun_x = ex + (dir > 0 ? 6 : -22);
+    draw_voxel(gun_x, ey - 4, 16, 3, 3, 0x344050);
+    draw_voxel(gun_x, ey - 1, 16, 3, 3, 0x344050);
+    /* Glühende Plasma-Spulen an der Mündung */
+    int tip_x = (dir > 0) ? (gun_x + 14) : gun_x;
+    draw_rect(tip_x, ey - 4, 2, 3, 0xFF8020);
+    draw_rect(tip_x, ey - 1, 2, 3, 0xFF8020);
+
+    /* Glühender Reaktor-Kern / Abgas-Grill (pulsierendes Rot) */
+    uint32_t core_col = ((frame / 6) % 2 == 0) ? 0xFF3020 : 0xFF7040;
+    draw_rect(ex - dir * 6 - 2, ey + 4, 5, 4, core_col);
+
+    /* Boss-Lebensbalken overhead */
+    int bar_w = 36;
+    int bar_h = 5;
+    int bar_x = ex - bar_w / 2;
+    int bar_y = ey - 16;
+    draw_rect(bar_x - 1, bar_y - 1, bar_w + 2, bar_h + 2, 0x001020);
+    draw_rect(bar_x, bar_y, bar_w, bar_h, 0x401010);
+    if (max_hp > 0 && hp > 0) {
+        int fill = (hp * bar_w) / max_hp;
+        if (fill > bar_w) fill = bar_w;
+        uint32_t hp_col = (hp > max_hp / 2) ? 0x00FF60 : ((hp > max_hp / 4) ? 0xFFD000 : 0xFF2020);
+        draw_rect(bar_x, bar_y, fill, bar_h, hp_col);
+    }
+    draw_string(bar_x + 4, bar_y - 9, "TANK [BOSS]", 0xFFC040, 1);
+}
+
+static float s_cam_x = 0.0f;
+static float s_cam_y = 0.0f;
+
 /* --- TAB 1: 2.5D Voxel Game View ---
  * Parallax-Regel (12x Welt-Zoom, s_game.px = Weltposition in fix16):
  *   Layer 3 (Himmel):  statisch,  1/16  -> keine Bewegung (Copper-Verlauf)
@@ -1394,43 +1994,84 @@ static const BiomePalette biome_palettes[5] = {
 };
 
 static void render_tab_game(void) {
-    int ground_y = 620;
     const BiomePalette *bp = &biome_palettes[core_campaign_biome(&s_game)];
+    int bi = (int)(bp - biome_palettes);
 
-    /* Basis-Fluellung unter der Top-Bar (keine schwarzen Luecken mehr) */
+    /* Welt-Pixelkoordinaten (20px horizontal pro fixed-point Einheit, 16px vertikal) */
+    int pw_x = (int)(((int64_t)s_game.px * 20) >> 16);
+    int pw_y = (int)(((int64_t)s_game.py * 16) >> 16);
+
+    /* Weiche 2D-Kamera (zentriert auf den Spieler) */
+    float target_cam_x = (float)pw_x - (float)(WIN_W / 2);
+    float max_cam_x = (float)(72 * 20 - WIN_W); /* 1440 - 1280 = 160 px */
+    if (target_cam_x < 0.0f) target_cam_x = 0.0f;
+    if (target_cam_x > max_cam_x) target_cam_x = max_cam_x;
+
+    float target_cam_y = (pw_y > 80) ? (float)(pw_y - 80) : 0.0f;
+    if (target_cam_y > 220.0f) target_cam_y = 220.0f;
+
+    s_cam_x += (target_cam_x - s_cam_x) * 0.14f;
+    if (s_cam_x < 0.0f) s_cam_x = 0.0f;
+    if (s_cam_x > max_cam_x) s_cam_x = max_cam_x;
+
+    s_cam_y += (target_cam_y - s_cam_y) * 0.10f;
+    if (s_cam_y < 0.0f) s_cam_y = 0.0f;
+    if (s_cam_y > 220.0f) s_cam_y = 220.0f;
+
+    int cam_x = (int)s_cam_x;
+    int cam_y = (int)s_cam_y;
+    int ground_y = 620 + cam_y;
+
+    /* Basis-Fluellung unter der Top-Bar */
     draw_rect(0, 36, WIN_W, WIN_H - 36, 0x000A18);
 
-    /* Layer 3: Copper Horizon Bänder (80 Bänder = bis y=676, ueber den Boden) */
+    /* Layer 3: Dynamische Amiga Copper-Baender mit Elevation-Farbgradient */
+    float elevation = s_cam_y / 200.0f;
+    if (elevation < 0.0f) elevation = 0.0f;
+    if (elevation > 1.0f) elevation = 1.0f;
+
     for (int i = 0; i < 80; i++) {
         int y1 = 36 + i * 8;
         float factor = 0.5f + 0.5f * sinf((float)i * 0.1f + (float)s_game.tick * 0.04f);
-        uint32_t col = ((uint32_t)(bp->sky_r + 2.0f * (float)bp->sky_r * factor) << 16) |
-                       ((uint32_t)(bp->sky_g + 3.0f * (float)bp->sky_g * factor) << 8)  |
-                       (uint32_t)(bp->sky_b + 2.0f * (float)bp->sky_b * factor);
-        draw_rect(0, y1, WIN_W, 8, col);
+
+        /* Boden-/Horizont-Farben */
+        float r_ground = (float)bp->sky_r + 2.0f * (float)bp->sky_r * factor;
+        float g_ground = (float)bp->sky_g + 3.0f * (float)bp->sky_g * factor;
+        float b_ground = (float)bp->sky_b + 2.0f * (float)bp->sky_b * factor;
+
+        /* Hoehen-Stratosphere (Amiga-Cyan & Ultramarin-Blau) */
+        float r_sky = 10.0f + 15.0f * factor;
+        float g_sky = 30.0f + 80.0f * (1.0f - (float)i / 80.0f) + 30.0f * factor;
+        float b_sky = 70.0f + 150.0f * (1.0f - (float)i / 80.0f) + 35.0f * factor;
+
+        uint32_t cr = (uint32_t)(r_ground * (1.0f - elevation) + r_sky * elevation);
+        uint32_t cg = (uint32_t)(g_ground * (1.0f - elevation) + g_sky * elevation);
+        uint32_t cb = (uint32_t)(b_ground * (1.0f - elevation) + b_sky * elevation);
+        if (cr > 255) cr = 255;
+        if (cg > 255) cg = 255;
+        if (cb > 255) cb = 255;
+
+        draw_rect(0, y1, WIN_W, 8, (cr << 16) | (cg << 8) | cb);
     }
 
-    int bi = (int)(bp - biome_palettes);
-
-    /* Layer 2: Biome-Silhouetten (1/4 Parallax = 3x bei 12x Welt-Zoom) —
-     * pro Biome eigene Strukturform (Turrican-2-Upgrade, deterministisch) */
-    int x_off = (s_game.px >> 16) * 3;
-    for (int i = 0; i < 12; i++) {
+    /* Layer 2: Biome-Silhouetten (Parallax 0.35x mit Kamera) */
+    int x_off = (int)(s_cam_x * 0.35f);
+    for (int i = 0; i < 14; i++) {
         int a = i * 140 - x_off;
         int px = a % WIN_W;
         if (px < 0) px += WIN_W;
         draw_bg_structure(px, ground_y, floor_div(a, 140), bi, rgb_mod(bp->pillar, 0.72f));
     }
 
-    /* Bodenlinie mit Voxel-Platten (scrollt 1:1 mit der Welt = 12x) */
-    int g_off = (s_game.px >> 16) * 12;
-    for (int i = 0; i < 68; i++) {
+    /* Bodenlinie mit Voxel-Platten (scrollt 1:1 mit Kamera) */
+    int g_off = cam_x;
+    for (int i = 0; i < 74; i++) {
         int bx = (i * 20 - g_off) % WIN_W;
         if (bx < 0) bx += WIN_W;
         draw_voxel(bx, ground_y, 18, 12, 3, bp->ground);
     }
 
-    /* Untergrund: pro Biome eigene Terrassen (24px-Blöcke) + Strata-Linien */
+    /* Untergrund: pro Biome eigene Terrassen + Strata-Linien */
     {
         uint32_t under  = rgb_mod(bp->ground, 0.55f);
         uint32_t strata = rgb_mod(bp->ground, 0.36f);
@@ -1461,9 +2102,9 @@ static void render_tab_game(void) {
 
         for (int pi = 0; pi < s_game.platform_count; pi++) {
             const LevelPlatform *pl = &s_game.platforms[pi];
-            int pl_sx = 80 + (pl->x >> 16) * 12;
-            int pl_sw = (pl->w >> 16) * 12;
-            int pl_sy = ground_y - 20 - (pl->y >> 16) * 16;
+            int pl_sx = (int)(((int64_t)pl->x * 20) >> 16) - cam_x;
+            int pl_sw = (int)(((int64_t)pl->w * 20) >> 16);
+            int pl_sy = ground_y - 20 - (int)(((int64_t)pl->y * 16) >> 16);
             int pl_sh = 10;
 
             /* Tragsaeulen / Stuetzpfeiler nach unten */
@@ -1478,8 +2119,8 @@ static void render_tab_game(void) {
             /* Leuchtender Neon-Kantenstreifen */
             draw_rect(pl_sx + 2, pl_sy - 1, pl_sw - 4, 2, neon);
 
-            /* The Great Bath (Biom 1): Altar-Truhe auf Plattform 3 */
-            if (bi == 1 && pi == 3) {
+            /* The Great Bath (Biom 1): Altar-Truhe auf Plattform 8 */
+            if (bi == 1 && pi == 8) {
                 int cx = pl_sx + pl_sw / 2 - 12;
                 int cy = pl_sy - 18;
                 if (!s_livecode.chest_opened) {
@@ -1489,7 +2130,7 @@ static void render_tab_game(void) {
                     draw_voxel(cx + 9, cy + 5, 6, 6, 2, 0x00E0FF);
                     if ((s_gui_frame / 12) % 2 == 0) set_pixel(cx + 11, cy + 7, 0xFFFFFF);
                     /* Tooltip bei Spieler-Naehe */
-                    if (abs((s_game.px >> 16) - 45) < 8) {
+                    if (abs((s_game.px >> 16) - 40) < 8) {
                         draw_string(cx - 24, cy - 14, "[T] TRUHE OEFFNEN", 0x00FFFF, 1);
                     }
                 } else {
@@ -1510,8 +2151,8 @@ static void render_tab_game(void) {
     /* Layer 1: Gameplay Entities */
 
     /* 1. Spieler: Zweibeiniger Cyber-Krieger (Turrican Bren McGuire) */
-    int p_screen_x = 80 + (s_game.px >> 16) * 12;
-    int foot_y = ground_y - (s_game.py >> 16) * 16;
+    int p_screen_x = pw_x - cam_x;
+    int foot_y = ground_y - pw_y;
     if (p_screen_x < 40) p_screen_x = 40;
     if (p_screen_x > WIN_W - 80) p_screen_x = WIN_W - 80;
 
@@ -1540,32 +2181,27 @@ static void render_tab_game(void) {
     for (int i = 0; i < MAX_PICKUPS; i++) {
         const Pickup *pk = &s_game.pickups[i];
         if (!pk->active) continue;
-        int kx = 80 + (pk->x >> 16) * 12;
-        int ky = ground_y - 40 - (pk->y >> 16) * 16;
+        int kx = (int)(((int64_t)pk->x * 20) >> 16) - cam_x;
+        int ky = ground_y - 40 - (int)(((int64_t)pk->y * 16) >> 16);
         int bob = (int)(sinf((float)s_gui_frame * 0.15f + (float)i) * 4.0f);
         draw_voxel(kx, ky - 16 + bob, 12, 12, 4, 0x00E050);
         set_pixel(kx + 5, ky - 12 + bob, 0xFFFFFF);
     }
 
-    /* 2. Gegner (Grunts & Flyers) */
+    /* 2. Gegner (Turrican 2 Silhouette-Design: Walker, Seeker & Tank Golem) */
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Enemy *e = &s_game.enemies[i];
         if (!e->active) continue;
-        int ex = 80 + (e->x >> 16) * 12;
-        int ey = ground_y - 40 - (e->y >> 16) * 16;
+        int ex = (int)(((int64_t)e->x * 20) >> 16) - cam_x;
+        int ey = ground_y - 40 - (int)(((int64_t)e->y * 16) >> 16);
 
+        int edir = (e->vx >= 0) ? 1 : -1;
         if (e->kind == ENEMY_SHOOTER) {
-            /* Shooter-Drohne (Rot/Gold) */
-            draw_voxel(ex, ey, 26, 20, 5, 0xE02030);
-            draw_voxel(ex + 8, ey + 4, 10, 8, 3, 0xFFC000);
+            draw_enemy_shooter(ex, ey, s_game.tick + i * 7, edir);
         } else if (e->kind == ENEMY_TANK) {
-            /* Golem-Tank (Blaugrau/Panzer) */
-            draw_voxel(ex, ey, 32, 28, 8, 0x607080);
-            draw_voxel(ex + 8, ey + 8, 16, 12, 4, 0xFF4040);
+            draw_enemy_tank(ex, ey, e->hp, 15, s_game.tick, edir);
         } else {
-            /* Krabbler (Violett/Cyber) */
-            draw_voxel(ex, ey, 24, 24, 6, 0xA020F0);
-            draw_voxel(ex + 6, ey + 6, 12, 10, 4, 0x00FF80);
+            draw_enemy_walker(ex, ey, s_game.tick + i * 5, edir);
         }
     }
 
@@ -1573,8 +2209,8 @@ static void render_tab_game(void) {
     for (int i = 0; i < MAX_PROJECTILES; i++) {
         const Projectile *b = &s_game.projectiles[i];
         if (!b->active) continue;
-        int bx = 80 + (b->x >> 16) * 12;
-        int by = ground_y - 40 - (b->y >> 16) * 16;
+        int bx = (int)(((int64_t)b->x * 20) >> 16) - cam_x;
+        int by = ground_y - 40 - (int)(((int64_t)b->y * 16) >> 16);
 
         if (b->kind == PROJ_BOUNCE) {
             draw_projectile_bounce(bx, by);
@@ -1591,8 +2227,8 @@ static void render_tab_game(void) {
     for (int i = 0; i < MAX_PARTICLES; i++) {
         const Particle *p = &s_game.particles[i];
         if (!p->active) continue;
-        int px = 80 + (p->x >> 16) * 12;
-        int py = ground_y - 40 - (p->y >> 16) * 16;
+        int px = (int)(((int64_t)p->x * 20) >> 16) - cam_x;
+        int py = ground_y - 40 - (int)(((int64_t)p->y * 16) >> 16);
         set_pixel(px, py, 0xFFFFFF);
         set_pixel(px + 1, py, 0xFF8000);
     }
@@ -1761,9 +2397,15 @@ static void render_tab_explorer(void) {
         draw_button(rx + 140, 140, 100, 30, "X STOP", 0, 0);
         draw_button(rx + 250, 140, 120, 30, "< SUBSONG", 0, 0);
         draw_button(rx + 380, 140, 120, 30, "SUBSONG >", 0, 0);
+        draw_button(rx + 510, 140, 190, 30, "[? SHUFFLE SWAP]", 0, 0);
+
+        if (s_frankenstein_status[0]) {
+            draw_rect(rx + 20, 175, WIN_W - rx - 40, 18, 0x003018);
+            draw_string(rx + 24, 180, s_frankenstein_status, 0xFF60FF, 1);
+        }
 
         /* STRUDEL CONVERT BUTTON */
-        draw_button(rx + 20, 190, 350, 36, "[==> IN STRUDEL MINI-NOTATION KONVERTIEREN]", 1, 0);
+        draw_button(rx + 20, 198, 350, 36, "[==> IN STRUDEL MINI-NOTATION KONVERTIEREN]", 1, 0);
         draw_string(rx + 385, 202, "(Exportiert & oeffnet im Studio)", 0x80FFA0, 1);
 
         /* 8-Voice Paula DMA Analyzer */
@@ -1989,9 +2631,17 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 return 0;
             }
 
-            /* M / N: Musik umschalten (im Spiel, Menue oder Explorer) */
+            /* M / N: Track wechseln | K / SHIFT+M: Subsong wechseln */
             if ((wParam == 'M' || wParam == 'N') && !(s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_STRUDEL)) {
-                music_play_next();
+                if (GetKeyState(VK_SHIFT) & 0x8000) {
+                    music_subsong_next();
+                } else {
+                    music_play_next();
+                }
+                return 0;
+            }
+            if (wParam == 'K' && !(s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_STRUDEL)) {
+                music_subsong_next();
                 return 0;
             }
 
@@ -2002,9 +2652,23 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 else if (wParam == VK_RETURN) menu_activate();
                 return 0;
             }
-            /* --- Credits: beenden --- */
+            /* --- Credits: Steuerung (Pause, Speed, Musik, Exit) --- */
             if (s_gui_state == GUI_STATE_CREDITS) {
-                if (wParam == VK_RETURN || wParam == VK_ESCAPE) s_gui_state = GUI_STATE_MENU;
+                if (wParam == VK_RETURN || wParam == VK_ESCAPE) {
+                    s_gui_state = GUI_STATE_MENU;
+                    music_play_embedded(0, 0); /* Intro Meadow wieder an */
+                } else if (wParam == VK_SPACE) {
+                    s_credit_paused = !s_credit_paused;
+                    snprintf(s_status_msg, sizeof(s_status_msg), s_credit_paused ? "Credits Pausiert" : "Credits Fortgesetzt");
+                } else if (wParam == VK_DOWN) {
+                    s_credit_scroll_y += 6;
+                } else if (wParam == VK_F6 || ((wParam == 'X' || wParam == 'x') && s_exp_path_cur == 0)) { explorer_shuffle_swap(); return 0; } else if (wParam == VK_UP) {
+                    s_credit_scroll_y -= 5;
+                    if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
+                } else if (wParam == 'M' || wParam == 'm') {
+                    s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
+                    music_play_embedded(s_credit_playlist[s_credit_music_step], 0);
+                }
                 return 0;
             }
             /* --- Game Over: ENTER = Neustart, ESC = Menue (s.o.) --- */
@@ -2082,7 +2746,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     if (s_strudel_cursor < (int)strlen(s_strudel_input)) s_strudel_cursor++;
                 }
             } else if (s_current_tab == TAB_EXPLORER) {
-                if (wParam == VK_UP) {
+                if (wParam == VK_F6 || ((wParam == 'X' || wParam == 'x') && s_exp_path_cur == 0)) { explorer_shuffle_swap(); return 0; } else if (wParam == VK_UP) {
                     if (s_explorer_selected > 0) {
                         s_explorer_selected--;
                         if (s_explorer_selected < s_explorer_scroll) s_explorer_scroll = s_explorer_selected;
@@ -2144,41 +2808,67 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                         ExplorerItem *it = &s_explorer_items[s_explorer_selected];
                         if (it->is_dir) {
                             if (strcmp(it->name, "..") == 0) {
-                                char *last_slash = strrchr(s_current_dir, '\\');
-                                if (last_slash) *last_slash = '\0';
-                                else strcpy(s_current_dir, ".");
+                                if (strcmp(s_current_dir, "<ROM: EINGEBAUTE SOUNDTRACKS>") == 0) {
+                                    strcpy(s_current_dir, ".");
+                                } else {
+                                    char *last_slash = strrchr(s_current_dir, '\\');
+                                    if (last_slash) *last_slash = '\0';
+                                    else strcpy(s_current_dir, ".");
+                                }
                             } else {
                                 strncpy(s_current_dir, it->path, sizeof(s_current_dir) - 1);
+                                s_current_dir[sizeof(s_current_dir) - 1] = '\0';
                             }
                             explorer_scan_directory(s_current_dir);
                         } else {
-                            /* TFMX oder MOD Datei laden */
-                            const char *ext = strrchr(it->name, '.');
-                            if (ext && _stricmp(ext, ".mod") == 0) {
-                                FILE *f = fopen(it->path, "rb");
-                                long size = 0;
-                                s_exp_playing = 0;
-                                s_exp_mod_playing = 0;
-                                if (f) {
-                                    fseek(f, 0, SEEK_END);
-                                    size = ftell(f);
-                                    if (size > (long)sizeof(s_exp_mod_buf)) size = (long)sizeof(s_exp_mod_buf);
-                                    fseek(f, 0, SEEK_SET);
-                                    (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
-                                    fclose(f);
-                                }
-                                if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
-                                    mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
-                                    s_exp_mod_playing = 1;
-                                    snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
+                            if (strncmp(it->path, "ROM:", 4) == 0) {
+                                int rom_idx = atoi(it->path + 4);
+                                if (rom_idx >= 0 && rom_idx < EMBEDDED_TRACK_COUNT) {
+                                    const EmbeddedTrack *et = &EMBEDDED_TRACKS[rom_idx];
+                                    s_exp_playing = 0;
+                                    s_exp_mod_playing = 0;
+                                    if (et->is_mod) {
+                                        if (mod_player_load_mem(&s_exp_mod, et->tfx, et->tfx_len)) {
+                                            mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                            s_exp_mod_playing = 1;
+                                            snprintf(s_status_msg, sizeof(s_status_msg), "ROM-MOD: %s", et->name);
+                                        }
+                                    } else {
+                                        if (tfmx_player_load_mem(&s_exp_tfmx, et->tfx, et->tfx_len, (const int8_t *)et->sam, et->sam_len)) {
+                                            s_exp_subsong = 0;
+                                            tfmx_player_start(&s_exp_tfmx, 0);
+                                            s_exp_playing = 1;
+                                            snprintf(s_status_msg, sizeof(s_status_msg), "ROM-TFMX: %s (%d Subs)", et->name, s_exp_tfmx.num_subsongs);
+                                        }
+                                    }
                                 }
                             } else {
-                                /* TFMX Datei laden */
-                                if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
-                                    s_exp_subsong = 0;
-                                    tfmx_player_start(&s_exp_tfmx, 0);
-                                    s_exp_playing = 1;
-                                    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                                const char *ext = strrchr(it->name, '.');
+                                if (ext && _stricmp(ext, ".mod") == 0) {
+                                    FILE *f = fopen(it->path, "rb");
+                                    long size = 0;
+                                    s_exp_playing = 0;
+                                    s_exp_mod_playing = 0;
+                                    if (f) {
+                                        fseek(f, 0, SEEK_END);
+                                        size = ftell(f);
+                                        if (size > (long)sizeof(s_exp_mod_buf)) size = (long)sizeof(s_exp_mod_buf);
+                                        fseek(f, 0, SEEK_SET);
+                                        (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
+                                        fclose(f);
+                                    }
+                                    if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
+                                        mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                        s_exp_mod_playing = 1;
+                                        snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
+                                    }
+                                } else {
+                                    if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
+                                        s_exp_subsong = 0;
+                                        tfmx_player_start(&s_exp_tfmx, 0);
+                                        s_exp_playing = 1;
+                                        snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                                    }
                                 }
                             }
                         }
@@ -2234,33 +2924,71 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                         s_explorer_selected = clicked_idx;
                         ExplorerItem *it = &s_explorer_items[s_explorer_selected];
                         if (!it->is_dir) {
-                            const char *ext = strrchr(it->name, '.');
-                            if (ext && _stricmp(ext, ".mod") == 0) {
-                                FILE *f = fopen(it->path, "rb");
-                                long size = 0;
-                                s_exp_playing = 0;
-                                s_exp_mod_playing = 0;
-                                if (f) {
-                                    fseek(f, 0, SEEK_END);
-                                    size = ftell(f);
-                                    if (size > (long)sizeof(s_exp_mod_buf)) size = (long)sizeof(s_exp_mod_buf);
-                                    fseek(f, 0, SEEK_SET);
-                                    (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
-                                    fclose(f);
-                                }
-                                if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
-                                    mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
-                                    s_exp_mod_playing = 1;
-                                    snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
+                            if (strncmp(it->path, "ROM:", 4) == 0) {
+                                int rom_idx = atoi(it->path + 4);
+                                if (rom_idx >= 0 && rom_idx < EMBEDDED_TRACK_COUNT) {
+                                    const EmbeddedTrack *et = &EMBEDDED_TRACKS[rom_idx];
+                                    s_exp_playing = 0;
+                                    s_exp_mod_playing = 0;
+                                    if (et->is_mod) {
+                                        if (mod_player_load_mem(&s_exp_mod, et->tfx, et->tfx_len)) {
+                                            mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                            s_exp_mod_playing = 1;
+                                            snprintf(s_status_msg, sizeof(s_status_msg), "ROM-MOD: %s", et->name);
+                                        }
+                                    } else {
+                                        if (tfmx_player_load_mem(&s_exp_tfmx, et->tfx, et->tfx_len, (const int8_t *)et->sam, et->sam_len)) {
+                                            s_exp_subsong = 0;
+                                            tfmx_player_start(&s_exp_tfmx, 0);
+                                            s_exp_playing = 1;
+                                            snprintf(s_status_msg, sizeof(s_status_msg), "ROM-TFMX: %s (%d Subs)", et->name, s_exp_tfmx.num_subsongs);
+                                        }
+                                    }
                                 }
                             } else {
-                                if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
-                                    s_exp_subsong = 0;
-                                    tfmx_player_start(&s_exp_tfmx, 0);
-                                    s_exp_playing = 1;
-                                    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                                const char *ext = strrchr(it->name, '.');
+                                if (ext && _stricmp(ext, ".mod") == 0) {
+                                    FILE *f = fopen(it->path, "rb");
+                                    long size = 0;
+                                    s_exp_playing = 0;
+                                    s_exp_mod_playing = 0;
+                                    if (f) {
+                                        fseek(f, 0, SEEK_END);
+                                        size = ftell(f);
+                                        if (size > (long)sizeof(s_exp_mod_buf)) size = (long)sizeof(s_exp_mod_buf);
+                                        fseek(f, 0, SEEK_SET);
+                                        (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
+                                        fclose(f);
+                                    }
+                                    if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
+                                        mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                        s_exp_mod_playing = 1;
+                                        snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
+                                    }
+                                } else {
+                                    if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
+                                        s_exp_subsong = 0;
+                                        tfmx_player_start(&s_exp_tfmx, 0);
+                                        s_exp_playing = 1;
+                                        snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                                    }
                                 }
                             }
+                        } else {
+                            /* Klick auf Ordner */
+                            if (strcmp(it->name, "..") == 0) {
+                                if (strcmp(s_current_dir, "<ROM: EINGEBAUTE SOUNDTRACKS>") == 0) {
+                                    strcpy(s_current_dir, ".");
+                                } else {
+                                    char *last_slash = strrchr(s_current_dir, '\\');
+                                    if (last_slash) *last_slash = '\0';
+                                    else strcpy(s_current_dir, ".");
+                                }
+                            } else {
+                                strncpy(s_current_dir, it->path, sizeof(s_current_dir) - 1);
+                                s_current_dir[sizeof(s_current_dir) - 1] = '\0';
+                            }
+                            explorer_scan_directory(s_current_dir);
                         }
                     }
                 }
@@ -2295,9 +3023,11 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                         s_exp_playing = 1;
                         snprintf(s_status_msg, sizeof(s_status_msg), "Subsong %d / %d", s_exp_subsong, s_exp_tfmx.num_subsongs);
                     }
+                } else if (mx >= 1010 && mx <= 1200 && my >= 140 && my <= 170) {
+                    explorer_shuffle_swap();
                 }
                 /* Convert Button Klick */
-                else if (mx >= 520 && mx <= 870 && my >= 190 && my <= 226) {
+                else if (mx >= 520 && mx <= 870 && my >= 198 && my <= 234) {
                     if (s_exp_tfmx.loaded) {
                         /* Auto-Konvertierung */
                         snprintf(s_strudel_input, sizeof(s_strudel_input),
@@ -2567,6 +3297,30 @@ static int run_headless_tests(void) {
         }
     }
 
+    /* 7. Credits & Artefakt-Archiv */
+    {
+        credits_init();
+        if (s_credit_line_count > 500) {
+            pass++; printf("  [PASS] Credits & Artefakt-Archiv (%d Zeilen geladen, Starfield aktiv)\n", s_credit_line_count);
+        } else {
+            fail++; printf("  [FAIL] Credits & Artefakt-Archiv (%d Zeilen)\n", s_credit_line_count);
+        }
+    }
+
+    /* 8. Explorer ROM Virtual Directory & Frankenstein Shuffle */
+    {
+        explorer_scan_directory("<ROM: EINGEBAUTE SOUNDTRACKS>");
+        int rom_count = s_num_explorer_items;
+        explorer_shuffle_swap();
+        if (rom_count == EMBEDDED_TRACK_COUNT + 1 && s_frankenstein_status[0] != '\0') {
+            pass++; printf("  [PASS] Explorer ROM-Ordner (%d Eintraege) & Frankenstein Swap (%s)\n",
+                           rom_count, s_frankenstein_status);
+        } else {
+            fail++; printf("  [FAIL] Explorer ROM-Ordner / Frankenstein Swap\n");
+        }
+        explorer_scan_directory(".");
+    }
+
     printf("------------------------------------------------------------------------\n");
     printf("TEST ERGEBNIS: %d PASS, %d FAIL\n", pass, fail);
     printf("========================================================================\n\n");
@@ -2716,7 +3470,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     /* Intro: Embedded Apidya Meadow (TFMX + Original-Amiga-Samples) — laeuft im Hauptmenue */
     s_last_wave = s_game.wave;
-    music_play_embedded(0);
+    music_play_embedded(0, 0);
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
@@ -2851,7 +3605,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             {
                                 static int s_pad_y_prev = 0;
                                 int y_now = ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0);
-                                if (y_now && !s_pad_y_prev) music_play_next();
+                                if (y_now && !s_pad_y_prev) {
+                                    if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) {
+                                        music_subsong_next();
+                                    } else {
+                                        music_play_next();
+                                    }
+                                }
                                 s_pad_y_prev = y_now;
                             }
                             {
@@ -2882,7 +3642,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         s_gui_state = GUI_STATE_GAMEOVER;
                     }
 
-                    /* Neue Wave/Level -> Musik anpassen */
+                    /* Reaktive Subsong- und Track-Steuerung im Spielverlauf */
                     if (s_game.state != STATE_GAMEOVER && s_game.state != STATE_VICTORY) {
                         if (s_game.mode == MODE_CAMPAIGN) {
                             if (s_game.campaign_level != s_last_campaign_level) {
@@ -2894,6 +3654,55 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             if (s_game.wave != s_last_wave) {
                                 s_last_wave = s_game.wave;
                                 music_play_next();
+                            }
+                        }
+
+                        /* Reaktive Subsongs im laufenden Spiel */
+                        if (s_game.state == STATE_PLAYING) {
+                            int boss_active = 0;
+                            int enemies_active = 0;
+                            for (int ei = 0; ei < MAX_ENEMIES; ei++) {
+                                if (s_game.enemies[ei].active) {
+                                    enemies_active++;
+                                    if (s_game.enemies[ei].kind == ENEMY_TANK) boss_active = 1;
+                                }
+                            }
+                            if (boss_active || (s_game.wave % 3 == 0 && enemies_active > 0)) {
+                                if (s_last_subsong_reason != 1) {
+                                    s_last_subsong_reason = 1;
+                                    music_subsong_switch(1); /* Boss Battle Theme */
+                                }
+                            } else if (s_game.lives == 1) {
+                                if (s_last_subsong_reason != 4) {
+                                    s_last_subsong_reason = 4;
+                                    if (s_tfmx.num_subsongs >= 8) music_subsong_switch(1);
+                                }
+                            } else {
+                                if (s_last_subsong_reason != 0) {
+                                    s_last_subsong_reason = 0;
+                                    music_subsong_switch(0); /* Standard Ingame Exploration */
+                                }
+                            }
+                        } else if (s_game.state == STATE_LEVEL_CLEAR) {
+                            if (s_last_subsong_reason != 2) {
+                                s_last_subsong_reason = 2;
+                                if (s_tfmx_active && s_tfmx.num_subsongs > 2) {
+                                    music_subsong_switch(2); /* Level Clear Fanfare */
+                                } else {
+                                    music_play_embedded(9, 0); /* Wing Commander Victory MOD */
+                                }
+                            }
+                        }
+                    } else if (s_game.state == STATE_VICTORY) {
+                        if (s_last_subsong_reason != 5) {
+                            s_last_subsong_reason = 5;
+                            music_play_embedded(9, 0); /* Sieg Fanfare MOD */
+                        }
+                    } else if (s_game.state == STATE_GAMEOVER) {
+                        if (s_last_subsong_reason != 3) {
+                            s_last_subsong_reason = 3;
+                            if (s_tfmx_active && s_tfmx.num_subsongs > 3) {
+                                music_subsong_switch(3); /* Game Over Jingle */
                             }
                         }
                     }

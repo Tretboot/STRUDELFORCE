@@ -2,18 +2,13 @@
 """
 gen_embedded_music.py - Erzeugt src/embedded_music.h (GENERIERT, nicht handeditieren!)
 
-Packt ausgewaehlte TFMX/MOD-Tracks IN die EXE (static const Arrays), damit:
-  1. das Intro (Apidya Meadow, TFMX + Original-.sam-Samples) ohne Disk-Dateien laeuft
-  2. die Jukebox einen Fallback hat, wenn die Ordner-Library leer/fehlend ist
-  3. spaeter der M68K/ADF-Target dieselbe Technik (INCBIN-Style) nutzen kann
+Packt ausgewaehlte Chris Hülsbeck TFMX/MOD-Tracks IN die EXE (static const Arrays):
+  1. Turrican 2: "Load", "World 1 - Dessert", "World 2 - Cave" (Multi-Subsongs!)
+  2. Turrican 3: "Loader", "World 1 - Factory", "World 2 - Dungeons"
+  3. Apidya: "Ongame 1 - Meadow", "Ongame 5 - Bosspanic"
+  4. Wing Commander: "Regular Combat" (Action MOD), "Overall Victory" (MOD)
 
-Tracks (bewusst klein halten!):
-  - TFMX: Apidya - Ongame 1 - Meadow (.tfx + .sam = Original-Amiga-Samples)
-  - MOD : Wing Commander - Regular Combat (Action)
-  - MOD : Wing Commander - Overall Victory (Sieges-Fanfare)
-
-Hinweis: Die 3 Lost-Patrol-Dateien (MOD/Lost_Patrol/*.mod) sind KEIN Standard-
-ProTracker-Format (kein M.K./M!K!-Sig bei 1080) und werden vom Player abgelehnt.
+Total Audio-Budget: ~477 KB, bleibt weit unter dem 1.44 MB Floppy-Limit!
 
 Aufruf:  python tools/gen_embedded_music.py
 Output:  src/embedded_music.h
@@ -25,16 +20,44 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # (Symbol-Präfix, Typ, Pfad relativ zum Workspace-Root)
 TRACKS = [
-    ("TFMX_APIDYA_MEADOW", "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx"),
-    ("SAM_APIDYA_MEADOW",  "sam",  "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.sam"),
-    ("MOD_WC_REGULARCOMBAT", "mod", "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_regularcombat.mod"),
-    ("MOD_WC_OVERALLVICTORY", "mod", "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_overallvictory.mod"),
+    ("TFMX_APIDYA_MEADOW",   "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx"),
+    ("SAM_APIDYA_MEADOW",    "sam",  "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.sam"),
+    ("TFMX_APIDYA_BOSSPANIC", "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 5 - Bosspanic.tfx"),
+    ("SAM_APIDYA_BOSSPANIC",  "sam",  "TFMX Professional/Apidya/Apidya - Ongame 5 - Bosspanic.sam"),
+    ("TFMX_T2_LOAD",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - Load.tfx"),
+    ("SAM_T2_LOAD",          "sam",  "TFMX Professional/Turrican 2/Turrican 2 - Load.sam"),
+    ("TFMX_T2_DESERT",       "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.tfx"),
+    ("SAM_T2_DESERT",        "sam",  "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.sam"),
+    ("TFMX_T2_CAVE",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.tfx"),
+    ("SAM_T2_CAVE",          "sam",  "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.sam"),
+    ("TFMX_T3_LOADER",       "tfmx", "TFMX Professional/Turrican 3/Turrican 3 - Loader.tfx"),
+    ("SAM_T3_LOADER",        "sam",  "TFMX Professional/Turrican 3/Turrican 3 - Loader.sam"),
+    ("TFMX_T3_FACTORY",      "tfmx", "TFMX Professional/Turrican 3/Turrican 3 - World 1 - Factory.tfx"),
+    ("SAM_T3_FACTORY",       "sam",  "TFMX Professional/Turrican 3/Turrican 3 - World 1 - Factory.sam"),
+    ("TFMX_T3_DUNGEONS",     "tfmx", "TFMX Professional/Turrican 3/Turrican 3 - World 2 - Dungeons.tfx"),
+    ("SAM_T3_DUNGEONS",      "sam",  "TFMX Professional/Turrican 3/Turrican 3 - World 2 - Dungeons.sam"),
+    ("MOD_WC_REGULARCOMBAT", "mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_regularcombat.mod"),
+    ("MOD_WC_OVERALLVICTORY","mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_overallvictory.mod"),
 ]
 
 NAMES = {
-    "TFMX_APIDYA_MEADOW": "Apidya - Ongame 1 - Meadow (TFMX)",
-    "SAM_APIDYA_MEADOW": "Apidya - Ongame 1 - Meadow (Samples .sam)",
-    "MOD_WC_REGULARCOMBAT": "Wing Commander - Regular Combat (MOD)",
+    "TFMX_APIDYA_MEADOW":    "Apidya - Ongame 1 - Meadow (TFMX)",
+    "SAM_APIDYA_MEADOW":     "Apidya - Ongame 1 - Meadow (Samples .sam)",
+    "TFMX_APIDYA_BOSSPANIC": "Apidya - Ongame 5 - Bosspanic (TFMX)",
+    "SAM_APIDYA_BOSSPANIC":  "Apidya - Ongame 5 - Bosspanic (Samples .sam)",
+    "TFMX_T2_LOAD":          "Turrican 2 - Load (TFMX)",
+    "SAM_T2_LOAD":           "Turrican 2 - Load (Samples .sam)",
+    "TFMX_T2_DESERT":        "Turrican 2 - World 1 - Desert (TFMX)",
+    "SAM_T2_DESERT":         "Turrican 2 - World 1 - Desert (Samples .sam)",
+    "TFMX_T2_CAVE":          "Turrican 2 - World 2 - Cave (TFMX)",
+    "SAM_T2_CAVE":           "Turrican 2 - World 2 - Cave (Samples .sam)",
+    "TFMX_T3_LOADER":        "Turrican 3 - Loader (TFMX)",
+    "SAM_T3_LOADER":         "Turrican 3 - Loader (Samples .sam)",
+    "TFMX_T3_FACTORY":       "Turrican 3 - World 1 - Factory (TFMX)",
+    "SAM_T3_FACTORY":        "Turrican 3 - World 1 - Factory (Samples .sam)",
+    "TFMX_T3_DUNGEONS":      "Turrican 3 - World 2 - Dungeons (TFMX)",
+    "SAM_T3_DUNGEONS":       "Turrican 3 - World 2 - Dungeons (Samples .sam)",
+    "MOD_WC_REGULARCOMBAT":  "Wing Commander - Regular Combat (MOD)",
     "MOD_WC_OVERALLVICTORY": "Wing Commander - Overall Victory (MOD)",
 }
 
@@ -46,8 +69,9 @@ def main():
     lines.append(" * embedded_music.h - GENERIERT von tools/gen_embedded_music.py")
     lines.append(" * NICHT HANDEDITIEREN. Tracks aendern -> Generator laufen lassen.")
     lines.append(" *")
-    lines.append(" * In-EXE-Musik (PC-GUI): Intro (Apidya Meadow + Original-Samples),")
-    lines.append(" * Jukebox-Fallback. static const -> kein Heap, Amiga-INCBIN-kompatibel.")
+    lines.append(" * In-EXE-Musik: Chris Huelsbeck TFMX Master-Soundtracks mit Multi-Subsongs")
+    lines.append(" * (Turrican 2, Turrican 3, Apidya) + Wing Commander MODs.")
+    lines.append(" * static const -> kein Heap, Amiga-INCBIN-kompatibel, null Disk-Zugriffe.")
     lines.append(" * ========================================================================= */")
     lines.append("#ifndef EMBEDDED_MUSIC_H")
     lines.append("#define EMBEDDED_MUSIC_H")
