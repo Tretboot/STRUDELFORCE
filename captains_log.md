@@ -306,3 +306,28 @@
 - **Verifikation:** Build 7/7 (keine neuen Warnings). Neues Pixel-Regression-Tool `tools/visual_check.py` (Dump + C-Logik-Spiegelung): **13/13 Checks OK** — Terrassen (43.909 px, 23 Stufen-Wechsel), Silhouetten (51.923 px), Rohre (29.057 px), 3 Panels, segmentierte Bars, altes HUD weg, alle 5 Biome erzeugen unterschiedliche Terrassen. Endless-Run unverändert (score=35150/wave=12 bei 2500 Ticks), Phase-1 43/43, Embedded 3/3.
 - **Wichtig für P0-Level-Design:** Terrain/Silhouetten/Rohre sind aktuell **dekorativ** — der Spieler läuft auf fester Bodenzeile. Wenn echte Plattformen/Kollision kommen, muss die Geometrie als Daten in den Core (Chunk-Generator) wandern, dann rendert der GUI-Player dieselben Daten statt Renderer-Magie.
 - **Dump-Harness-Wissen:** `--dump N <basis>` schreibt 1 PPM je 10 Frames (→ N/10 Dateien); Segmente prozentual: 0-20 Menü, 20-40 Loading (Game startet bei 20%), 40-75 Gameplay, 75 Low-HP, 90 Game-Over-Overlay (0.22-Dimming über allem → Frame-Auswahl für Pixel-Checks beachten).
+
+---
+
+## Iteration 6 / Release v0.3.0 (2026-10-28): Das Grosse Turrican-2 & Shader-Update
+
+### 1. Bren McGuire Amiga Sprites & Platform-Alignment
+- **Original-Sprites:** 14 Frames aus Turrican.gif in 16-Farben-Amiga-Palette eingebunden.
+- **Stand- & Sprung-Posen:** Trennung zwischen dynamischer Luft-Heldenpose (Frame 0) und geerdetem, aufrechtem Stand (Frame 5). 13-Frame Run-Cycle bei 25 FPS.
+- **Pixel-Perfect Alignment:** Beseitigung des 20px-Versatzes (oot_y = ground_y - 20 - pw_y). Spielfigur steht nun millimetergenau auf Plattformen und Boden, ohne einzusinken.
+- **Steuerbarer Laser:** 360-Grad Drehstrahl mit invertierter Y-Achse fuer authentisches Turrican-2-Feeling.
+
+### 2. RetroArch Shader Studio & Audiokulisse
+- **Shader Engine:** 6 Profile (Bilinear, Sony Trinitron Aperture Grille, Commodore 1084S, CRT Easymode, Arcade Vignette), Phosphor-Triaden, Scanlines, Bloom und Vollbild (Alt+Enter / F11).
+- **Hintergrundmusik:** New Order - Blue Monday (Chiptune MOD) laeuft durchgehend im Shader-Studio, waehrend Einstellungswechsel ueber dezente Klicksounds bestaetigt werden.
+- **Amiga Cracktros:** Zufalls-Cracktro MOD (Fairlight, Skid Row, Paradox) beim Start.
+
+### 3. Zerstörbare Kisten & Dynamisches Loot
+- **Headbutt-Mechanik:** Kisten springen beim Kopfstoss von unten hoch (bounce_y) und nehmen Schaden.
+- **Loot-Drops & Debris:** Bouncing Turrican Diamanten (+1000 Punkte), Waffen- und Schild-Upgrades, schwebende Punkteanzeigen und farbige Voxel-Partikel.
+
+### 4. Controller & Multi-Platform
+- **PS4 / DirectInput & XInput:** Parallele Erkennung ueber alle 16 DirectInput-Slots und 4 XInput-Slots.
+- **Build & Budget:** strudelforce.exe wiegt exakt 1.010 KB (1,034,240 Bytes) und bleibt strikt unter dem 1-MB-Budget.
+- **Test-Suite & Determinismus:** 38/38 Tests PASS, Core-Sim Deterministischer Score 35150 PASS, tools/selftest.py 0 FAILS.
+- **Build Guide & v0.4.0 Roadmap:** Vollstaendiger Leitfaden fuer Windows, Linux und Amiga in BUILD_GUIDE.md und RELEASE_0.3.0.md hinterlegt.

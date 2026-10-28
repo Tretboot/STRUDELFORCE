@@ -1126,6 +1126,7 @@ static const EmbeddedTrack EMBEDDED_TRACKS[] = {
     { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 9: Skidrow Cracktro (MOD) */
     { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 10: Paradox Cracktro (MOD) */
 };
+#define TRACK_IDX_BLUE_MONDAY 6
 #define TRACK_IDX_FAIRLIGHT 8
 #define TRACK_IDX_SKIDROW   9
 #define TRACK_IDX_PARADOX   10
@@ -1704,7 +1705,7 @@ static void menu_activate(void) {
         case 0: start_game(MODE_CAMPAIGN); break;
         case 1: start_game(MODE_ENDLESS);  break;
         case 2: s_gui_state = GUI_STATE_MANUAL; s_manual_page = 0; break;
-        case 3: s_current_tab = TAB_GRAPHICS; s_gui_state = GUI_STATE_STUDIO; break;
+        case 3: s_current_tab = TAB_GRAPHICS; s_gui_state = GUI_STATE_STUDIO; music_play_embedded(TRACK_IDX_BLUE_MONDAY, 0); break;
         case 4: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
         case 5: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
         case 6: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
@@ -1743,8 +1744,14 @@ static void pad_menu_poll(void) {
             music_play_embedded(0, 0);
         }
     } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
-        if (s_pad.up && !prev_up) s_gfx_setting_cursor = (s_gfx_setting_cursor + 6) % 7;
-        if (s_pad.down && !prev_down) s_gfx_setting_cursor = (s_gfx_setting_cursor + 1) % 7;
+        if (s_pad.up && !prev_up) {
+            s_gfx_setting_cursor = (s_gfx_setting_cursor + 6) % 7;
+            sound_sfx_hit(&s_audio, 0);
+        }
+        if (s_pad.down && !prev_down) {
+            s_gfx_setting_cursor = (s_gfx_setting_cursor + 1) % 7;
+            sound_sfx_hit(&s_audio, 0);
+        }
         int dir = 0;
         if (s_pad.left && !prev_left) dir = -1;
         if (s_pad.right && !prev_right) dir = 1;
@@ -1755,9 +1762,11 @@ static void pad_menu_poll(void) {
             else if (s_gfx_setting_cursor == 3) s_bloom_mode = (s_bloom_mode + 4 + dir) % 4;
             else if (s_gfx_setting_cursor == 4) s_bilinear = !s_bilinear;
             else if (s_gfx_setting_cursor == 6) s_color_mode = (s_color_mode + 4 + dir) % 4;
+            sound_sfx_pickup(&s_audio);
         }
         if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
             s_gui_state = GUI_STATE_MENU;
+            music_play_embedded(0, 0);
         }
     }
     prev_up = s_pad.up; prev_down = s_pad.down;
@@ -2696,12 +2705,12 @@ static void draw_player_warrior(int px, int foot_y, int facing, int on_ground, i
     /* ================= 2. ECHTER AMIGA BREN MCGUIRE SPRITE (TURRICAN.GIF) ================= */
     int frame_idx = 0;
     if (!on_ground) {
-        frame_idx = 4; /* Jump / Airborne Frame mit ausgestreckten Beinen */
+        frame_idx = 0; /* Hero Jump / Airborne Frame (Heldenpose) */
     } else if (running) {
         /* 13-Frame Run-Cycle bei 25 FPS (50Hz / 2) */
         frame_idx = 1 + ((s_gui_frame / 2) % 13);
     } else {
-        frame_idx = 0; /* Hero Standing Idle Pose */
+        frame_idx = 5; /* Grounded Standing Idle Pose (Aufrechter Stand mit beiden Fuessen am Boden) */
     }
 
     draw_turrican_sprite(px, foot_y, frame_idx, facing);
@@ -3075,7 +3084,7 @@ static void render_tab_game(void) {
     for (int i = 0; i < 74; i++) {
         int bx = (i * 20 - g_off) % WIN_W;
         if (bx < 0) bx += WIN_W;
-        draw_voxel(bx, ground_y, 18, 12, 3, bp->ground);
+        draw_voxel(bx, ground_y - 20, 18, 20, 3, bp->ground);
     }
 
     /* Untergrund: pro Biome eigene Terrassen + Strata-Linien */
@@ -3085,7 +3094,7 @@ static void render_tab_game(void) {
         uint32_t top_hi = rgb_mod(bp->ground, 1.7f);
         for (int x = 0; x < WIN_W; x++) {
             int h = terrain_height(bi, floor_div(x + g_off, 24));
-            int top = ground_y + 12;
+            int top = ground_y;
             int yy;
             draw_rect(x, top, 1, h, under);
             draw_rect(x, top, 1, 2, top_hi);
@@ -3186,7 +3195,7 @@ static void render_tab_game(void) {
 
     /* 1. Spieler: Zweibeiniger Cyber-Krieger (Turrican Bren McGuire) */
     int p_screen_x = pw_x - cam_x;
-    int foot_y = ground_y - pw_y;
+    int foot_y = ground_y - 20 - pw_y;
     if (p_screen_x < 40) p_screen_x = 40;
     if (p_screen_x > WIN_W - 80) p_screen_x = WIN_W - 80;
 
@@ -3890,6 +3899,7 @@ static void render_tab_graphics(void) {
 
     draw_string(rx + 20, py0 + 40, "Pixel-Struktur reagiert sofort auf Shader!", 0xFFE040, 1);
     draw_string(rx + 20, py0 + 60, "Scanlines, Phosphormaske & Bloom live aktiv.", 0x80D0FF, 1);
+    draw_string(lx + 20, ly + lh - 25, "HINTERGRUNDMUSIK: New Order - Blue Monday (Chiptune MOD)", 0x80FFA0, 1);
 
     /* Footer Navigation */
     draw_rect(0, WIN_H - 45, WIN_W, 45, 0x000A14);
@@ -4112,13 +4122,17 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 if (s_gui_state != GUI_STATE_LOADING) {
                     s_current_tab = t;
                     s_gui_state = GUI_STATE_STUDIO;
+                    if (t == TAB_GRAPHICS) music_play_embedded(TRACK_IDX_BLUE_MONDAY, 0);
                 }
                 return 0;
             }
             /* ESC: aus jedem aktiven Zustand zurueck zum Hauptmenue */
             if (wParam == VK_ESCAPE) {
-                if (s_gui_state != GUI_STATE_MENU && s_gui_state != GUI_STATE_LOADING)
+                if (s_gui_state != GUI_STATE_MENU && s_gui_state != GUI_STATE_LOADING) {
+                    int was_graphics = (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS);
                     s_gui_state = GUI_STATE_MENU;
+                    if (was_graphics) music_play_embedded(0, 0);
+                }
                 return 0;
             }
 
@@ -4126,12 +4140,12 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
                 if (wParam == VK_UP) {
                     s_gfx_setting_cursor = (s_gfx_setting_cursor + 6) % 7;
-                    music_play_embedded(4, ((s_gfx_setting_cursor * 3 + 2) % 20) + 1);
+                    sound_sfx_hit(&s_audio, 0);
                     return 0;
                 }
                 if (wParam == VK_DOWN) {
                     s_gfx_setting_cursor = (s_gfx_setting_cursor + 1) % 7;
-                    music_play_embedded(4, ((s_gfx_setting_cursor * 3 + 2) % 20) + 1);
+                    sound_sfx_hit(&s_audio, 0);
                     return 0;
                 }
                 if (wParam == VK_LEFT || wParam == VK_RIGHT) {
@@ -4143,7 +4157,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     else if (s_gfx_setting_cursor == 4) s_bilinear = !s_bilinear;
                     else if (s_gfx_setting_cursor == 5) toggle_fullscreen(hWnd);
                     else if (s_gfx_setting_cursor == 6) s_color_mode = (s_color_mode + 4 + dir) % 4;
-                    music_play_embedded(4, ((s_gfx_setting_cursor * 3 + dir + 1) % 20) + 1);
+                    sound_sfx_pickup(&s_audio);
                     return 0;
                 }
             }
