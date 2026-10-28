@@ -826,7 +826,7 @@ void tfmx_player_render(TfmxPlayer *p, int16_t *out, int n) {
             }
         }
         acc = (acc * p->master) >> 6;
-        acc = (acc * 3) >> 2;
+        acc = (acc * 5) >> 2;
         out[i] = (int16_t)(acc > 32767 ? 32767 : (acc < -32768 ? -32768 : acc));
     }
 }

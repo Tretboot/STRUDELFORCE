@@ -34,6 +34,8 @@
 #include "soundgodizer.h"
 #include "retro_font.h"
 #include "embedded_music.h"
+#include "turrican_sprites.h"
+#include "embedded_credits.h"
 
 #define GAME_VERSION "0.3.0"
 
@@ -67,7 +69,9 @@ typedef enum {
 
 static GuiState s_gui_state = GUI_STATE_MENU;
 static int s_menu_index = 0;        /* aktiver Hauptmenue-Punkt */
-static int s_active_mode = MODE_ENDLESS; /* letzter gewaehlter Modus (F1/ENTER-Neustart) */
+static int s_active_mode = MODE_CAMPAIGN; /* Hauptmodus: Kampagne mit 5 Welten & Plattformen */
+static int s_exp_mode = 0;           /* 0 = Integrierte ROM-Tracks (Default!), 1 = Lokale Dateien/Ordner */
+static int s_exp_rom_selected = 0;   /* ausgewaehlter Track im ROM-Browser */
 static int s_pad_connected = 0;      /* XInput Gamepad 0 verbunden (Footer-Anzeige) */
 static int s_pad_start_prev = 0;     /* XInput Start-Button (Edge-Erkennung) */
 static int s_loading_ticks = 0;     /* Loading-Screen-Fortschritt (50Hz-Ticks) */
@@ -150,6 +154,7 @@ static int  s_strudel_cursor = 48;
 static char s_status_msg[128] = "STRUDELFORCE Studio bereit. Druecke F1 fuer Spiel, F2 fuer Explorer.";
 
 static void credits_init(void);
+static void draw_turrican_sprite(int px, int foot_y, int frame_idx, int facing);
 
 /* --- Grafik-Hilfsfunktionen --- */
 
@@ -494,8 +499,9 @@ static const EmbeddedTrack EMBEDDED_TRACKS[] = {
     { EMB_TFMX_T3_LOADER_NAME,        EMB_TFMX_T3_LOADER,        sizeof(EMB_TFMX_T3_LOADER),        EMB_SAM_T3_LOADER,        sizeof(EMB_SAM_T3_LOADER),        0 }, /* 5: Turrican 3 Loader */
     { EMB_TFMX_T3_FACTORY_NAME,       EMB_TFMX_T3_FACTORY,       sizeof(EMB_TFMX_T3_FACTORY),       EMB_SAM_T3_FACTORY,       sizeof(EMB_SAM_T3_FACTORY),       0 }, /* 6: Turrican 3 Factory */
     { EMB_TFMX_T3_DUNGEONS_NAME,      EMB_TFMX_T3_DUNGEONS,      sizeof(EMB_TFMX_T3_DUNGEONS),      EMB_SAM_T3_DUNGEONS,      sizeof(EMB_SAM_T3_DUNGEONS),      0 }, /* 7: Turrican 3 Dungeons */
-    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                      0,                                1 }, /* 8: Wing Commander Combat */
-    { EMB_MOD_WC_OVERALLVICTORY_NAME, EMB_MOD_WC_OVERALLVICTORY, sizeof(EMB_MOD_WC_OVERALLVICTORY), NULL,                      0,                                1 }, /* 9: Wing Commander Victory */
+    { EMB_TFMX_APIDYA_TECHNO_NAME,    EMB_TFMX_APIDYA_TECHNO,    sizeof(EMB_TFMX_APIDYA_TECHNO),    EMB_SAM_APIDYA_TECHNO,    sizeof(EMB_SAM_APIDYA_TECHNO),    0 }, /* 8: Apidya Techno */
+    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                      0,                                1 }, /* 9: Wing Commander Combat */
+    { EMB_MOD_WC_OVERALLVICTORY_NAME, EMB_MOD_WC_OVERALLVICTORY, sizeof(EMB_MOD_WC_OVERALLVICTORY), NULL,                      0,                                1 }, /* 10: Wing Commander Victory */
 };
 #define EMBEDDED_TRACK_COUNT (int)(sizeof(EMBEDDED_TRACKS) / sizeof(EMBEDDED_TRACKS[0]))
 
@@ -577,9 +583,9 @@ static void music_subsong_next(void) {
 static char s_frankenstein_status[128] = "";
 
 static void explorer_shuffle_swap(void) {
-    int tfx_idx = rand() % 8; /* 0..7 sind die 8 TFMX-Tracks */
-    int sam_idx = rand() % 8;
-    if (sam_idx == tfx_idx) sam_idx = (tfx_idx + 1 + (rand() % 7)) % 8;
+    int tfx_idx = rand() % 9; /* 0..8 sind die 9 TFMX-Tracks inkl. Apidya Techno */
+    int sam_idx = rand() % 9;
+    if (sam_idx == tfx_idx) sam_idx = (tfx_idx + 1 + (rand() % 8)) % 9;
 
     const EmbeddedTrack *trk_tfx = &EMBEDDED_TRACKS[tfx_idx];
     const EmbeddedTrack *trk_sam = &EMBEDDED_TRACKS[sam_idx];
@@ -600,6 +606,27 @@ static void explorer_shuffle_swap(void) {
 }
 
 /* --- Explorer Dateiverwaltung --- */
+
+static void explorer_play_rom(int rom_idx) {
+    if (rom_idx < 0 || rom_idx >= EMBEDDED_TRACK_COUNT) return;
+    const EmbeddedTrack *et = &EMBEDDED_TRACKS[rom_idx];
+    s_exp_playing = 0;
+    s_exp_mod_playing = 0;
+    if (et->is_mod) {
+        if (mod_player_load_mem(&s_exp_mod, et->tfx, et->tfx_len)) {
+            mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+            s_exp_mod_playing = 1;
+            snprintf(s_status_msg, sizeof(s_status_msg), "ROM-MOD: %s", et->name);
+        }
+    } else {
+        if (tfmx_player_load_mem(&s_exp_tfmx, et->tfx, et->tfx_len, (const int8_t *)et->sam, et->sam_len)) {
+            s_exp_subsong = 0;
+            tfmx_player_start(&s_exp_tfmx, 0);
+            s_exp_playing = 1;
+            snprintf(s_status_msg, sizeof(s_status_msg), "ROM-TFMX: %s (%d Subs)", et->name, s_exp_tfmx.num_subsongs);
+        }
+    }
+}
 
 static void explorer_scan_directory(const char *dir_path) {
     WIN32_FIND_DATAA fd;
@@ -866,9 +893,16 @@ static const char *god_mode_name(void) {
 
 static void start_game(int mode) {
     core_init(&s_game, GAME_SEED);
-    s_game.mode = (uint8_t)mode;         /* MODE_ENDLESS (Default) oder MODE_CAMPAIGN */
+    s_game.mode = (uint8_t)mode;         /* MODE_ENDLESS oder MODE_CAMPAIGN */
     s_game.campaign_level = 1;
-    core_setup_platforms(&s_game);
+    if (mode == MODE_ENDLESS) {
+        /* Fuer interaktives Spiel in der GUI: Plattformen aus Biom 0 bereitstellen */
+        s_game.mode = MODE_CAMPAIGN;
+        core_setup_platforms(&s_game);
+        s_game.mode = MODE_ENDLESS;
+    } else {
+        core_setup_platforms(&s_game);
+    }
     s_active_mode = mode;
     s_pad_start_prev = 0;
     s_mod_active = 0;
@@ -1048,6 +1082,16 @@ static void render_state_menu(void) {
         draw_string(WIN_W / 2 - (int)strlen(hint) * 4, 505, hint, 0xFFFF8020, 1);
     }
 
+    /* Bren McGuire Menu Banner Animation (laeuft ueber den Menue-Boden) */
+    {
+        int travel_w = WIN_W + 120;
+        int m_step = (s_gui_frame * 3) % (travel_w * 2);
+        int m_facing = (m_step < travel_w) ? 1 : -1;
+        int m_x = (m_facing > 0) ? (m_step - 60) : (WIN_W + 60 - (m_step - travel_w));
+        int m_frame = 1 + ((s_gui_frame / 2) % 13);
+        draw_turrican_sprite(m_x, WIN_H - 74, m_frame, m_facing);
+    }
+
     /* Steuerung & Footer */
     draw_rect(0, WIN_H - 70, WIN_W, 46, 0x000A0402);
     draw_string(40, WIN_H - 62, "WASD/PFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  M MUSIK  ESC MENUE", 0xFF707070, 1);
@@ -1216,8 +1260,8 @@ static int  s_credit_speed = 1;
 static int  s_credit_music_step = 0;
 static int  s_credit_music_timer = 0;
 static int  s_credit_fanfare_played = 0;
-static const int s_credit_playlist[] = { 4, 3, 7, 6, 0, 2 }; /* Cave, Desert, Dungeons, Factory, Meadow, Loader */
-#define CREDIT_PLAYLIST_COUNT 6
+static const int s_credit_playlist[] = { 4, 3, 7, 6, 8, 0, 2 }; /* Cave, Desert, Dungeons, Factory, Techno, Meadow, Loader */
+#define CREDIT_PLAYLIST_COUNT 7
 
 static void credits_add_line(const char *text) {
     if (s_credit_line_count >= MAX_CREDIT_LINES) return;
@@ -1356,12 +1400,23 @@ static void credits_init(void) {
     credits_add_line("    [ ESC / ENTER ]   Zurueck zum Hauptmenue");
     credits_add_line("");
 
-    if (!credits_append_file("WORKFLOW_ESSAY.md", "    TEIL 1: WORKFLOW ESSAY (ARCHITEKTUR & FORSCHUNGSBERICHT)")) {
-        credits_append_file("docs/WORKFLOW_ESSAY.md", "    TEIL 1: WORKFLOW ESSAY (ARCHITEKTUR & FORSCHUNGSBERICHT)");
+    /* Vollstaendige In-Binary Einbettung des Workflow Essays */
+    credits_add_line("============================================================================");
+    credits_add_line("    TEIL 1: WORKFLOW ESSAY (ARCHITEKTUR & FORSCHUNGSBERICHT)");
+    credits_add_line("============================================================================");
+    credits_add_line("");
+    for (int i = 0; i < EMBEDDED_WORKFLOW_ESSAY_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 50; i++) {
+        credits_add_line(EMBEDDED_WORKFLOW_ESSAY[i]);
     }
 
-    if (!credits_append_file("captains_log.md", "    TEIL 2: CAPTAIN'S LOG (FORSCHUNGSTAGEBUCH)")) {
-        credits_append_file("docs/captains_log.md", "    TEIL 2: CAPTAIN'S LOG (FORSCHUNGSTAGEBUCH)");
+    /* Vollstaendige In-Binary Einbettung des Captains Logs */
+    credits_add_line("");
+    credits_add_line("============================================================================");
+    credits_add_line("    TEIL 2: CAPTAIN'S LOG (FORSCHUNGSTAGEBUCH)");
+    credits_add_line("============================================================================");
+    credits_add_line("");
+    for (int i = 0; i < EMBEDDED_CAPTAINS_LOG_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 50; i++) {
+        credits_add_line(EMBEDDED_CAPTAINS_LOG[i]);
     }
 
     credits_add_line("");
@@ -1454,17 +1509,32 @@ static void render_state_credits(void) {
         if (!l || l[0] == '\0') continue;
 
         if (strncmp(l, "===", 3) == 0) {
-            draw_rect(panel_x + 20, ly + 9, panel_w - 40, 2, 0xFF4080);
+            draw_rect(panel_x + 10, ly + 9, panel_w - 20, 2, 0x00A0FF);
+            draw_rect(panel_x + 10, ly + 11, panel_w - 20, 1, 0xFF4080);
         } else if (strncmp(l, "    TEIL", 8) == 0 || strncmp(l, "                         STRUDELFORCE", 37) == 0) {
+            draw_rect(panel_x + 10, ly - 2, panel_w - 20, 22, 0x002040);
+            draw_rect_outline(panel_x + 10, ly - 2, panel_w - 20, 22, 0x00FFFF);
             draw_title(WIN_W / 2, ly, l, 1);
+        } else if (l[0] == '#' && l[1] == '#') {
+            draw_rect(panel_x + 16, ly - 1, panel_w - 32, 18, 0x001830);
+            draw_string(panel_x + 24, ly, l, 0xFFD700, 1);
+            draw_rect(panel_x + 24, ly + 15, panel_w - 48, 1, 0xFF8000);
         } else if (l[0] == '#') {
-            draw_string(panel_x + 30, ly, l, 0xFFFF40, 1);
+            draw_rect(panel_x + 10, ly - 2, panel_w - 20, 22, 0x002850);
+            draw_rect_outline(panel_x + 10, ly - 2, panel_w - 20, 22, 0x00FFFF);
+            draw_string(panel_x + 20, ly + 2, l, 0x00FFFF, 1);
+        } else if (l[0] == '>') {
+            draw_rect(panel_x + 20, ly, 4, 16, 0x00FFFF);
+            draw_string(panel_x + 32, ly, l + 1, 0x60D0FF, 1);
+        } else if (l[0] == '-' || l[0] == '*') {
+            draw_rect(panel_x + 22, ly + 6, 4, 4, 0xFF8000);
+            draw_string(panel_x + 32, ly, l, 0xE0E0E0, 1);
         } else if (strncmp(l, "    ", 4) == 0) {
-            draw_string(panel_x + 40, ly, l, 0xFF60D0FF, 1);
+            draw_string(panel_x + 36, ly, l, 0x80D8FF, 1);
         } else if (l[0] >= 'A' && l[0] <= 'Z' && strchr(l, ':') != NULL) {
-            draw_string(panel_x + 30, ly, l, 0xFFFFA040, 1);
+            draw_string(panel_x + 24, ly, l, 0xFFFFA040, 1);
         } else {
-            draw_string(panel_x + 30, ly, l, 0xFFD0D8E0, 1);
+            draw_string(panel_x + 24, ly, l, 0xD0D8E0, 1);
         }
     }
 
@@ -1569,16 +1639,46 @@ static void render_game_over_overlay(void) {
 }
 
 /* ============================================================================
+ * ECHTER AMIGA BREN MCGUIRE SPRITE-RENDERER (TURRICAN.GIF)
+ * 14 Frames @ 64x74, 16 Farben Amiga OCS/AGA, Horizontale Spiegelung bei Links-Lauf
+ * ============================================================================ */
+static void draw_turrican_sprite(int px, int foot_y, int frame_idx, int facing) {
+    if (frame_idx < 0 || frame_idx >= TURRICAN_FRAME_COUNT) frame_idx = 0;
+    const uint8_t *frame = TURRICAN_FRAMES[frame_idx];
+    int mirror = (facing < 0);
+    int top_x = px - TURRICAN_FRAME_W / 2;
+    int top_y = foot_y - TURRICAN_FRAME_H + 2; /* 2px Einbettung in den Boden */
+
+    for (int y = 0; y < TURRICAN_FRAME_H; y++) {
+        int sy = top_y + y;
+        if (sy < 0 || sy >= WIN_H) continue;
+        int row_offset = y * (TURRICAN_FRAME_W / 2);
+
+        for (int x = 0; x < TURRICAN_FRAME_W; x++) {
+            int src_x = mirror ? (TURRICAN_FRAME_W - 1 - x) : x;
+            int byte_idx = row_offset + (src_x >> 1);
+            uint8_t b = frame[byte_idx];
+            uint8_t col_idx = (src_x & 1) ? (b & 0x0F) : ((b >> 4) & 0x0F);
+
+            if (col_idx != 0) {
+                int sx = top_x + x;
+                if (sx >= 0 && sx < WIN_W) {
+                    s_pixels[sy * WIN_W + sx] = TURRICAN_PALETTE[col_idx];
+                }
+            }
+        }
+    }
+}
+
+/* ============================================================================
  * TURRICAN BREN MCGUIRE: ZWEIBEINIGER CYBER-KRIEGER & MORPH-RAD (2.5D VOXEL)
  * ============================================================================ */
 static void draw_player_warrior(int px, int foot_y, int facing, int on_ground, int running, int morphing) {
     int dir = (facing < 0) ? -1 : 1;
     uint32_t armor_main = 0x3858B8;  /* Turrican Stahlblau */
     uint32_t armor_hi   = 0x6088D8;  /* Glanzkante */
-    uint32_t armor_dark = 0x203860;  /* Schattenkante */
     uint32_t chassis    = 0x182430;  /* Gelenke / Chassis */
     uint32_t visor_c    = 0x00E0FF;  /* HUD-Visor Cyan */
-    uint32_t core_c     = ((s_gui_frame / 8) % 2 == 0) ? 0x00FF80 : 0x40FFA0; /* Reaktorkern */
 
     if (morphing) {
         /* ================= 1. MORPH-BALL (TURRICAN GYRO-RAD) ================= */
@@ -1613,91 +1713,18 @@ static void draw_player_warrior(int px, int foot_y, int facing, int on_ground, i
         return;
     }
 
-    /* ================= 2. ZWEIBEINIGER CYBER-KRIEGER (TURRICAN BREN MCGUIRE) ================= */
-    int idle_bob = (on_ground && !running) ? (int)(sinf((float)s_gui_frame * 0.12f) * 1.5f) : 0;
-    int top_y = foot_y - 40 + idle_bob;
-
-    /* --- HELM & VISOR (Kopf) --- */
-    int head_x = px - 6;
-    int head_y = top_y;
-    draw_voxel(head_x, head_y, 13, 10, 3, armor_main);
-    /* Helm-Kamm / Antenne */
-    draw_rect(head_x + 3, head_y - 3, 5, 3, armor_hi);
-    /* Leuchtender Cyan-Visor (in Blickrichtung orientiert) */
-    int vx = (dir > 0) ? (head_x + 6) : (head_x + 1);
-    draw_rect(vx, head_y + 3, 6, 3, visor_c);
-    set_pixel(vx + (dir > 0 ? 3 : 1), head_y + 3, 0xFFFFFF);
-
-    /* --- TORSO & BRUSTPANZER (mit Fusionsreaktor) --- */
-    int chest_x = px - 8;
-    int chest_y = head_y + 10;
-    draw_voxel(chest_x, chest_y, 16, 14, 4, armor_main);
-    /* Schulterstueck (Puldron) */
-    draw_voxel(px + (dir > 0 ? 5 : -11), chest_y - 1, 7, 7, 2, armor_hi);
-    /* Zentraler Fusionskern */
-    draw_rect(chest_x + 5, chest_y + 4, 6, 6, core_c);
-    set_pixel(chest_x + 7, chest_y + 6, 0xFFFFFF);
-    /* Guertel / Hueftgelenk */
-    draw_rect(chest_x + 2, chest_y + 13, 12, 3, chassis);
-
-    /* --- BEINE & MAGNET-STIEFEL (Run-Cycle / Jump / Idle) --- */
-    int leg_y = chest_y + 15;
+    /* ================= 2. ECHTER AMIGA BREN MCGUIRE SPRITE (TURRICAN.GIF) ================= */
+    int frame_idx = 0;
     if (!on_ground) {
-        /* Sprung-Pose: Beine angewinkelt mit Boot-Thruster Jets */
-        draw_voxel(px - dir * 6, leg_y, 6, 8, 2, armor_dark);
-        draw_voxel(px - dir * 4, leg_y + 6, 7, 5, 2, armor_main);
-        draw_voxel(px + dir * 2, leg_y + 2, 7, 10, 2, armor_main);
-        draw_voxel(px + dir * 4, leg_y + 10, 8, 5, 2, armor_hi);
-
-        /* Boot-Thruster Flame / Partikel nach unten */
-        for (int th = 0; th < 2; th++) {
-            int tx = px - 2 + th * 6;
-            int ty = leg_y + 15 + ((s_gui_frame * 2 + th * 4) % 6);
-            set_pixel(tx, ty, 0x00FFFF);
-            set_pixel(tx, ty + 1, 0xFFFFFF);
-        }
+        frame_idx = 4; /* Jump / Airborne Frame mit ausgestreckten Beinen */
     } else if (running) {
-        /* 4-Frame mechanischer Run-Cycle */
-        int r_frame = (s_gui_frame / 4) % 4;
-        int l1_off = 0, l2_off = 0;
-        int l1_h = 13, l2_h = 13;
-
-        if (r_frame == 0) { l1_off = 5 * dir; l2_off = -5 * dir; l1_h = 13; l2_h = 11; }
-        else if (r_frame == 1) { l1_off = 2 * dir; l2_off = -1 * dir; l1_h = 14; l2_h = 13; }
-        else if (r_frame == 2) { l1_off = -5 * dir; l2_off = 5 * dir; l1_h = 11; l2_h = 13; }
-        else { l1_off = -1 * dir; l2_off = 2 * dir; l1_h = 13; l2_h = 14; }
-
-        /* Vorderes Bein */
-        draw_voxel(px - 3 + l1_off, leg_y, 6, l1_h, 2, armor_main);
-        draw_rect(px - 4 + l1_off, leg_y + l1_h - 3, 8, 3, armor_hi);
-
-        /* Hinteres Bein */
-        draw_voxel(px - 3 + l2_off, leg_y, 6, l2_h, 2, armor_dark);
-        draw_rect(px - 4 + l2_off, leg_y + l2_h - 3, 8, 3, armor_hi);
-
-        /* Staub-Partikel bei Bodenkontakt */
-        if (r_frame == 0 || r_frame == 2) {
-            set_pixel(px - dir * 10, foot_y - 2, 0x8098A8);
-            set_pixel(px - dir * 13, foot_y - 3, 0x607888);
-        }
+        /* 13-Frame Run-Cycle bei 25 FPS (50Hz / 2) */
+        frame_idx = 1 + ((s_gui_frame / 2) % 13);
     } else {
-        /* Idle-Stance: Sicherer Stand auf beiden Stiefeln */
-        draw_voxel(px - 7, leg_y, 6, 14, 2, armor_dark);
-        draw_rect(px - 8, foot_y - 3, 8, 3, armor_hi);
-        draw_voxel(px + 1, leg_y, 6, 14, 2, armor_main);
-        draw_rect(px, foot_y - 3, 8, 3, armor_hi);
+        frame_idx = 0; /* Hero Standing Idle Pose */
     }
 
-    /* --- SCHWERE ARM-KANONE (BLASTER) --- */
-    int gun_y = chest_y + 4;
-    int gun_x = px + (dir > 0 ? 4 : -18);
-    draw_voxel(gun_x, gun_y, 16, 7, 3, 0x243242);
-    /* Lauf & Muendungs-Ring */
-    int tip_gx = (dir > 0) ? (gun_x + 14) : gun_x;
-    draw_rect(tip_gx, gun_y + 1, 3, 5, 0x00E0FF);
-    set_pixel(tip_gx + 1, gun_y + 2, 0xFFFFFF);
-    /* Energieleitung auf der Waffe */
-    draw_line(gun_x + 3, gun_y - 1, gun_x + 11, gun_y - 1, 0x00B0E0);
+    draw_turrican_sprite(px, foot_y, frame_idx, facing);
 }
 
 /* ============================================================================
@@ -2100,24 +2127,49 @@ static void render_tab_game(void) {
         uint32_t slab_col = rgb_mod(bp->pillar, 0.85f);
         uint32_t post_col = rgb_mod(bp->pillar, 0.50f);
 
+        uint32_t underside = rgb_mod(bp->pillar, 0.40f);
+        uint32_t steel_brace = 0x283848;
+
         for (int pi = 0; pi < s_game.platform_count; pi++) {
             const LevelPlatform *pl = &s_game.platforms[pi];
             int pl_sx = (int)(((int64_t)pl->x * 20) >> 16) - cam_x;
             int pl_sw = (int)(((int64_t)pl->w * 20) >> 16);
             int pl_sy = ground_y - 20 - (int)(((int64_t)pl->y * 16) >> 16);
-            int pl_sh = 10;
+            int pl_sh = 14; /* Solide 14px Dicke nach Turrican 2 Benchmark */
 
-            /* Tragsaeulen / Stuetzpfeiler nach unten */
-            draw_rect(pl_sx + 6, pl_sy + pl_sh, 6, ground_y - (pl_sy + pl_sh), post_col);
-            draw_rect_outline(pl_sx + 6, pl_sy + pl_sh, 6, ground_y - (pl_sy + pl_sh), 0x001020);
-            draw_rect(pl_sx + pl_sw - 12, pl_sy + pl_sh, 6, ground_y - (pl_sy + pl_sh), post_col);
-            draw_rect_outline(pl_sx + pl_sw - 12, pl_sy + pl_sh, 6, ground_y - (pl_sy + pl_sh), 0x001020);
+            /* Diagonale Stahl-Tragwinkel (Cantilever Brackets) unter den Enden (nur 12px tief!) */
+            for (int br = 0; br < 10; br++) {
+                draw_rect(pl_sx + 4 + br, pl_sy + pl_sh + br, 3, 2, steel_brace);
+                draw_rect(pl_sx + pl_sw - 7 - br, pl_sy + pl_sh + br, 3, 2, steel_brace);
+            }
 
-            /* Plattform-Slab (2.5D extrudiert) */
+            /* Plattform-Slab (2.5D extrudiert mit Face-Shading) */
             draw_voxel(pl_sx, pl_sy, pl_sw, pl_sh, 4, slab_col);
+            draw_rect(pl_sx + 2, pl_sy + pl_sh - 4, pl_sw - 4, 3, underside);
 
-            /* Leuchtender Neon-Kantenstreifen */
+            /* Leuchtender Neon-Kantenstreifen & Amiga Bevel-Glow */
             draw_rect(pl_sx + 2, pl_sy - 1, pl_sw - 4, 2, neon);
+            set_pixel(pl_sx + 1, pl_sy - 1, 0xFFFFFF);
+            set_pixel(pl_sx + pl_sw - 2, pl_sy - 1, 0xFFFFFF);
+
+            /* Turrican 2 Mystery [?] Item-Bloecke auf ausgewaehlten Plattformen */
+            if (pi % 3 == 1) {
+                int bx = pl_sx + pl_sw / 2 - 9;
+                int by = pl_sy - 22;
+                draw_voxel(bx, by, 18, 18, 3, 0xD09010);
+                draw_rect_outline(bx, by, 18, 18, 0xFFE040);
+                draw_string(bx + 5, by + 4, "?", 0xFFFFFF, 1);
+            }
+
+            /* Schwebende Amiga-Diamanten auf den hoechsten Plattformen */
+            if (pi % 4 == 2 && pl->y > FIX(10)) {
+                int dx = pl_sx + 12;
+                int dy = pl_sy - 20 + (int)(sinf((float)s_gui_frame * 0.15f + (float)pi) * 3.0f);
+                draw_rect(dx + 3, dy, 4, 2, 0x00FFFF);
+                draw_rect(dx + 1, dy + 2, 8, 3, 0x80FFFF);
+                draw_rect(dx + 2, dy + 5, 6, 2, 0x00C0FF);
+                draw_rect(dx + 4, dy + 7, 2, 2, 0x0060C0);
+            }
 
             /* The Great Bath (Biom 1): Altar-Truhe auf Plattform 8 */
             if (bi == 1 && pi == 8) {
@@ -2158,8 +2210,8 @@ static void render_tab_game(void) {
 
     int dir = (s_game.facing < 0) ? -1 : 1;
     int is_running = (s_game.pvx != 0);
-    int nozzle_x = p_screen_x + (dir > 0 ? 18 : -18);
-    int nozzle_y = foot_y - 24;
+    int nozzle_x = p_screen_x + (dir > 0 ? 22 : -22);
+    int nozzle_y = s_game.morphing ? (foot_y - 12) : (foot_y - 38);
 
     /* Respawn-Gnadenfrist: Spieler blinkt (Unverwundbar-Optik) */
     int player_visible = (s_game.respawn_timer == 0) || ((s_game.respawn_timer / 5) % 2 == 0);
@@ -2333,35 +2385,77 @@ static void render_tab_explorer(void) {
     draw_rect(20, 50, 460, WIN_H - 90, 0x001020);
     draw_rect_outline(20, 50, 460, WIN_H - 90, 0x004080);
 
-    char title_buf[300];
-    snprintf(title_buf, sizeof(title_buf), "ORDNER: %s", s_current_dir);
-    draw_string(32, 62, title_buf, 0x00FFFF, 1);
-    draw_rect(20, 78, 460, 1, 0x004080);
+    /* Top Mode Toggle Tabs */
+    int t1_active = (s_exp_mode == 0);
+    int t2_active = (s_exp_mode == 1);
+    draw_rect(24, 54, 218, 26, t1_active ? 0x004080 : 0x001830);
+    draw_rect_outline(24, 54, 218, 26, t1_active ? 0x00FFFF : 0x003060);
+    draw_string(30, 62, "[*] 11 INTEGR. ROM-TRACKS", t1_active ? 0x00FFFF : 0x80A0C0, 1);
 
-    /* Freie Pfadeingabe: typen + EINGABE (auch absolute Pfaede z.B. D:\MUSIC) */
-    {
+    draw_rect(246, 54, 230, 26, t2_active ? 0x004080 : 0x001830);
+    draw_rect_outline(246, 54, 230, 26, t2_active ? 0x00FFFF : 0x003060);
+    draw_string(254, 62, "[DIR] LOKALE DATEIEN", t2_active ? 0x00FFFF : 0x80A0C0, 1);
+
+    draw_rect(20, 84, 460, 1, 0x004080);
+
+    if (s_exp_mode == 0) {
+        /* Modus 0: 11 Eingebaute ROM-Soundtracks direkt listen */
+        draw_string(28, 90, "EINGEBAUTE SOUNDTRACKS IM BINARY (CHRIS HUELSBECK):", 0xFFE040, 1);
+        int y = 112;
+        for (int i = 0; i < EMBEDDED_TRACK_COUNT; i++) {
+            const EmbeddedTrack *et = &EMBEDDED_TRACKS[i];
+            int selected = (i == s_exp_rom_selected);
+            int is_curr_playing = 0;
+            if (et->is_mod && s_exp_mod_playing && strcmp(s_exp_mod.title, et->name) == 0) is_curr_playing = 1;
+            if (!et->is_mod && s_exp_playing && strcmp(s_exp_tfmx.title, et->name) == 0) is_curr_playing = 1;
+
+            if (selected) {
+                draw_rect(22, y - 2, 456, 18, 0x003060);
+                draw_rect_outline(22, y - 2, 456, 18, 0x00A0FF);
+            }
+
+            char line[80];
+            snprintf(line, sizeof(line), "%s [%s] %-32s",
+                     selected ? ">" : " ",
+                     et->is_mod ? "MOD " : "TFMX",
+                     et->name);
+            uint32_t c = is_curr_playing ? 0x00FF80 : (selected ? 0x00FFFF : (et->is_mod ? 0xA0FFA0 : 0xE0E0E0));
+            draw_string(26, y, line, c, 1);
+            if (is_curr_playing) {
+                draw_string(410, y, "PLAY", 0x00FF80, 1);
+            }
+            y += 20;
+        }
+        draw_rect(20, WIN_H - 85, 460, 1, 0x004080);
+        draw_string(28, WIN_H - 78, "[KLICK/ENTER] Spielen   [PFEIL] Waehlen   [TAB] Modus", 0x80C0E0, 1);
+    } else {
+        /* Modus 1: Lokale Dateien & Ordner auf der Festplatte */
+        char title_buf[300];
+        snprintf(title_buf, sizeof(title_buf), "ORDNER: %s", s_current_dir);
+        draw_string(28, 88, title_buf, 0x00FFFF, 1);
+
         char pathline[280];
         snprintf(pathline, sizeof(pathline), "PFAD: %s", s_exp_path_buf);
-        draw_string(30, 82, pathline, 0xFF80FF80, 1);
+        draw_string(28, 102, pathline, 0xFF80FF80, 1);
         if ((s_gui_frame / 15) % 2 == 0)
-            set_pixel(30 + (int)strlen(pathline) * 8 + 2, 86, 0x00FF80); /* Blink-Cursor */
-    }
+            set_pixel(28 + (int)strlen(pathline) * 8 + 2, 106, 0x00FF80);
 
-    int y = 108;
-    int items_per_page = 24;
-    for (int i = s_explorer_scroll; i < s_num_explorer_items && i < s_explorer_scroll + items_per_page; i++) {
-        const ExplorerItem *item = &s_explorer_items[i];
-        int selected = (i == s_explorer_selected);
+        int y = 120;
+        int items_per_page = 22;
+        for (int i = s_explorer_scroll; i < s_num_explorer_items && i < s_explorer_scroll + items_per_page; i++) {
+            const ExplorerItem *item = &s_explorer_items[i];
+            int selected = (i == s_explorer_selected);
 
-        if (selected) {
-            draw_rect(22, y - 2, 456, 16, 0x003060);
+            if (selected) {
+                draw_rect(22, y - 2, 456, 16, 0x003060);
+            }
+
+            uint32_t c = item->is_dir ? 0xFFE040 : 0xE0E0E0;
+            char line[80];
+            snprintf(line, sizeof(line), "%s %-36s", item->is_dir ? "[DIR]" : "     ", item->name);
+            draw_string(28, y, line, c, 1);
+            y += 18;
         }
-
-        uint32_t c = item->is_dir ? 0xFFE040 : 0xE0E0E0;
-        char line[80];
-        snprintf(line, sizeof(line), "%s %-36s", item->is_dir ? "[DIR]" : "     ", item->name);
-        draw_string(30, y, line, c, 1);
-        y += 18;
     }
 
     /* Rechtes Panel: Jukebox & Analyzer */
@@ -2680,6 +2774,27 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             /* --- Studio-Tab (Jukebox / Strudel / Intro) --- */
             if (s_gui_state != GUI_STATE_STUDIO) return 0;
 
+            if (s_current_tab == TAB_EXPLORER) {
+                if (wParam == VK_TAB) {
+                    s_exp_mode = !s_exp_mode;
+                    return 0;
+                }
+                if (s_exp_mode == 0) {
+                    if (wParam == VK_UP) {
+                        s_exp_rom_selected = (s_exp_rom_selected + EMBEDDED_TRACK_COUNT - 1) % EMBEDDED_TRACK_COUNT;
+                        return 0;
+                    }
+                    if (wParam == VK_DOWN) {
+                        s_exp_rom_selected = (s_exp_rom_selected + 1) % EMBEDDED_TRACK_COUNT;
+                        return 0;
+                    }
+                    if (wParam == VK_RETURN) {
+                        explorer_play_rom(s_exp_rom_selected);
+                        return 0;
+                    }
+                }
+            }
+
             if (s_current_tab == TAB_STRUDEL) {
                 int ctrl = (GetKeyState(VK_CONTROL) & 0x8000);
                 if (ctrl && (wParam == 'V' || wParam == 'v')) {
@@ -2918,7 +3033,22 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             }
             /* Explorer Klicks */
             if (s_current_tab == TAB_EXPLORER) {
-                if (mx >= 20 && mx <= 480 && my >= 108 && my <= WIN_H - 50) {
+                /* Modus Toggle Tabs */
+                if (my >= 54 && my <= 80) {
+                    if (mx >= 24 && mx <= 242) { s_exp_mode = 0; return 0; }
+                    if (mx >= 246 && mx <= 476) { s_exp_mode = 1; return 0; }
+                }
+                if (s_exp_mode == 0) {
+                    /* ROM-Tracks Klick */
+                    if (mx >= 20 && mx <= 480 && my >= 112 && my <= 112 + EMBEDDED_TRACK_COUNT * 20) {
+                        int r_idx = (my - 112) / 20;
+                        if (r_idx >= 0 && r_idx < EMBEDDED_TRACK_COUNT) {
+                            s_exp_rom_selected = r_idx;
+                            explorer_play_rom(s_exp_rom_selected);
+                            return 0;
+                        }
+                    }
+                } else if (mx >= 20 && mx <= 480 && my >= 108 && my <= WIN_H - 50) {
                     int clicked_idx = s_explorer_scroll + (my - 108) / 18;
                     if (clicked_idx >= 0 && clicked_idx < s_num_explorer_items) {
                         s_explorer_selected = clicked_idx;

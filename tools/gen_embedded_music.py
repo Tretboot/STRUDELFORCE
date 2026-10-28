@@ -22,6 +22,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACKS = [
     ("TFMX_APIDYA_MEADOW",   "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx"),
     ("SAM_APIDYA_MEADOW",    "sam",  "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.sam"),
+    ("TFMX_APIDYA_TECHNO",   "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 4 - Techno.tfx"),
+    ("SAM_APIDYA_TECHNO",    "sam",  "TFMX Professional/Apidya/Apidya - Ongame 4 - Techno.sam"),
     ("TFMX_APIDYA_BOSSPANIC", "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 5 - Bosspanic.tfx"),
     ("SAM_APIDYA_BOSSPANIC",  "sam",  "TFMX Professional/Apidya/Apidya - Ongame 5 - Bosspanic.sam"),
     ("TFMX_T2_LOAD",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - Load.tfx"),
@@ -43,6 +45,8 @@ TRACKS = [
 NAMES = {
     "TFMX_APIDYA_MEADOW":    "Apidya - Ongame 1 - Meadow (TFMX)",
     "SAM_APIDYA_MEADOW":     "Apidya - Ongame 1 - Meadow (Samples .sam)",
+    "TFMX_APIDYA_TECHNO":    "Apidya - Ongame 4 - Techno (TFMX)",
+    "SAM_APIDYA_TECHNO":     "Apidya - Ongame 4 - Techno (Samples .sam)",
     "TFMX_APIDYA_BOSSPANIC": "Apidya - Ongame 5 - Bosspanic (TFMX)",
     "SAM_APIDYA_BOSSPANIC":  "Apidya - Ongame 5 - Bosspanic (Samples .sam)",
     "TFMX_T2_LOAD":          "Turrican 2 - Load (TFMX)",
