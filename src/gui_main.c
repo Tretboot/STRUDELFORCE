@@ -90,7 +90,7 @@ static int s_bilinear = 1;          /* Bilineare Glaettung */
 static int s_color_mode = 0;        /* 0=OCS 32, 1=AGA 256, 2=CYBER, 3=GREEN MONO */
 static int s_gfx_setting_cursor = 0;/* Cursor im Grafik-Studio */
 
-#define MENU_ITEM_COUNT 8
+#define MENU_ITEM_COUNT 9
 static const char *menu_labels[MENU_ITEM_COUNT] = {
     "KAMPAGNE (5 LEVELS)",
     "ENDLOS ROGUELIKE",
@@ -99,7 +99,8 @@ static const char *menu_labels[MENU_ITEM_COUNT] = {
     "TFMX JUKEBOX",
     "STRUDEL STUDIO",
     "AMIGA CRACKTRO",
-    "CREDITS"
+    "CREDITS",
+    "BEENDEN (QUIT)"
 };
 
 /* --- Unified Gamepad Struct (Unterstuetzt PS4/DirectInput & Xbox/XInput) --- */
@@ -122,85 +123,128 @@ static UnifiedGamepad s_pad = {0};
 static void poll_gamepad(void) {
     memset(&s_pad, 0, sizeof(s_pad));
 
-    /* 1. XInput Versuch (Xbox Controller) */
-    XINPUT_STATE xs;
-    if (XInputGetState(0, &xs) == ERROR_SUCCESS) {
-        s_pad.connected = 1;
-        strncpy(s_pad.name, "XBOX CONTROLLER", sizeof(s_pad.name) - 1);
-        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) || xs.Gamepad.sThumbLY > 5000) s_pad.up = 1;
-        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) || xs.Gamepad.sThumbLY < -5000) s_pad.down = 1;
-        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) || xs.Gamepad.sThumbLX < -5000) s_pad.left = 1;
-        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) || xs.Gamepad.sThumbLX > 5000) s_pad.right = 1;
+    /* 1. WinMM DirectInput (PS4 DualShock 4, PS5, USB-Pads ueber alle Joystick-IDs 0..15) */
+    UINT num_devs = joyGetNumDevs();
+    if (num_devs > 16) num_devs = 16;
+    for (UINT id = 0; id < num_devs; id++) {
+        JOYINFOEX jex;
+        memset(&jex, 0, sizeof(jex));
+        jex.dwSize = sizeof(jex);
+        jex.dwFlags = JOY_RETURNALL;
 
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) s_pad.btn_fire = 1;
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) s_pad.btn_beam = 1;
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_B) s_pad.btn_morph = 1;
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) s_pad.btn_weapsw = 1;
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) s_pad.btn_lb = 1;
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) s_pad.btn_rb = 1;
-        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_START) s_pad.btn_start = 1;
-        if (xs.Gamepad.bRightTrigger > 30) s_pad.btn_beam = 1;
+        if (joyGetPosEx(id, &jex) == JOYERR_NOERROR) {
+            s_pad.connected = 1;
+            JOYCAPSW caps;
+            if (joyGetDevCapsW(id, &caps, sizeof(caps)) == JOYERR_NOERROR && caps.wNumButtons >= 14) {
+                strncpy(s_pad.name, "PS4 DUALSHOCK 4", sizeof(s_pad.name) - 1);
+            } else if (s_pad.name[0] == '\0') {
+                strncpy(s_pad.name, "USB GAMEPAD", sizeof(s_pad.name) - 1);
+            }
 
-        if (abs(xs.Gamepad.sThumbRX) > 4000 || abs(xs.Gamepad.sThumbRY) > 4000) {
-            s_pad.stick_rx = (float)xs.Gamepad.sThumbRX / 32768.0f;
-            s_pad.stick_ry = -(float)xs.Gamepad.sThumbRY / 32768.0f;
+            int lx = (int)jex.dwXpos - 32768;
+            int ly = (int)jex.dwYpos - 32768;
+            if (lx < -8000) s_pad.left = 1;
+            if (lx >  8000) s_pad.right = 1;
+            if (ly < -8000) s_pad.up = 1;
+            if (ly >  8000) s_pad.down = 1;
+
+            if (jex.dwPOV != 65535) {
+                if (jex.dwPOV >= 31500 || jex.dwPOV <= 4500)  s_pad.up = 1;
+                if (jex.dwPOV >= 4500  && jex.dwPOV <= 13500) s_pad.right = 1;
+                if (jex.dwPOV >= 13500 && jex.dwPOV <= 22500) s_pad.down = 1;
+                if (jex.dwPOV >= 22500 && jex.dwPOV <= 31500) s_pad.left = 1;
+            }
+
+            DWORD b = jex.dwButtons;
+            if (b & 0x0002) s_pad.btn_fire = 1;   /* Cross / X (Feuer / OK) */
+            if (b & 0x0001) s_pad.btn_beam = 1;   /* Square (Drehlaser / Blitzstrahl) */
+            if (b & 0x0004) s_pad.btn_morph = 1;  /* Circle (Morph / Ducken) */
+            if (b & 0x0008) s_pad.btn_weapsw = 1; /* Triangle (Waffe) */
+            if (b & 0x0010) s_pad.btn_lb = 1;     /* L1 (Sekundaer / Prev) */
+            if (b & 0x0020) s_pad.btn_rb = 1;     /* R1 (Waffe / Next) */
+            if (b & 0x0080) s_pad.btn_beam = 1;   /* R2 (Drehlaser / Blitzstrahl) */
+            if (b & 0x0200) s_pad.btn_start = 1;  /* Options / Start (Menue) */
+
+            /* Rechter Analogstick: Z-Achse = X, R-Achse = Y */
+            int rx = (int)jex.dwZpos - 32768;
+            int ry = (int)jex.dwRpos - 32768;
+            if (abs(rx) > 5000 || abs(ry) > 5000) {
+                s_pad.stick_rx = (float)rx / 32768.0f;
+                s_pad.stick_ry = (float)ry / 32768.0f; /* ry < 0 = OBEN auf Screen! */
+            }
         }
-        s_pad_connected = 1;
-        return;
     }
 
-    /* 2. WinMM DirectInput Versuch (PS4 DualShock 4 / PS5 DualSense / Generic USB) */
-    JOYINFOEX jex;
-    memset(&jex, 0, sizeof(jex));
-    jex.dwSize = sizeof(jex);
-    jex.dwFlags = JOY_RETURNALL;
+    /* 2. XInput Abfrage (Xbox Controller 0..3) */
+    for (DWORD xi = 0; xi < 4; xi++) {
+        XINPUT_STATE xs;
+        if (XInputGetState(xi, &xs) == ERROR_SUCCESS) {
+            s_pad.connected = 1;
+            if (s_pad.name[0] == '\0') {
+                strncpy(s_pad.name, "XBOX CONTROLLER", sizeof(s_pad.name) - 1);
+            }
+            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) || xs.Gamepad.sThumbLY > 5000) s_pad.up = 1;
+            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) || xs.Gamepad.sThumbLY < -5000) s_pad.down = 1;
+            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) || xs.Gamepad.sThumbLX < -5000) s_pad.left = 1;
+            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) || xs.Gamepad.sThumbLX > 5000) s_pad.right = 1;
 
-    MMRESULT res = joyGetPosEx(JOYSTICKID1, &jex);
-    if (res != JOYERR_NOERROR) res = joyGetPosEx(JOYSTICKID2, &jex);
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) s_pad.btn_fire = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) s_pad.btn_beam = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_B) s_pad.btn_morph = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) s_pad.btn_weapsw = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) s_pad.btn_lb = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) s_pad.btn_rb = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_START) s_pad.btn_start = 1;
+            if (xs.Gamepad.bRightTrigger > 30) s_pad.btn_beam = 1;
 
-    if (res == JOYERR_NOERROR) {
-        s_pad.connected = 1;
-        strncpy(s_pad.name, "PS4 / USB GAMEPAD", sizeof(s_pad.name) - 1);
-
-        int lx = (int)jex.dwXpos - 32768;
-        int ly = (int)jex.dwYpos - 32768;
-        if (lx < -8000) s_pad.left = 1;
-        if (lx >  8000) s_pad.right = 1;
-        if (ly < -8000) s_pad.up = 1;
-        if (ly >  8000) s_pad.down = 1;
-
-        if (jex.dwPOV != 65535) {
-            if (jex.dwPOV >= 31500 || jex.dwPOV <= 4500) s_pad.up = 1;
-            if (jex.dwPOV >= 4500  && jex.dwPOV <= 13500) s_pad.right = 1;
-            if (jex.dwPOV >= 13500 && jex.dwPOV <= 22500) s_pad.down = 1;
-            if (jex.dwPOV >= 22500 && jex.dwPOV <= 31500) s_pad.left = 1;
+            if (abs(xs.Gamepad.sThumbRX) > 4000 || abs(xs.Gamepad.sThumbRY) > 4000) {
+                s_pad.stick_rx = (float)xs.Gamepad.sThumbRX / 32768.0f;
+                s_pad.stick_ry = -(float)xs.Gamepad.sThumbRY / 32768.0f; /* Invert to match screen Y! */
+            }
         }
-
-        DWORD b = jex.dwButtons;
-        if (b & 0x0002) s_pad.btn_fire = 1;   /* Cross / X */
-        if (b & 0x0001) s_pad.btn_beam = 1;   /* Square */
-        if (b & 0x0004) s_pad.btn_morph = 1;  /* Circle */
-        if (b & 0x0008) s_pad.btn_weapsw = 1; /* Triangle */
-        if (b & 0x0010) s_pad.btn_lb = 1;     /* L1 */
-        if (b & 0x0020) s_pad.btn_rb = 1;     /* R1 */
-        if (b & 0x0080) s_pad.btn_beam = 1;   /* R2 */
-        if (b & 0x0200) s_pad.btn_start = 1;  /* Options / Start */
-
-        int rx = (int)jex.dwZpos - 32768;
-        int ry = (int)jex.dwRpos - 32768;
-        if (abs(rx) > 6000 || abs(ry) > 6000) {
-            s_pad.stick_rx = (float)rx / 32768.0f;
-            s_pad.stick_ry = (float)ry / 32768.0f;
-        }
-        s_pad_connected = 1;
-        return;
     }
-
-    s_pad_connected = 0;
+    s_pad_connected = s_pad.connected;
 }
 
-/* --- Destructible Mystery Blocks [?] (Turrican 2 Item-Kisten zum Zerschiessen) --- */
+/* --- Destructible Mystery Blocks [?] & Turrican 2 Dynamic Loot Engine --- */
 #define MAX_BLOCKS 24
+#define MAX_LOOT_ITEMS 32
+#define MAX_DEBRIS_PARTS 64
+#define MAX_FLOATING_TEXTS 16
+
+typedef enum {
+    LOOT_NONE = 0,
+    LOOT_DIAMOND,
+    LOOT_WEAPON_POWER,
+    LOOT_SHIELD_BOOST
+} LootKind;
+
+typedef struct {
+    int active;
+    LootKind kind;
+    int world_x, world_y;
+    int vx, vy;
+    int life;
+} GuiLootItem;
+
+typedef struct {
+    int active;
+    int world_x, world_y;
+    int vx, vy;
+    int life;
+    uint32_t color;
+    int size;
+} GuiDebrisPart;
+
+typedef struct {
+    int active;
+    int screen_x, screen_y;
+    int vy;
+    int life;
+    char text[32];
+    uint32_t color;
+} GuiFloatingText;
+
 typedef struct {
     int active;
     int hp;
@@ -211,10 +255,6 @@ typedef struct {
     int world_y;
     int bounce_y;
     int destroyed;
-    int crystal_active;
-    int crystal_x;
-    int crystal_y;
-    int crystal_vy;
 } DestructibleBox;
 
 #define GAME_SEED 1234u              /* fixer Seed: deterministische Läufe */
@@ -240,13 +280,112 @@ static int          s_god_mode = 0;
 static int16_t      s_god_buf[WIN_AUDIO_BUF_SAMPLES * 2]; /* Stereo-Ausgabe */
 
 static DestructibleBox s_boxes[MAX_BLOCKS];
-static int s_box_count = 0;
+static int             s_box_count = 0;
+static GuiLootItem     s_loot[MAX_LOOT_ITEMS];
+static GuiDebrisPart   s_debris[MAX_DEBRIS_PARTS];
+static GuiFloatingText s_float_texts[MAX_FLOATING_TEXTS];
+static uint8_t         s_prev_enemy_active[MAX_ENEMIES];
+
+static void spawn_floating_text(int sx, int sy, const char *txt, uint32_t col) {
+    for (int i = 0; i < MAX_FLOATING_TEXTS; i++) {
+        if (!s_float_texts[i].active) {
+            s_float_texts[i].active = 1;
+            s_float_texts[i].screen_x = sx;
+            s_float_texts[i].screen_y = sy;
+            s_float_texts[i].vy = -2;
+            s_float_texts[i].life = 45;
+            s_float_texts[i].color = col;
+            strncpy(s_float_texts[i].text, txt, sizeof(s_float_texts[i].text) - 1);
+            break;
+        }
+    }
+}
+
+static void spawn_debris(int wx, int wy, int count, uint32_t col) {
+    for (int i = 0; i < count; i++) {
+        for (int k = 0; k < MAX_DEBRIS_PARTS; k++) {
+            if (!s_debris[k].active) {
+                s_debris[k].active = 1;
+                s_debris[k].world_x = wx;
+                s_debris[k].world_y = wy;
+                int ang = (i * 360 / count) + (s_gui_frame % 30);
+                float rad = (float)ang * 0.0174533f;
+                float spd = 2.0f + (float)(i % 5) * 1.2f;
+                s_debris[k].vx = (int)(cosf(rad) * spd * 65536.0f);
+                s_debris[k].vy = (int)(sinf(rad) * spd * 65536.0f) + (2 << 16);
+                s_debris[k].life = 35 + (i % 20);
+                s_debris[k].color = (i & 1) ? col : 0xFFFFFF;
+                s_debris[k].size = (i % 3 == 0) ? 3 : 2;
+                break;
+            }
+        }
+    }
+}
+
+static void spawn_loot(int wx, int wy, LootKind kind, int vx, int vy) {
+    for (int i = 0; i < MAX_LOOT_ITEMS; i++) {
+        if (!s_loot[i].active) {
+            s_loot[i].active = 1;
+            s_loot[i].kind = kind;
+            s_loot[i].world_x = wx;
+            s_loot[i].world_y = wy;
+            s_loot[i].vx = vx;
+            s_loot[i].vy = vy;
+            s_loot[i].life = 500;
+            break;
+        }
+    }
+}
+
+static void shatter_box(DestructibleBox *dbox) {
+    dbox->destroyed = 1;
+    dbox->active = 0;
+    int wx = dbox->world_x << 16;
+    int wy = dbox->world_y << 16;
+
+    spawn_debris(wx, wy, 16, 0xE0A020);
+    spawn_debris(wx, wy, 8, 0xFFFFFF);
+
+    spawn_loot(wx, wy, LOOT_DIAMOND, -1 << 16, 4 << 16);
+    spawn_loot(wx, wy, LOOT_DIAMOND,  0,        5 << 16);
+    spawn_loot(wx, wy, LOOT_DIAMOND,  1 << 16, 4 << 16);
+
+    if ((s_gui_frame & 1) == 0) {
+        spawn_loot(wx, wy, LOOT_WEAPON_POWER, ((s_gui_frame & 2) ? 1 : -1) << 15, 3 << 16);
+    } else {
+        spawn_loot(wx, wy, LOOT_SHIELD_BOOST, ((s_gui_frame & 2) ? 1 : -1) << 15, 3 << 16);
+    }
+
+    s_game.score += 500;
+    sound_sfx_crystal(&s_audio);
+}
 
 static void init_level_boxes(void) {
     int pi;
     s_box_count = 0;
+    memset(s_loot, 0, sizeof(s_loot));
+    memset(s_debris, 0, sizeof(s_debris));
+    memset(s_float_texts, 0, sizeof(s_float_texts));
+    memset(s_prev_enemy_active, 0, sizeof(s_prev_enemy_active));
+
+    /* Schwebende Boxen in Bodennhe fuer Kopfsprung (Headbutt von unten!) */
+    static const int ground_box_x[] = { 8, 14, 22, 28, 36, 44, 52, 60 };
+    for (int gi = 0; gi < 8 && s_box_count < MAX_BLOCKS; gi++) {
+        DestructibleBox *b = &s_boxes[s_box_count++];
+        b->active = 1;
+        b->hp = 4;
+        b->max_hp = 4;
+        b->hit_flash = 0;
+        b->plat_idx = -1;
+        b->world_x = ground_box_x[gi];
+        b->world_y = 3;  /* 3 Einheiten hoch: exakt mit Kopfsprung erreichbar! */
+        b->bounce_y = 0;
+        b->destroyed = 0;
+    }
+
+    /* Boxen auf erhoehten Plattformen */
     for (pi = 0; pi < s_game.platform_count && s_box_count < MAX_BLOCKS; pi++) {
-        if (pi % 3 == 1) {
+        if (pi % 2 == 1) {
             DestructibleBox *b = &s_boxes[s_box_count++];
             b->active = 1;
             b->hp = 4;
@@ -254,13 +393,9 @@ static void init_level_boxes(void) {
             b->hit_flash = 0;
             b->plat_idx = pi;
             b->world_x = (int)(s_game.platforms[pi].x >> 16) + (int)(s_game.platforms[pi].w >> 17);
-            b->world_y = (int)(s_game.platforms[pi].y >> 16) + 1;
+            b->world_y = (int)(s_game.platforms[pi].y >> 16) + 3;
             b->bounce_y = 0;
             b->destroyed = 0;
-            b->crystal_active = 0;
-            b->crystal_x = 0;
-            b->crystal_y = 0;
-            b->crystal_vy = 0;
         }
     }
 }
@@ -306,7 +441,7 @@ static uint8_t      s_exp_mod_buf[128 * 1024];
 static int          s_exp_mod_playing = 0;
 
 /* Strudel Studio State */
-static char s_strudel_input[512] = "<c3 eb3 g3 f3> [g3 c4 eb4 g4]*2 <ab2 bb2 c3 d3>";
+static char s_strudel_input[512] = "<c3 eb3 g3 c4> [g3 c4 g3 c4] <bb2 f3 g3 d4> [eb3 g3 c4 eb4]*2";
 static int  s_strudel_cursor = 48;
 static char s_status_msg[128] = "STRUDELFORCE Studio bereit. Druecke F1 fuer Spiel, F2 fuer Explorer.";
 
@@ -1573,7 +1708,9 @@ static void menu_activate(void) {
         case 4: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
         case 5: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
         case 6: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
-        default: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
+        case 7: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
+        case 8: PostQuitMessage(0); break;
+        default: break;
     }
 }
 
@@ -1848,9 +1985,18 @@ static void render_state_menu(void) {
     int i;
     clear_screen(0x000000);
 
-    /* Dezent schwebende Copper-Baender (Amiga-Vertikalverlauf) */
-    for (i = 0; i < 100; i++) {
-        int y1 = 60 + i * 7;
+    /* OBERE AMIGA INFO-LEISTE (Kein Ueberlappen, sofort sichtbar!) */
+    draw_rect(0, 0, WIN_W, 30, 0x000B18);
+    draw_rect_outline(0, 0, WIN_W, 30, 0x003A70);
+    draw_string(20, 9, "[>] INTRO: APIDYA MEADOW (16.5 kHz PAULA STEREO)", 0x40E0FF, 1);
+    draw_string(WIN_W / 2 - 140, 9, "[F11 / ALT+ENTER] VOLLBILD", 0xFFFF40, 1);
+    char pad_buf[64];
+    snprintf(pad_buf, sizeof(pad_buf), "PAD: %s", s_pad_connected ? s_pad.name : "TASTATUR / XINPUT");
+    draw_string(WIN_W - 320, 9, pad_buf, s_pad_connected ? 0x00FF80 : 0x708090, 1);
+
+    /* Schwebende Copper-Baender (Amiga-Vertikalverlauf) */
+    for (i = 0; i < 90; i++) {
+        int y1 = 40 + i * 7;
         if (y1 >= WIN_H - 70) break;
         uint32_t c = ((uint32_t)(8 + (i & 1) * 6) << 16) |
                      ((uint32_t)(2 + (i & 3)) << 8) |
@@ -1858,47 +2004,46 @@ static void render_state_menu(void) {
         draw_rect(0, y1, WIN_W, 2, c);
     }
 
-    /* Turrican-2-Silhouette: Chrome-Tempest-Tuerme am Menue-Boden (dezent) */
+    /* Turrican-2-Silhouette: Chrome-Tempest-Tuerme am Menue-Boden */
     for (i = 0; i < 12; i++) {
         draw_bg_structure(i * 140, WIN_H - 70, i, 0, 0x101A28);
     }
 
-    /* Titel mit Schlagschatten + 2 Tonen */
-    draw_title(WIN_W / 2, 90, "STRUDELFORCE", 4);
+    /* Titel mit Schlagschatten */
+    draw_title(WIN_W / 2, 72, "STRUDELFORCE", 4);
     {
         char sub2[128];
         const char *sub = "A TURRICAN TRIBUTE FOR THE AMIGA 500";
-        draw_string(WIN_W / 2 - (int)strlen(sub) * 4, 175, sub, 0xFF905030, 1);
-        snprintf(sub2, sizeof(sub2), "VERSION " GAME_VERSION "  -  CYBER PAULA ENGINE   |   CONTROLLER: %s",
-                 s_pad_connected ? "VERBUNDEN" : "KEINER ANGESCHLOSSEN");
-        draw_string(WIN_W / 2 - (int)strlen(sub2) * 4, 190, sub2, 0xFF707070, 1);
+        draw_string(WIN_W / 2 - (int)strlen(sub) * 4, 126, sub, 0xFF905030, 1);
+        snprintf(sub2, sizeof(sub2), "VERSION " GAME_VERSION "  -  CYBER PAULA AUDIO  |  RETROARCH ENGINE");
+        draw_string(WIN_W / 2 - (int)strlen(sub2) * 4, 140, sub2, 0xFF6080A0, 1);
     }
 
-    /* Menue-Liste (Auswahl: Orange-Rot-Block, groessere Schrift, Pfeil) */
+    /* Menue-Liste (9 Items, sauber gestaffelt ab Y = 168, je 31px Hoehe) */
     for (i = 0; i < MENU_ITEM_COUNT; i++) {
-        int y = 268 + i * 40;
+        int y = 168 + i * 31;
         int sel = (i == s_menu_index);
         int lx = WIN_W / 2 - 170;
         if (sel) {
             int k;
-            draw_rect(lx - 20, y - 8, 380, 36, 0xFF2A0800);
-            draw_rect_outline(lx - 20, y - 8, 380, 36, 0xFFFF8020);
+            draw_rect(lx - 20, y - 6, 380, 28, 0xFF2A0800);
+            draw_rect_outline(lx - 20, y - 6, 380, 28, 0xFFFF8020);
             draw_char(lx - 26, y, '>', 0xFFFFA040, 2);
             draw_char_2tone(lx + 8, y, menu_labels[i][0], 0xFFFFC0A0, 0xFFFF9060, 2);
             for (k = 1; menu_labels[i][k]; k++)
                 draw_char(lx + 8 + k * 16, y, menu_labels[i][k], 0xFFFFFF, 2);
         } else {
-            draw_string(lx + 8, y + 4, menu_labels[i], 0xFF8A4A30, 1);
+            draw_string(lx + 8, y + 2, menu_labels[i], (i == 8) ? 0xFF8080 : 0xFF8A4A30, 1);
         }
     }
 
-    /* Blinkender Eingabe-Hinweis */
+    /* Blinkender Eingabe-Hinweis unter der Liste (Y = 460) */
     if ((s_gui_frame / 25) % 2 == 0) {
-        const char *hint = "[ UP/DOWN ] WAHLEN   [ ENTER ] AUSFUEHREN";
-        draw_string(WIN_W / 2 - (int)strlen(hint) * 4, 505, hint, 0xFFFF8020, 1);
+        const char *hint = "[ UP/DOWN / D-PAD ] WAHLEN   [ ENTER / CROSS (A) ] AUSFUEHREN";
+        draw_string(WIN_W / 2 - (int)strlen(hint) * 4, 460, hint, 0xFFFF8020, 1);
     }
 
-    /* Bren McGuire Menu Banner Animation (laeuft ueber den Menue-Boden) */
+    /* Bren McGuire Menu Banner Animation */
     {
         int travel_w = WIN_W + 120;
         int m_step = (s_gui_frame * 3) % (travel_w * 2);
@@ -1911,8 +2056,8 @@ static void render_state_menu(void) {
     /* Steuerung & Footer */
     draw_rect(0, WIN_H - 70, WIN_W, 46, 0x000A0402);
     draw_string(40, WIN_H - 62, "WASD/PFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  H HANDBUCH", 0xFF80A0C0, 1);
-    draw_string(40, WIN_H - 44, "[F7] CRT SCANLINES  [F8] BLOOM & GLOW  [F11 / ALT+ENTER] VOLLBILD  [F5] SOUNDGODIZER", 0xFFFF8020, 1);
-    draw_string(40, WIN_H - 26, "(C) 2026 FRANK MITZKATIS & AI CODING AGENTS  -  CREDITS FUER DIE VOLLE LISTE", 0xFF505050, 1);
+    draw_string(40, WIN_H - 44, "[F7] SHADER MODUS  [F8] BLOOM  [F11 / ALT+ENTER] VOLLBILD  [F5] SOUNDGODIZER  [ESC] ZURUECK/QUIT", 0xFFFF8020, 1);
+    draw_string(40, WIN_H - 26, "(C) 2026 FRANK MITZKATIS & AI CODING AGENTS  -  BEENDEN IM MENUE ODER PER ESC", 0xFF505050, 1);
 
     render_status_bar();
 }
@@ -2997,108 +3142,6 @@ static void render_tab_game(void) {
                 set_pixel(nv + 1, pl_sy + 4, 0x203040);
             }
 
-            /* Turrican 2 Mystery [?] Item-Bloecke (Zerschiessbar!) */
-            if (pi % 3 == 1) {
-                int bx = pl_sx + pl_sw / 2 - 10;
-                int by = pl_sy - 24;
-                DestructibleBox *dbox = NULL;
-                for (int dbi = 0; dbi < s_box_count; dbi++) {
-                    if (s_boxes[dbi].plat_idx == pi) { dbox = &s_boxes[dbi]; break; }
-                }
-
-                if (dbox && !dbox->destroyed) {
-                    int dy = by - dbox->bounce_y;
-                    if (dbox->bounce_y > 0) dbox->bounce_y--;
-
-                    if (dbox->hit_flash > 0) {
-                        draw_voxel(bx, dy, 20, 20, 4, 0xFFFFFF);
-                        dbox->hit_flash--;
-                    } else {
-                        draw_voxel(bx, dy, 20, 20, 4, 0xD49A24);
-                        draw_rect_outline(bx, dy, 20, 20, 0xFFE040);
-                        set_pixel(bx + 2, dy + 2, 0xFFFFFF);
-                        set_pixel(bx + 17, dy + 2, 0xFFFFFF);
-                        set_pixel(bx + 2, dy + 17, 0x402000);
-                        set_pixel(bx + 17, dy + 17, 0x402000);
-                        uint32_t qcol = ((s_gui_frame / 6) % 2 == 0) ? 0xFFFFFF : 0x00FFFF;
-                        draw_string(bx + 6, dy + 4, "?", qcol, 1);
-                    }
-
-                    /* Projektil-Kollision mit Kiste */
-                    for (int pri = 0; pri < MAX_PROJECTILES; pri++) {
-                        Projectile *proj = &s_game.projectiles[pri];
-                        if (!proj->active) continue;
-                        int proj_sx = (int)(((int64_t)proj->x * 20) >> 16) - cam_x;
-                        int proj_sy = ground_y - 20 - (int)(((int64_t)proj->y * 16) >> 16);
-                        if (proj_sx >= bx && proj_sx <= bx + 20 && proj_sy >= dy && proj_sy <= dy + 20) {
-                            proj->active = 0;
-                            dbox->hp -= (s_game.weapon == WEAPON_LASER) ? 2 : 1;
-                            dbox->hit_flash = 4;
-                            sound_sfx_hit(&s_audio, 0);
-                            if (dbox->hp <= 0) {
-                                dbox->destroyed = 1;
-                                dbox->active = 0;
-                                dbox->crystal_active = 1;
-                                dbox->crystal_x = bx + 6;
-                                dbox->crystal_y = dy - 10;
-                                dbox->crystal_vy = 4;
-                                s_game.score += 500;
-                                sound_sfx_crystal(&s_audio);
-                            }
-                            break;
-                        }
-                    }
-
-                    /* Spieler Kopfstoss von unten gegen Kiste (Turrican / Super Mario Headbutt) */
-                    {
-                        int p_sc_x = WIN_W / 2;
-                        int p_sc_y = ground_y - 20 - (int)(((int64_t)s_game.py * 16) >> 16);
-                        int p_head = p_sc_y - 24;
-                        if (s_game.pvy > 0 && p_sc_x >= bx - 8 && p_sc_x <= bx + 28 &&
-                            p_head <= dy + 22 && p_head >= dy - 6) {
-                            dbox->bounce_y = 6;
-                            dbox->hp--;
-                            dbox->hit_flash = 3;
-                            s_game.pvy = -s_game.pvy / 2;
-                            sound_sfx_hit(&s_audio, 0);
-                            if (dbox->hp <= 0) {
-                                dbox->destroyed = 1;
-                                dbox->active = 0;
-                                dbox->crystal_active = 1;
-                                dbox->crystal_x = bx + 6;
-                                dbox->crystal_y = dy - 10;
-                                dbox->crystal_vy = 4;
-                                s_game.score += 500;
-                                sound_sfx_crystal(&s_audio);
-                            }
-                        }
-                    }
-                } else if (dbox && dbox->crystal_active) {
-                    dbox->crystal_y -= dbox->crystal_vy;
-                    dbox->crystal_vy--;
-                    if (dbox->crystal_y > pl_sy - 16) {
-                        dbox->crystal_y = pl_sy - 16;
-                        dbox->crystal_vy = 0;
-                    }
-                    int cx = dbox->crystal_x;
-                    int cy = dbox->crystal_y;
-                    draw_rect(cx + 3, cy, 4, 2, 0x00FFFF);
-                    draw_rect(cx + 1, cy + 2, 8, 3, 0x80FFFF);
-                    draw_rect(cx + 2, cy + 5, 6, 2, 0x00C0FF);
-                    draw_rect(cx + 4, cy + 7, 2, 2, 0x0060C0);
-
-                    int p_screen_x = WIN_W / 2;
-                    int foot_y = ground_y - 20 - (int)(((int64_t)s_game.py * 16) >> 16);
-                    if (abs(p_screen_x - cx) < 24 && abs(foot_y - cy) < 28) {
-                        dbox->crystal_active = 0;
-                        s_game.score += 1000;
-                        if (s_game.shield < 3) s_game.shield++;
-                        sound_sfx_crystal(&s_audio);
-                        snprintf(s_status_msg, sizeof(s_status_msg), "TURRICAN DIAMANT! +1000 SCORE");
-                    }
-                }
-            }
-
             /* Schwebende Amiga-Diamanten auf den hoechsten Plattformen */
             if (pi % 4 == 2 && pl->y > FIX(10)) {
                 int dx = pl_sx + 12;
@@ -3233,6 +3276,197 @@ static void render_tab_game(void) {
         int py = ground_y - 40 - (int)(((int64_t)p->y * 16) >> 16);
         set_pixel(px, py, 0xFFFFFF);
         set_pixel(px + 1, py, 0xFF8000);
+    }
+
+    /* 5. Turrican 2 Mystery [?] Item-Bloecke (Zerschiessbar & Headbutt-Sprung von unten!) */
+    for (int bi = 0; bi < s_box_count; bi++) {
+        DestructibleBox *dbox = &s_boxes[bi];
+        if (!dbox->active || dbox->destroyed) continue;
+
+        int bx = (dbox->world_x * 20) - cam_x;
+        int dy = ground_y - 20 - (dbox->world_y * 16) - dbox->bounce_y;
+        if (dbox->bounce_y > 0) dbox->bounce_y--;
+
+        if (bx >= -32 && bx <= WIN_W + 32) {
+            if (dbox->hit_flash > 0) {
+                draw_voxel(bx, dy, 20, 20, 4, 0xFFFFFF);
+                dbox->hit_flash--;
+            } else {
+                draw_voxel(bx, dy, 20, 20, 4, 0xD49A24);
+                draw_rect_outline(bx, dy, 20, 20, 0xFFE040);
+                set_pixel(bx + 2, dy + 2, 0xFFFFFF);
+                set_pixel(bx + 17, dy + 2, 0xFFFFFF);
+                set_pixel(bx + 2, dy + 17, 0x402000);
+                set_pixel(bx + 17, dy + 17, 0x402000);
+                uint32_t qcol = ((s_gui_frame / 6) % 2 == 0) ? 0xFFFFFF : 0x00FFFF;
+                draw_string(bx + 6, dy + 4, "?", qcol, 1);
+            }
+        }
+
+        /* Projektil-Kollision mit Kiste */
+        for (int pri = 0; pri < MAX_PROJECTILES; pri++) {
+            Projectile *proj = &s_game.projectiles[pri];
+            if (!proj->active) continue;
+            int proj_sx = (int)(((int64_t)proj->x * 20) >> 16) - cam_x;
+            int proj_sy = ground_y - 20 - (int)(((int64_t)proj->y * 16) >> 16);
+            if (proj_sx >= bx && proj_sx <= bx + 20 && proj_sy >= dy && proj_sy <= dy + 20) {
+                proj->active = 0;
+                dbox->hp -= (s_game.weapon == WEAPON_LASER) ? 2 : 1;
+                dbox->hit_flash = 4;
+                sound_sfx_hit(&s_audio, 0);
+                if (dbox->hp <= 0) shatter_box(dbox);
+                break;
+            }
+        }
+
+        /* Spieler Kopfstoss von unten gegen Kiste (Turrican / Super Mario Headbutt) */
+        int p_sc_x = pw_x - cam_x;
+        int p_sc_y = ground_y - 20 - (int)(((int64_t)s_game.py * 16) >> 16);
+        int p_head = p_sc_y - 24;
+        if (s_game.pvy > 0 && p_sc_x >= bx - 8 && p_sc_x <= bx + 28 &&
+            p_head <= dy + 22 && p_head >= dy - 6) {
+            dbox->bounce_y = 10;
+            dbox->hp--;
+            dbox->hit_flash = 4;
+            s_game.pvy = -s_game.pvy / 2;
+            sound_sfx_hit(&s_audio, 0);
+            if (dbox->hp <= 0) shatter_box(dbox);
+        }
+    }
+
+    /* 6. Gegner-Todes-Erkennung: Zerplatzen in Loot & Partikel */
+    for (int ei = 0; ei < MAX_ENEMIES; ei++) {
+        Enemy *e = &s_game.enemies[ei];
+        if (s_prev_enemy_active[ei] && !e->active) {
+            int e_wx = e->x;
+            int e_wy = e->y + (1 << 16);
+            int es_x = (int)(((int64_t)e->x * 20) >> 16) - cam_x;
+            int es_y = ground_y - 40 - (int)(((int64_t)e->y * 16) >> 16);
+
+            if (e->kind == ENEMY_TANK) {
+                spawn_debris(e_wx, e_wy, 24, 0xFF4020);
+                spawn_debris(e_wx, e_wy, 12, 0x00FFFF);
+                spawn_loot(e_wx, e_wy, LOOT_DIAMOND, -2 << 16, 5 << 16);
+                spawn_loot(e_wx, e_wy, LOOT_DIAMOND,  0,        6 << 16);
+                spawn_loot(e_wx, e_wy, LOOT_DIAMOND,  2 << 16, 5 << 16);
+                spawn_loot(e_wx, e_wy, LOOT_WEAPON_POWER, 1 << 15, 4 << 16);
+                spawn_floating_text(es_x, es_y, "+500 MINI-BOSS!", 0xFFFF40);
+                sound_sfx_explosion(&s_audio);
+            } else if (e->kind == ENEMY_SHOOTER) {
+                spawn_debris(e_wx, e_wy, 14, 0x00D0FF);
+                spawn_loot(e_wx, e_wy, LOOT_DIAMOND, ((s_gui_frame & 1) ? 1 : -1) << 15, 4 << 16);
+                spawn_floating_text(es_x, es_y, "+250", 0x00FFFF);
+                sound_sfx_explosion(&s_audio);
+            } else {
+                spawn_debris(e_wx, e_wy, 10, 0xFF8020);
+                if ((s_gui_frame % 3) == 0) {
+                    spawn_loot(e_wx, e_wy, LOOT_DIAMOND, 0, 4 << 16);
+                }
+                spawn_floating_text(es_x, es_y, "+100", 0xFFE080);
+                sound_sfx_explosion(&s_audio);
+            }
+        }
+        s_prev_enemy_active[ei] = e->active;
+    }
+
+    /* 7. Loot-Items aktualisieren, zeichnen & aufsammeln */
+    for (int li = 0; li < MAX_LOOT_ITEMS; li++) {
+        GuiLootItem *item = &s_loot[li];
+        if (!item->active) continue;
+
+        item->life--;
+        if (item->life <= 0) { item->active = 0; continue; }
+
+        /* Gravitation & Trgheit */
+        item->vy -= 900;
+        item->world_x += item->vx;
+        item->world_y += item->vy;
+
+        if (item->world_y <= 0) {
+            item->world_y = 0;
+            item->vy = -item->vy / 2;
+            item->vx = (item->vx * 3) / 4;
+        }
+
+        int lx = (int)(((int64_t)item->world_x * 20) >> 16) - cam_x;
+        int ly = ground_y - 20 - (int)(((int64_t)item->world_y * 16) >> 16);
+
+        if (lx >= -32 && lx <= WIN_W + 32) {
+            if (item->kind == LOOT_DIAMOND) {
+                int bob = (int)(sinf((float)s_gui_frame * 0.25f + (float)li) * 3.0f);
+                draw_rect(lx + 4, ly + bob, 6, 3, 0x00FFFF);
+                draw_rect(lx + 2, ly + 3 + bob, 10, 4, 0x80FFFF);
+                draw_rect(lx + 4, ly + 7 + bob, 6, 3, 0x00A0E0);
+                draw_rect(lx + 6, ly + 10 + bob, 2, 2, 0x005080);
+                set_pixel(lx + 5, ly + 2 + bob, 0xFFFFFF);
+            } else if (item->kind == LOOT_WEAPON_POWER) {
+                draw_voxel(lx, ly, 16, 16, 3, 0xE02020);
+                draw_rect_outline(lx, ly, 16, 16, 0xFFFFFF);
+                draw_char(lx + 4, ly + 4, 'W', 0xFFFFFF, 1);
+            } else if (item->kind == LOOT_SHIELD_BOOST) {
+                draw_voxel(lx, ly, 16, 16, 3, 0x2080E0);
+                draw_rect_outline(lx, ly, 16, 16, 0x00FFFF);
+                draw_char(lx + 4, ly + 4, 'S', 0x00FFFF, 1);
+            }
+        }
+
+        /* Spieler Einsammeln */
+        int p_cur_x = pw_x - cam_x;
+        int p_cur_y = ground_y - 20 - (int)(((int64_t)s_game.py * 16) >> 16);
+        if (abs(p_cur_x - lx) < 28 && abs(p_cur_y - ly) < 32) {
+            item->active = 0;
+            if (item->kind == LOOT_DIAMOND) {
+                s_game.score += 1000;
+                if (s_game.shield < 3) s_game.shield++;
+                sound_sfx_crystal(&s_audio);
+                spawn_floating_text(lx, ly - 10, "+1000 DIAMANT!", 0x00FFFF);
+            } else if (item->kind == LOOT_WEAPON_POWER) {
+                if (s_game.weapon_level < 5) s_game.weapon_level++;
+                s_game.score += 2000;
+                sound_sfx_pickup(&s_audio);
+                spawn_floating_text(lx, ly - 10, "WEAPON UPGRADE!", 0xFFFF40);
+            } else if (item->kind == LOOT_SHIELD_BOOST) {
+                s_game.shield = 3;
+                s_game.score += 500;
+                sound_sfx_pickup(&s_audio);
+                spawn_floating_text(lx, ly - 10, "SHIELD FULL!", 0x40FF80);
+            }
+        }
+    }
+
+    /* 8. Debris-Partikel aktualisieren & zeichnen */
+    for (int di = 0; di < MAX_DEBRIS_PARTS; di++) {
+        GuiDebrisPart *dp = &s_debris[di];
+        if (!dp->active) continue;
+        dp->life--;
+        if (dp->life <= 0) { dp->active = 0; continue; }
+
+        dp->vy -= 800;
+        dp->world_x += dp->vx;
+        dp->world_y += dp->vy;
+        if (dp->world_y <= 0) {
+            dp->world_y = 0;
+            dp->vy = -dp->vy / 3;
+            dp->vx = (dp->vx * 2) / 3;
+        }
+
+        int dx = (int)(((int64_t)dp->world_x * 20) >> 16) - cam_x;
+        int dy = ground_y - 20 - (int)(((int64_t)dp->world_y * 16) >> 16);
+        if (dx >= 0 && dx < WIN_W && dy >= 0 && dy < WIN_H) {
+            draw_rect(dx, dy, dp->size, dp->size, dp->color);
+        }
+    }
+
+    /* 9. Floating Score Texte rendern */
+    for (int fi = 0; fi < MAX_FLOATING_TEXTS; fi++) {
+        GuiFloatingText *ft = &s_float_texts[fi];
+        if (!ft->active) continue;
+        ft->life--;
+        if (ft->life <= 0) { ft->active = 0; continue; }
+        ft->screen_y += ft->vy;
+
+        draw_string(ft->screen_x + 1, ft->screen_y + 1, ft->text, 0x000000, 1);
+        draw_string(ft->screen_x, ft->screen_y, ft->text, ft->color, 1);
     }
 
     /* Layer 0: Vordergrund-Rohre (1.5x Scroll, Turrican-2-Signatur;
@@ -4991,7 +5225,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             float rx = s_pad.stick_rx;
                             float ry = s_pad.stick_ry;
                             if (rx * rx + ry * ry > 0.04f) {
-                                float rad = atan2f(-ry, rx);
+                                /* Invertierte Y-Achsen Steuerung: Oben am Stick zielt senkrecht nach OBEN */
+                                float rad = atan2f(ry, rx);
                                 if (rad < 0.0f) rad += 6.283185307f;
                                 s_steered_beam_angle = rad * (256.0f / 6.283185307f);
                                 pad_aimed = 1;
@@ -5001,20 +5236,20 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         mask &= ~(INPUT_LEFT | INPUT_RIGHT);
 
                         if (!pad_aimed) {
-                            if (GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000) {
+                            if (GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000 || s_pad.left) {
                                 s_steered_beam_angle -= 4.0f;
                             }
-                            if (GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000) {
+                            if (GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000 || s_pad.right) {
                                 s_steered_beam_angle += 4.0f;
                             }
-                            if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000) {
-                                float diff = 192.0f - s_steered_beam_angle;
+                            if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000 || s_pad.up) {
+                                float diff = 192.0f - s_steered_beam_angle; /* 192 = Senkrecht nach oben */
                                 while (diff > 128.0f) diff -= 256.0f;
                                 while (diff < -128.0f) diff += 256.0f;
                                 s_steered_beam_angle += (diff > 0.0f ? 4.0f : -4.0f);
                             }
-                            if (GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000) {
-                                float diff = 64.0f - s_steered_beam_angle;
+                            if (GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000 || s_pad.down) {
+                                float diff = 64.0f - s_steered_beam_angle;  /* 64 = Nach unten gerichtet */
                                 while (diff > 128.0f) diff -= 256.0f;
                                 while (diff < -128.0f) diff += 256.0f;
                                 s_steered_beam_angle += (diff > 0.0f ? 4.0f : -4.0f);
@@ -5029,6 +5264,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
                     if (mask & INPUT_SECOND) {
                         s_game.beam_angle = (uint8_t)(((int)s_steered_beam_angle) & 255);
+
+                        /* Steered Beam Treffer-Erkennung gegen Mystery-Bloecke */
+                        if (s_game.tick % 4 == 0) {
+                            float b_rad = (float)s_game.beam_angle * (6.283185307f / 256.0f);
+                            float b_cos = cosf(b_rad);
+                            float b_sin = sinf(b_rad);
+                            fix16_t b_cos_fp = (fix16_t)(b_cos * 65536.0f);
+                            fix16_t b_sin_fp = (fix16_t)(-b_sin * 65536.0f);
+
+                            for (int bi = 0; bi < s_box_count; bi++) {
+                                DestructibleBox *dbox = &s_boxes[bi];
+                                if (!dbox->active || dbox->destroyed) continue;
+                                fix16_t bdx = (fix16_t)(dbox->world_x << 16) - s_game.px;
+                                fix16_t bdy = (fix16_t)(dbox->world_y << 16) - s_game.py;
+                                int64_t proj = ((int64_t)bdx * b_cos_fp + (int64_t)bdy * b_sin_fp) >> 16;
+                                if (proj > 0 && proj < (11 << 16)) {
+                                    int64_t perp = ((int64_t)bdx * b_sin_fp - (int64_t)bdy * b_cos_fp) >> 16;
+                                    if (perp < 0) perp = -perp;
+                                    if (perp < (fix16_t)(1.6f * 65536.0f)) {
+                                        dbox->hp--;
+                                        dbox->hit_flash = 3;
+                                        sound_sfx_hit(&s_audio, 0);
+                                        if (dbox->hp <= 0) shatter_box(dbox);
+                                    }
+                                }
+                            }
+                        }
 
                         /* Steered Beam Treffer-Erkennung gegen Gegner im Strahl */
                         if (s_game.tick % 4 == 0) {
