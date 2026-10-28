@@ -1,0 +1,11 @@
+{
+  "title": "Volcanic Revelation - Concept Album",
+  "chapter": 3,
+  "tracks": [
+    {"track_id": 1, "name": "Lava Flow", "duration": 220, "style": "Industrial Rhythm"},
+    {"track_id": 2, "name": "Betrayal Protocol", "duration": 260, "style": "Dark Ambient"},
+    {"track_id": 3, "name": "Guardians Fall", "duration": 320, "style": "Epic Boss"},
+    {"track_id": 4, "name": "Truth Unveiled", "duration": 280, "style": "Dramatic Reveal"},
+    {"track_id": 5, "name": "Fire Within", "duration": 240, "style": "Determination Theme"}
+  ]
+}

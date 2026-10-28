@@ -11,6 +11,9 @@
 *.o
 *.a
 *.lib
+assets.dat
+tmp_obj/
+nul
 s_startup.tmp
 msvc_build_log.txt
 local_c_test_report.txt

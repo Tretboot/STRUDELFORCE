@@ -1,0 +1,149 @@
+{
+  "title": "STRUDELFORCE - Final Phase (Bohemian Edition)",
+  "composer": "TFMX + Strudel Hybrid",
+  "duration_seconds": 360,
+  "tempo_bpm": 144,
+  "sections": [
+    {
+      "name": "INTRO (Piano & Atmosphere)",
+      "start_tick": 0,
+      "end_tick": 128,
+      "tempo": 72,
+      "instruments": [
+        "SAMPLE_PULSE",
+        "SUPERSAW_PAD"
+      ],
+      "pattern": "Arpeggiated Piano, Ambient Pads",
+      "tfmx_channel": [
+        0,
+        1
+      ],
+      "strudel_pattern": "c1 e1 g1 c2 *4 | e1 g1 b1 d2 *4",
+      "effects": [
+        "REVERB",
+        "DELAY"
+      ]
+    },
+    {
+      "name": "BALLADE (Emotional Lead)",
+      "start_tick": 128,
+      "end_tick": 384,
+      "tempo": 96,
+      "instruments": [
+        "SUPERSAW_LEAD",
+        "SAMPLE_BASS"
+      ],
+      "pattern": "Melodischer Lead-Synth mit Bass-Antwort",
+      "tfmx_channel": [
+        0,
+        1,
+        2
+      ],
+      "strudel_pattern": "m2 [g2 a2 g2 e2] *8 | c2 [e2 f2 e2 c2] *8",
+      "effects": [
+        "CHORUS",
+        "FILTER_LFO"
+      ]
+    },
+    {
+      "name": "OPERA (Multi-Voice Harmony)",
+      "start_tick": 384,
+      "end_tick": 640,
+      "tempo": 120,
+      "instruments": [
+        "SUPERSAW_CHORUS",
+        "SAMPLE_CHOIR",
+        "TFMX_ARPEGGIO"
+      ],
+      "pattern": "3-stimmiger Chor mit Arpeggio-Begleitung",
+      "tfmx_channel": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "strudel_pattern": "c3 e3 g3 <c4 e4 g4> *4 | d3 f3 a3 <d4 f4 a4> *4",
+      "effects": [
+        "CHORUS_7OSC",
+        "HARMONY_3VOICE",
+        "REVERB_WET"
+      ]
+    },
+    {
+      "name": "HARD ROCK (Full Power)",
+      "start_tick": 640,
+      "end_tick": 896,
+      "tempo": 168,
+      "instruments": [
+        "SUPERSAW_DISTORTED",
+        "SAMPLE_KICK",
+        "SAMPLE_SNARE",
+        "SAMPLE_CRASH"
+      ],
+      "pattern": "Vollständige Band: Drums + Bass + 7-Oszillator Supersaw",
+      "tfmx_channel": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "strudel_pattern": "e2 e2 e2 e2 | g2 g2 g2 g2 | a2 a2 a2 a2 | g2 f2 e2 d2",
+      "effects": [
+        "DISTORTION",
+        "COMPRESSOR",
+        "MASTER_GODIZER"
+      ]
+    },
+    {
+      "name": "OUTRO (Fading Symphony)",
+      "start_tick": 896,
+      "end_tick": 1024,
+      "tempo": 60,
+      "instruments": [
+        "SUPERSAW_PAD",
+        "SAMPLE_TRIANGLE",
+        "TFMX_LEAD"
+      ],
+      "pattern": "Langsames Ausklingen mit Piano und Pad",
+      "tfmx_channel": [
+        0,
+        1
+      ],
+      "strudel_pattern": "c1 g1 e1 c2 *8 | c1 g1 e1 c2 *8",
+      "effects": [
+        "REVERB_DECAY",
+        "VOLUME_FADE"
+      ]
+    }
+  ],
+  "harmony_settings": {
+    "third_interval": 4,
+    "fifth_interval": 7,
+    "detune_cents": [
+      0,
+      -12,
+      12,
+      -24,
+      24
+    ],
+    "volume_balance": [
+      1.0,
+      0.8,
+      0.7,
+      0.6,
+      0.5
+    ]
+  },
+  "supersaw_chorus": {
+    "oscillators": 7,
+    "detune_range_cents": 36,
+    "pwm_speed_hz": 0.5,
+    "pwm_depth": 0.3,
+    "chorus_delay_ms": 25,
+    "chorus_feedback": 0.4
+  }
+}

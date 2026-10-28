@@ -4,13 +4,19 @@ Willkommen im Hauptverzeichnis `STRUDELFORCE_Master`. Dieses Dokument dient als 
 
 ---
 
-## 1. Projektstruktur (post-Merge 2026-10-27: EIN Projekt)
+## 1. Projektstruktur (post-Merge 2026-10-27 & Konsolidierung 2026-10-28: EIN Projekt)
 
-Dieses Projekt entstand aus einem Multi-Agenten-Experiment mit zwei parallelen Stämmen
-("Schwarm"/KIWI-Zweig A und "Smith Prime"/Zweig B) plus einem KIWI-Cloud-Run (v3-Audio-Stack).
-**Am 2026-10-27 wurden beide Zweige in die Workspace-Root mergiert** (Single Source of Truth,
-Dual-Core-Architektur — Details in `MERGE_NOTES.md`). Die Original-Zweig-Ordner liegen
-unverändert in `archive/branches/`:
+> **HINWEIS:** Die detaillierte Single Source of Truth für Architektur, Gesetze und APIs ist jetzt [PROJECT_BIBLE.md](file:///f:/AgentHome/STRUDELFORCE_Master/PROJECT_BIBLE.md).
+
+### Aktuelle Architektur: Monolithische Konsolidierung (v0.2)
+- **`src/game_logic.c`**: 16.16 Fixed-Point Physik, 3-Leben-System, Waffen, Spawner, Endlos- & Kampagnen-Modus, Livecode-Puffer.
+- **`src/soundengine_core.c`**: Universeller Hub für TFMX-Parsing, MOD-Playback, Strudel-Cleanroom AST, Game-SFX, Cyber-Paula Mixer, Soundgodizer und Win32 waveOut.
+- **`src/engine_core.c`**: 2.5D Voxel-Szenen-Planer (Zero-Float!), Amiga OCS/AGA Hardware-Shims und Copper-Intro.
+- **`src/strudelforce.h`**: Zentraler Master-Header für alle Subsysteme.
+- **`src/test_suite.c`**: Konsolidierte Integrationstest-Suite (32 Checks).
+- **Kiwi Export Assets & Tools**: `assets/story.json`, `assets/balancing.json`, `assets/lang.json`, `tools/build_lang.py`, `tools/asset_packer.py`, `KIWI_SURVIVAL_GUIDE.md`.
+
+### Historische Stämme (in `archive/branches/` und `archive/src_pre_defrag/`)
 
 ### Zweig A: `STRUDELFORCE/` (Der "Handoff Phase 1 / Schwarm"-Zweig)
 - **Architektur & Module:** Beinhaltet die fünf Kernmodule nach Spezifikation:

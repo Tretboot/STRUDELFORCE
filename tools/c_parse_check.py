@@ -20,8 +20,8 @@ typedef int int32_t; typedef unsigned int uint32_t; typedef long long int64_t; t
 typedef unsigned long size_t; typedef struct _FILE FILE; typedef long time_t;
 """
 LIBC = set("""memset memcpy memcmp strlen strncpy strncat strcat strcpy strcmp strncmp strrchr strchr
-fopen fclose fread fwrite fseek ftell printf fprintf snprintf sprintf puts malloc free calloc realloc atoi abs
-exit fflush getchar putchar""".split())
+fopen fclose fread fwrite fseek ftell printf fprintf snprintf sprintf sscanf puts malloc free calloc realloc atoi abs
+exit fflush getchar putchar tolower isdigit isspace pow sin cos tan sqrt exp log tanh tanhf fabsf""".split())
 LIBC_CONST = {"NULL": "((void*)0)", "SEEK_SET": "0", "SEEK_END": "2", "SEEK_CUR": "1", "stdout": "((FILE*)0)", "stderr": "((FILE*)0)"}
 
 def preprocess(path, defines, seen, out):

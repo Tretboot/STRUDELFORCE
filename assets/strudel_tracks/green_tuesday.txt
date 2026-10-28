@@ -1,0 +1,24 @@
+setCpm(130/4)
+
+//@title Green Tuesday @By Switch Angel
+
+const tone = slider(2,0,10,1)
+$GLASS: n("<0 4 2 3 <7 7 4 2 9>>*16".add(7)).dec(.2)
+.scale("b:dorian").s("sine").begin(.9).clip(1).fm(1)
+  .fmh(tone.add(.01)).att(.02).gain(.5)
+  .pan(sine.fast(4))
+  .delay(.6)
+  .rel(.3).o(5)
+
+$BASS: n("<0@4 -1 -2>".add("<0 7>*8")).seg(8).scale("b:dorian")
+  .s("supersaw").detune(.3)
+  .clip(1)
+  .trans(-24).begin(.9).lpf(200).lpenv(5).diode("2:.6")
+
+
+$KICK: s("bd").beat("0,4,8,12,16,20,24,28,29,30,31",32).slow(2)
+
+$HAT: "<1 .8>*8".velocity().s("oh").dec("<.3 .1>*8")
+  .almostNever(ply("2 | 4"))
+
+$CLAP: s("cp").diode("3:.3").beat("3.95,11.95",16)

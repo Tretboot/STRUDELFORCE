@@ -1,0 +1,21 @@
+{
+  "title": "Highscore Glory",
+  "biome": "ui",
+  "style": "Epic Orchestral + Synth",
+  "tempo_bpm": 128,
+  "duration_seconds": 180,
+  "instruments": ["SUPERSAW_ORCHESTRA", "BRASS_SECTION", "PINGING_ARPEGGIO", "EPIC_DRUMS", "SUB_BASS"],
+  "effects": ["CHORUS_7OSC", "REVERB_LARGE", "DELAY_WET", "MASTER_GODIZER"],
+  "sections": [
+    {"name": "TRIUMPHANT INTRO", "tempo": 128, "pattern": "Brass Fanfare + Sub Bass", "duration_ticks": 64},
+    {"name": "HIGHSCORE COUNTUP", "tempo": 128, "pattern": "Arpeggio steigt mit Score", "duration_ticks": 128, "feature": "Pitch steigt mit jedem Score-Increment"},
+    {"name": "NAME ENTRY THEME", "tempo": 128, "pattern": "Choir + Pinging Arp", "duration_ticks": 96, "feature": "Loop während Name-Eingabe"},
+    {"name": "VICTORY FANFARE", "tempo": 140, "pattern": "Full Orchestra + Drums", "duration_ticks": 64, "feature": "Tempo-Boost bei New Record"},
+    {"name": "FADE OUT", "tempo": 128, "pattern": "Reverb Decay", "duration_ticks": 32}
+  ],
+  "dynamic_features": {
+    "score_pitch_mapping": "Score / 1000 = Pitch-Offset in Cents",
+    "new_record_boost": "Tempo +10 BPM + Distortion für 2 Sekunden",
+    "name_entry_loop": "Section 3 wiederholt sich während Input"
+  }
+}

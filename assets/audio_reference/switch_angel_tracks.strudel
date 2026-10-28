@@ -1,0 +1,76 @@
+// ============================================================================
+// Switch Angel Reference Tracks (Strudel Mini-Notation Sketches)
+// ============================================================================
+
+// --- Track 1: In the Beginning There was Trance (Switch Angel) ---
+samples('github:switchangel/beginningtrance')
+
+function blockArrange(patArr, modifiers = []) {
+  return stack(
+    ...patArr.map(([pat, maskPat]) => {
+      pat = [pat].flat()
+      return maskPat.fmap(m => {
+        return stack(...pat.map(p => {
+          if (m == 0) return
+          const ms = m.toString()
+          let newPat = p
+          if (ms.includes('R')) newPat = newPat.restart(1)
+          if (ms.includes('B')) newPat = newPat.rev().mul(speed(-1))
+          modifiers.forEach(([mod, callback]) => {
+            if (mod(ms)) newPat = callback(newPat)
+          })
+          return newPat
+        }).filter(Boolean))
+      }).innerJoin()
+    }).flat()
+  )
+}
+
+// @TITLE In the Beginning There was Trance @By Switch Angel
+setCpm(136/4)
+register('acidenv', (x, pat) => pat.lpf(100).lpenv(x * 9).lps(.2).lpd(.12))
+register('o', (orb, pat) => pat.orbit(orb))
+const sc = 'g:minor'
+const energy = slider(0.527)
+
+const lead =  n("<0 4 0 9 7>*16".add("<0>*2")).scale(sc).trans(-12).o(3).acidenv(.4).room(.3)
+const lead2 =  n("<0 4 0 9 7>*16".add("<0>*2")).scale(sc).trans(-12).o(3).s("sawtooth").acidenv(energy).lpq(0.1).room(.3)
+const lead3 =  n("<0 4 0 9 7>*16".add("<7 _ _ 6 5 _ _ 6>*2")).scale(sc).trans(-12).o(3).s('sawtooth').acidenv(energy).lpq(0.1)
+const lead4 =  n("<0 4 0 9 7>*16".add("<7 _ _ 6 5 _ _ 6>*2")).scale(sc).trans(-12).o(3).s('sawtooth').acidenv(energy).lpq(0.1).delay(.3).pan(rand).diode("1:.7").fm(.5).fmwave('white')
+const bass =  n("<0>*2").scale("g:minor").trans(-24).detune(rand).seg(16).clip(.9).o(4).s("supersaw").acidenv(energy)
+const bass2 =  n("<7 _ _ 6 5 _ < 3 5> < 4 6>>*2").scale(sc).trans(-24).detune(rand).seg(16).clip(.9).o(4).s("supersaw").acidenv(energy).diode("2:.4")
+
+const riser = s("white!4").att(.3).o(6).gain(.06).hpf(900)
+const clap =  s("cp!4").o(8).gain(.5).diode("2:.2").hpf(800).bank('tr909').room(.8)
+const top = s("<- oh:2>*8").delay(.5).o(5).hpf(400).gain(.6)
+const kick = s("sbd!4").sometimesBy(.01, x => x.ply("2")).duck("3:4:5:6").dec(.3).duckdepth(.8).penv(36).pdec(.2).duckattack(.16)
+const vox = s("ctvox").o(7).gain(.8).room(.4).n("<0 - - -  - - - 1  - - 2 -  - - 3 -  - 4 - -  - - - -  - - - 6  - - - -  - - 8 -  - - - -  - - - 5  - - - -  - - 9 -  - - - -  - - 10 -  - - - - - - - -  - - - -  - - - 13 - - - -  - - - 17  - - - -  - - - 16  - - - -  - - - 16  - - - -  - - - -  - - - -  - - - -  - - - -  - - - -  - - - -  - - - ->")
+
+// --- Track 2: Green Tuesday (Switch Angel) ---
+setCpm(130/4)
+// @title Green Tuesday @By Switch Angel
+const tone = slider(2,0,10,1)
+$GLASS: n("<0 4 2 3 <7 7 4 2 9>>*16".add(7)).dec(.2).scale("b:dorian").s("sine").begin(.9).clip(1).fm(1).fmh(tone.add(.01)).att(.02).gain(.5).pan(sine.fast(4)).delay(.6).rel(.3).o(5)
+$BASS: n("<0@4 -1 -2>".add("<0 7>*8")).seg(8).scale("b:dorian").s("supersaw").detune(.3).clip(1).trans(-24).begin(.9).lpf(200).lpenv(5).diode("2:.6")
+$KICK: s("bd").beat("0,4,8,12,16,20,24,28,29,30,31",32).slow(2)
+$HAT: "<1 .8>*8".velocity().s("oh").dec("<.3 .1>*8").almostNever(ply("2 | 4"))
+$CLAP: s("cp").diode("3:.3").beat("3.95,11.95",16)
+
+// --- Track 3: I accidentally made Stranger Things Again (Switch Angel) ---
+// @title I accidentally made Stranger Things Again @By Switch Angel
+setCpm(136/4)
+$lead: mondo`$ n <0 5 -7 2 4 0 7>*16 # add(n <0 0 <7!8 5!8> 0 0 0 0>*16) # add (n 7,0) # scale e:minor # s supersaw * 8 # detune 0.5 # lpf 200 # room .8 # delayfeedback .9 # lpenv (tri # mul 4 # slow 16) # delay .7 # hpf 300 # orbit 3`
+$bass: mondo`$ n <-14@4 -12@4 -9@3 [-4 <-3 -16>]> # scale e:minor # s supersaw * 8 # detune .6 # lpf 200 # lpd .2 # lpenv 3 # dist 3:.6 # delay .5 # lpd 2 # orbit 2`
+_$TOP: mondo`$ s brk # scrub (rand # seg 16) # dec .04 # ribbon 13 .5 # gain .4 `
+$kick: mondo`$ s bd:4 * 4 # dec .2 # duck 2:3 # duckattack .16 # duckdepth .6  # almostNever(# ply 2)`
+
+// --- Track 4: Extra Slippy (Switch Angel) ---
+// @title Extra Slippy @by Switch Angel
+setCpm(140/4)
+const volume = slider(0.9)
+all(x => x.mul(postgain(volume)))
+$KICK: s("sbd!4").delay(.4).duck("3:4:5").duckdepth(.8)
+$BREAK: s("brk/2").fit().hpf(0).scrub("0!4").diode("2:.5").delay(.4).delaysync(3/8)
+$HAT: s("white!16").dec(tri.range(0.05,.1).fast(4)).gain(.5)
+$BASS: n("-14".seg(16)).scale("e:minor").o(5).lpenv(4).unison(2).wt("<.5 1>/2").clip(.85).lpd(.1).s("supersaw,wt_digital:3").rlpf(slider(0.245)).lpq(0).diode("2:.7")
+

@@ -1,0 +1,35 @@
+{
+  "level_id": 1,
+  "name": "Chrome Tempest",
+  "chunks": [
+    {
+      "x": 0,
+      "y": 0,
+      "type": "platform"
+    },
+    {
+      "x": 100,
+      "y": 50,
+      "type": "enemy"
+    }
+  ],
+  "biome": "chrome_tempest",
+  "balancing": {
+    "platform_gap_min": 20,
+    "platform_gap_max": 60,
+    "platform_width_min": 40,
+    "platform_width_max": 100,
+    "enemy_density": 0.3,
+    "item_density": 0.2,
+    "hazard_density": 0.1
+  },
+  "difficulty": 60,
+  "generation": {
+    "seed": 20264,
+    "width": 2020,
+    "height": 240,
+    "platform_count": 12,
+    "enemy_count": 6,
+    "item_count": 3
+  }
+}

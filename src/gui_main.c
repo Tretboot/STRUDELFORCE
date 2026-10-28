@@ -1307,7 +1307,20 @@ static void render_tab_explorer(void) {
             snprintf(vname, sizeof(vname), "VOICE %d", v);
             draw_string(vx + 14, vy + 8, vname, 0x00FFFF, 1);
 
-            int vol = s_audio.voices[v].active ? s_audio.voices[v].volume : 0;
+            int vol = 0;
+            int note = -1;
+            if (s_exp_playing && s_exp_tfmx.loaded) {
+                vol = s_exp_tfmx.v[v].dma ? s_exp_tfmx.v[v].vol : 0;
+                note = s_exp_tfmx.v[v].note;
+            } else if (s_exp_mod_playing && s_exp_mod.loaded) {
+                if (v < s_exp_mod.nch) {
+                    vol = s_exp_mod.ch[v].active ? s_exp_mod.ch[v].vol : 0;
+                    note = s_exp_mod.ch[v].note_per > 0 ? (int)(log(856.0 / (double)s_exp_mod.ch[v].note_per) / 0.05776 + 36.5) : -1;
+                }
+            } else {
+                vol = s_audio.voices[v].active ? s_audio.voices[v].volume : 0;
+                note = s_audio.voices[v].active ? s_audio.voices[v].base_note : -1;
+            }
             if (vol > 64) vol = 64;
             int bar_h = (vol * 170) / 64;
 
@@ -1317,9 +1330,8 @@ static void render_tab_explorer(void) {
             snprintf(vname, sizeof(vname), "V:%2d", vol);
             draw_string(vx + 25, vy + 212, vname, 0xD0E0FF, 1);
 
-            int note = s_audio.voices[v].base_note;
             const char *nnames[12] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
-            if (note > 0 && s_audio.voices[v].active) {
+            if (note > 0) {
                 snprintf(vname, sizeof(vname), "%s-%d", nnames[note % 12], note / 12);
             } else {
                 strcpy(vname, "---");
@@ -1346,12 +1358,12 @@ static void render_tab_strudel(void) {
     draw_rect(50, 125, WIN_W - 100, 70, 0x000A18);
     draw_rect_outline(50, 125, WIN_W - 100, 70, 0x00FFFF);
 
-    draw_string(65, 140, "Strudel-Pattern:", 0xFFC040, 1);
+    draw_string(65, 140, "Strudel-Pattern (Klick / Tippen / CTRL+V):", 0xFFC040, 1);
     draw_string(65, 160, s_strudel_input, 0xFFFFFF, 1);
 
     /* Cursor */
     int cur_x = 65 + s_strudel_cursor * 8;
-    if ((s_game.tick / 25) % 2 == 0) {
+    if ((s_gui_frame / 25) % 2 == 0) {
         draw_rect(cur_x, 158, 2, 14, 0x00FFFF);
     }
 
@@ -1390,7 +1402,8 @@ static void render_tab_strudel(void) {
     draw_string(50, 400, note_info, 0x80FFA0, 1);
 
     /* Anleitung */
-    draw_string(50, 450, "SYNTAX-HILFE:", 0xFFE040, 1);
+    draw_string(50, 430, "TASTATUR / EDITOR:  CTRL+V = EINFUEGEN  CTRL+C = KOPIEREN  ENTF/BACK = LOESCHEN  ENTER = ANWENDEN", 0x00FFFF, 1);
+    draw_string(50, 455, "SYNTAX-HILFE:", 0xFFE040, 1);
     draw_string(50, 470, "  - Sequenzen:       c3 [eb3 g3] <bb2 f3>", 0xD0E0FF, 1);
     draw_string(50, 490, "  - Wiederholungen:  c3*4   oder [g3 c4]*2", 0xD0E0FF, 1);
     draw_string(50, 510, "  - Euklid:          c3(3,8) (Bjorklund Rhythmen)", 0xD0E0FF, 1);
@@ -1526,7 +1539,58 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (s_gui_state != GUI_STATE_STUDIO) return 0;
 
             if (s_current_tab == TAB_STRUDEL) {
-                if (wParam == VK_RETURN) {
+                int ctrl = (GetKeyState(VK_CONTROL) & 0x8000);
+                if (ctrl && (wParam == 'V' || wParam == 'v')) {
+                    /* Aus Windows-Zwischenablage einfuegen */
+                    if (OpenClipboard(hWnd)) {
+                        HANDLE hData = GetClipboardData(CF_TEXT);
+                        if (hData) {
+                            const char *clip_text = (const char *)GlobalLock(hData);
+                            if (clip_text) {
+                                while (*clip_text) {
+                                    char ch = *clip_text++;
+                                    if (ch == '\r' || ch == '\n' || ch == '\t') ch = ' ';
+                                    if ((unsigned char)ch >= 32 && (unsigned char)ch <= 126 && strlen(s_strudel_input) < sizeof(s_strudel_input) - 2) {
+                                        memmove(&s_strudel_input[s_strudel_cursor + 1], &s_strudel_input[s_strudel_cursor], strlen(&s_strudel_input[s_strudel_cursor]) + 1);
+                                        s_strudel_input[s_strudel_cursor] = ch;
+                                        s_strudel_cursor++;
+                                    }
+                                }
+                                GlobalUnlock(hData);
+                                apply_strudel_code(&s_livecode, s_strudel_input);
+                                snprintf(s_status_msg, sizeof(s_status_msg), "Aus Zwischenablage eingefuegt!");
+                            }
+                        }
+                        CloseClipboard();
+                    }
+                } else if (ctrl && (wParam == 'C' || wParam == 'c')) {
+                    /* In Windows-Zwischenablage kopieren */
+                    if (OpenClipboard(hWnd)) {
+                        EmptyClipboard();
+                        size_t len = strlen(s_strudel_input);
+                        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
+                        if (hMem) {
+                            char *dst = (char *)GlobalLock(hMem);
+                            if (dst) {
+                                memcpy(dst, s_strudel_input, len + 1);
+                                GlobalUnlock(hMem);
+                                SetClipboardData(CF_TEXT, hMem);
+                                snprintf(s_status_msg, sizeof(s_status_msg), "In Zwischenablage kopiert (%d Zeichen)", (int)len);
+                            }
+                        }
+                        CloseClipboard();
+                    }
+                } else if (ctrl && (wParam == 'A' || wParam == 'a')) {
+                    s_strudel_cursor = (int)strlen(s_strudel_input);
+                } else if (wParam == VK_DELETE) {
+                    if (s_strudel_cursor < (int)strlen(s_strudel_input)) {
+                        memmove(&s_strudel_input[s_strudel_cursor], &s_strudel_input[s_strudel_cursor + 1], strlen(&s_strudel_input[s_strudel_cursor + 1]) + 1);
+                    }
+                } else if (wParam == VK_HOME) {
+                    s_strudel_cursor = 0;
+                } else if (wParam == VK_END) {
+                    s_strudel_cursor = (int)strlen(s_strudel_input);
+                } else if (wParam == VK_RETURN) {
                     apply_strudel_code(&s_livecode, s_strudel_input);
                     snprintf(s_status_msg, sizeof(s_status_msg), "Pattern angewendet: %s", s_strudel_input);
                 } else if (wParam == VK_BACK) {
@@ -1648,7 +1712,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         case WM_CHAR:
             if (s_current_tab == TAB_STRUDEL) {
                 char c = (char)wParam;
-                if (c >= 32 && c <= 126 && strlen(s_strudel_input) < sizeof(s_strudel_input) - 2) {
+                if ((unsigned char)c >= 32 && (unsigned char)c <= 126 && strlen(s_strudel_input) < sizeof(s_strudel_input) - 2) {
                     memmove(&s_strudel_input[s_strudel_cursor + 1], &s_strudel_input[s_strudel_cursor], strlen(&s_strudel_input[s_strudel_cursor]) + 1);
                     s_strudel_input[s_strudel_cursor] = c;
                     s_strudel_cursor++;
@@ -1722,8 +1786,40 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                         }
                     }
                 }
+                /* Explorer Transport & Subsong Buttons */
+                if (mx >= 520 && mx <= 630 && my >= 140 && my <= 170) {
+                    if (s_exp_tfmx.loaded) {
+                        s_exp_playing = !s_exp_playing;
+                        if (s_exp_playing) s_exp_mod_playing = 0;
+                        snprintf(s_status_msg, sizeof(s_status_msg), s_exp_playing ? "TFMX Wiederaufnahme" : "TFMX Pausiert");
+                    } else if (s_exp_mod.loaded) {
+                        s_exp_mod_playing = !s_exp_mod_playing;
+                        if (s_exp_mod_playing) s_exp_playing = 0;
+                        snprintf(s_status_msg, sizeof(s_status_msg), s_exp_mod_playing ? "MOD Wiederaufnahme" : "MOD Pausiert");
+                    }
+                } else if (mx >= 640 && mx <= 740 && my >= 140 && my <= 170) {
+                    s_exp_playing = 0;
+                    s_exp_mod_playing = 0;
+                    tfmx_player_stop(&s_exp_tfmx);
+                    mod_player_stop(&s_exp_mod);
+                    snprintf(s_status_msg, sizeof(s_status_msg), "Wiedergabe angehalten");
+                } else if (mx >= 750 && mx <= 870 && my >= 140 && my <= 170) {
+                    if (s_exp_tfmx.loaded && s_exp_subsong > 0) {
+                        s_exp_subsong--;
+                        tfmx_player_start(&s_exp_tfmx, (uint8_t)s_exp_subsong);
+                        s_exp_playing = 1;
+                        snprintf(s_status_msg, sizeof(s_status_msg), "Subsong %d / %d", s_exp_subsong, s_exp_tfmx.num_subsongs);
+                    }
+                } else if (mx >= 880 && mx <= 1000 && my >= 140 && my <= 170) {
+                    if (s_exp_tfmx.loaded && s_exp_subsong + 1 < s_exp_tfmx.num_subsongs) {
+                        s_exp_subsong++;
+                        tfmx_player_start(&s_exp_tfmx, (uint8_t)s_exp_subsong);
+                        s_exp_playing = 1;
+                        snprintf(s_status_msg, sizeof(s_status_msg), "Subsong %d / %d", s_exp_subsong, s_exp_tfmx.num_subsongs);
+                    }
+                }
                 /* Convert Button Klick */
-                if (mx >= 520 && mx <= 870 && my >= 190 && my <= 226) {
+                else if (mx >= 520 && mx <= 870 && my >= 190 && my <= 226) {
                     if (s_exp_tfmx.loaded) {
                         /* Auto-Konvertierung */
                         snprintf(s_strudel_input, sizeof(s_strudel_input),
@@ -1735,9 +1831,16 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     }
                 }
             }
-            /* Strudel Studio Button Klicks */
+            /* Strudel Studio Button & Klick-Events */
             if (s_current_tab == TAB_STRUDEL) {
-                if (mx >= 50 && mx <= 310 && my >= 215 && my <= 251) {
+                if (mx >= 50 && mx <= WIN_W - 50 && my >= 125 && my <= 195) {
+                    /* Klick in Textbox -> Cursor setzen */
+                    int idx = (mx - 65 + 4) / 8;
+                    int len = (int)strlen(s_strudel_input);
+                    if (idx < 0) idx = 0;
+                    if (idx > len) idx = len;
+                    s_strudel_cursor = idx;
+                } else if (mx >= 50 && mx <= 310 && my >= 215 && my <= 251) {
                     apply_strudel_code(&s_livecode, s_strudel_input);
                     snprintf(s_status_msg, sizeof(s_status_msg), "Pattern angewendet: %s", s_strudel_input);
                 } else if (mx >= 330 && mx <= 590 && my >= 215 && my <= 251) {
@@ -1750,6 +1853,48 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     s_strudel_cursor = (int)strlen(s_strudel_input);
                     apply_strudel_code(&s_livecode, s_strudel_input);
                     snprintf(s_status_msg, sizeof(s_status_msg), "Apidya Meadow Bassline geladen!");
+                } else if (mx >= 870 && mx <= 1070 && my >= 215 && my <= 251) {
+                    FILE *f = fopen("user_pattern.strudel", "w");
+                    if (f) {
+                        fputs(s_strudel_input, f);
+                        fputc('\n', f);
+                        fclose(f);
+                        snprintf(s_status_msg, sizeof(s_status_msg), "Gespeichert in: user_pattern.strudel");
+                    } else {
+                        snprintf(s_status_msg, sizeof(s_status_msg), "Fehler beim Speichern!");
+                    }
+                }
+            }
+            break;
+        }
+
+        case WM_RBUTTONDOWN: {
+            int mx = LOWORD(lParam);
+            int my = HIWORD(lParam);
+            if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_STRUDEL) {
+                if (mx >= 50 && mx <= WIN_W - 50 && my >= 125 && my <= 195) {
+                    /* Rechtsklick in Textbox -> Einfuegen aus Zwischenablage */
+                    if (OpenClipboard(hWnd)) {
+                        HANDLE hData = GetClipboardData(CF_TEXT);
+                        if (hData) {
+                            const char *clip_text = (const char *)GlobalLock(hData);
+                            if (clip_text) {
+                                while (*clip_text) {
+                                    char ch = *clip_text++;
+                                    if (ch == '\r' || ch == '\n' || ch == '\t') ch = ' ';
+                                    if ((unsigned char)ch >= 32 && (unsigned char)ch <= 126 && strlen(s_strudel_input) < sizeof(s_strudel_input) - 2) {
+                                        memmove(&s_strudel_input[s_strudel_cursor + 1], &s_strudel_input[s_strudel_cursor], strlen(&s_strudel_input[s_strudel_cursor]) + 1);
+                                        s_strudel_input[s_strudel_cursor] = ch;
+                                        s_strudel_cursor++;
+                                    }
+                                }
+                                GlobalUnlock(hData);
+                                apply_strudel_code(&s_livecode, s_strudel_input);
+                                snprintf(s_status_msg, sizeof(s_status_msg), "Rechtsklick: Aus Zwischenablage eingefuegt!");
+                            }
+                        }
+                        CloseClipboard();
+                    }
                 }
             }
             break;
@@ -2004,11 +2149,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     }
 
                     if (s_game.state != STATE_GAMEOVER && s_mod_active) {
-                        mod_player_tick(&s_mod);
+                        s_audio.ext_render = NULL;
                     } else if (s_game.state != STATE_GAMEOVER && s_tfmx_active) {
                         tfmx_player_tick(&s_tfmx, &s_audio);
                     } else {
                         /* 8-Voice-Engine (im Game-Over/Menu-Ambient weiter laufen) */
+                        s_audio.ext_render = NULL;
                         s_audio.bass_override_active = 1;
                         s_audio.bass_override_note = livecode_current_note(&s_livecode);
                         game_audio_update(&s_audio, &s_game);
@@ -2017,18 +2163,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     if (s_exp_playing) {
                         tfmx_player_tick(&s_exp_tfmx, &s_audio);
                     } else if (s_exp_mod_playing) {
-                        mod_player_tick(&s_exp_mod);
+                        s_audio.ext_render = NULL;
+                    } else {
+                        s_audio.ext_render = NULL;
                     }
                 } else {
                     /* Menu-/Loading-/Game-Over: Jukebox-Track (auch Embedded-Intro) weiter laufen */
                     int menu_music = (s_gui_state != GUI_STATE_STUDIO);
                     livecode_tick(&s_livecode);
                     if (menu_music && s_mod_active) {
-                        mod_player_tick(&s_mod);
+                        s_audio.ext_render = NULL;
                     } else if (menu_music && s_tfmx_active) {
                         tfmx_player_tick(&s_tfmx, &s_audio);
                     } else {
                         /* 8-Voice-Engine (Studio-Ambient / Fallback) */
+                        s_audio.ext_render = NULL;
                         s_audio.bass_override_active = 1;
                         s_audio.bass_override_note = livecode_current_note(&s_livecode);
                         game_audio_update(&s_audio, &s_game);

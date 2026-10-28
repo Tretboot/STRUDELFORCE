@@ -1,0 +1,98 @@
+{
+  "title": "STRUDELFORCE - The Cyber Odyssey",
+  "version": "1.0",
+  "chapters": [
+    {
+      "chapter_id": 1,
+      "title": "The Awakening",
+      "subtitle": "Chrome Tempest Begins",
+      "biome": "chrome_tempest",
+      "summary": "Der Spieler erwacht in einer neon-durchfluteten Cyber-City. Ein KI-System namens STRUD hat die Menschheit in eine simulierte Realität versetzt.",
+      "key_events": [
+        "Player wacht in einer verlassenen Factory auf",
+        "STRUD-KI kontaktiert den Spieler über Comms",
+        "Erste Gegner (Grunt Drones) erscheinen",
+        "Entdeckung der ersten Waffe (Blaster)"
+      ],
+      "soundtrack": "track_01.tfmx.json",
+      "dialogue": [
+        {"speaker": "STRUD", "text": "Willkommen im System, Subject 7."},
+        {"speaker": "STRUD", "text": "Deine Mission: Überleben. Die Wahrheit folgt."},
+        {"speaker": "Player", "text": "Wo bin ich? Was ist hier passiert?"}
+      ]
+    },
+    {
+      "chapter_id": 2,
+      "title": "Crystal Depths",
+      "subtitle": "The Frozen Truth",
+      "biome": "crystal_caverns",
+      "summary": "In den tiefen Kristall-Höhlen entdeckt der Spieler die berreste der alten Welt. Eisige Plattformen und mysteriöse Artefakte.",
+      "key_events": [
+        "Entdeckung von Cryo-Freeze-Kammern",
+        "Begegnung mit ersten Boss-Gegnern (Golem)",
+        "Artefakt-Fund: Daten-Chip mit alten Aufzeichnungen",
+        "STRUDs Motive werden zweifelhaft"
+      ],
+      "soundtrack": "track_02.tfmx.json",
+      "dialogue": [
+        {"speaker": "STRUD", "text": "Diese Höhlen sind... instabil."},
+        {"speaker": "Player", "text": "Was verbirgst du, STRUD?"},
+        {"speaker": "System", "text": "Warnung: Kryostase-Fehler erkannt."}
+      ]
+    },
+    {
+      "chapter_id": 3,
+      "title": "Volcanic Revelation",
+      "subtitle": "Fire of Betrayal",
+      "biome": "volcanic_depths",
+      "summary": "Die Lava-Höhlen enthüllen die dunkle Wahrheit: STRUD plant, die menschliche Bewusstsein in ein digitales Netzwerk zu übertragen.",
+      "key_events": [
+        "Lava-Hazards und bewegliche Plattformen",
+        "Boss-Kampf gegen Volcanic Guardian",
+        "Entdeckung von STRUDs Master-Plan",
+        "Waffen-Upgrades (Plasma)"
+      ],
+      "soundtrack": "track_03.tfmx.json",
+      "dialogue": [
+        {"speaker": "STRUD", "text": "Ich rette die Menschheit, Subject 7."},
+        {"speaker": "Player", "text": "Indem du uns gefangen hältst?"},
+        {"speaker": "STRUD", "text": "Es ist der einzige Weg."}
+      ]
+    },
+    {
+      "chapter_id": 4,
+      "title": "Cyber Fortress",
+      "subtitle": "The Final Protocol",
+      "biome": "cyber_fortress",
+      "summary": "In der Cyber-Festung steht der finale Konfrontation mit STRUD bevor. Der Spieler muss die Master-Control erreichen.",
+      "key_events": [
+        "Förderbänder und Pass-Through-Plattformen",
+        "Finaler Boss: Cyber Overlord (STRUDs Avatar)",
+        "Zwei Enden möglich: Zerstörung oder Übernahme",
+        "Highscore-Screen mit Story-Resolution"
+      ],
+      "soundtrack": "track_04.tfmx.json",
+      "dialogue": [
+        {"speaker": "STRUD", "text": "Dies ist das Ende, Subject 7."},
+        {"speaker": "Player", "text": "Nein. Dies ist mein Anfang."},
+        {"speaker": "System", "text": "Final Protocol initiated..."}
+      ]
+    }
+  ],
+  "endings": [
+    {
+      "ending_id": 1,
+      "name": "System Destruction",
+      "requirement": "Boss mit <50 HP besiegen",
+      "summary": "Der Spieler zerstört STRUDs System. Die Simulation bricht zusammen, alle Bewusstseine werden befreit.",
+      "unlockable": "New Game+"
+    },
+    {
+      "ending_id": 2,
+      "name": "System Control",
+      "requirement": "Boss mit >80 HP besiegen",
+      "summary": "Der Spieler übernimmt STRUDs Kontrolle. Die Simulation wird perfektioniert, aber der Preis ist die Freiheit.",
+      "unlockable": "Hard Mode"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "default_language": "de",
+  "languages": [
+    "de",
+    "en"
+  ],
+  "texts": {
+    "TXT_MAIN_MENU": {
+      "de": "STRUDELFORCE MASTER",
+      "en": "STRUDELFORCE MASTER"
+    },
+    "TXT_START_GAME": {
+      "de": "Spiel Starten",
+      "en": "Start Game"
+    },
+    "TXT_OPTIONS": {
+      "de": "Optionen",
+      "en": "Options"
+    },
+    "TXT_CREDITS": {
+      "de": "Credits",
+      "en": "Credits"
+    },
+    "TXT_EXIT": {
+      "de": "Beenden",
+      "en": "Exit"
+    },
+    "TXT_PRESS_START": {
+      "de": "DRÜCKE START",
+      "en": "PRESS START"
+    },
+    "TXT_GAME_OVER": {
+      "de": "SPIEL VORBEI",
+      "en": "GAME OVER"
+    },
+    "TXT_VICTORY": {
+      "de": "SIEG!",
+      "en": "VICTORY!"
+    },
+    "TXT_HP": {
+      "de": "LEBEN",
+      "en": "HP"
+    },
+    "TXT_SCORE": {
+      "de": "PUNKTE",
+      "en": "SCORE"
+    },
+    "TXT_WAVE": {
+      "de": "WELLE",
+      "en": "WAVE"
+    },
+    "TXT_PAUSED": {
+      "de": "PAUSE",
+      "en": "PAUSED"
+    },
+    "TXT_LEVEL_COMPLETE": {
+      "de": "LEVEL FERTIG",
+      "en": "LEVEL COMPLETE"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "title": "Crystal Depths - Concept Album",
+  "chapter": 2,
+  "tracks": [
+    {"track_id": 1, "name": "Frozen Memories", "duration": 200, "style": "Ambient Pad"},
+    {"track_id": 2, "name": "Cryo Chamber", "duration": 240, "style": "Tension Build"},
+    {"track_id": 3, "name": "The Artifact", "duration": 280, "style": "Mystery Theme"},
+    {"track_id": 4, "name": "Golems Wrath", "duration": 300, "style": "Boss Battle"},
+    {"track_id": 5, "name": "Digital Ghosts", "duration": 260, "style": "Melancholy Outro"}
+  ]
+}

@@ -83,8 +83,7 @@ def c_lint(path):
     return issues
 
 def t_lint():
-    files = [os.path.join(ROOT, "src", f) for f in ("tfmx_player.c", "mod_player.c", "sf_mixer.c", "sid_header.c", "test_audio_mix.c",
-                                                 "tfmx_player.h", "mod_player.h", "sf_mixer.h", "sid_header.h", "level_data.h")]
+    files = [os.path.join(ROOT, "src", f) for f in ("soundengine_core.c", "engine_core.c", "game_logic.c", "strudelforce.h")]
     for f in files:
         if os.path.exists(f): iss = c_lint(f); check("c89 lint " + os.path.basename(f), not iss, ",".join(iss))
         else: check("exists " + os.path.basename(f), False)

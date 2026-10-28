@@ -1,0 +1,12 @@
+{
+  "title": "Cyber Fortress - Concept Album",
+  "chapter": 4,
+  "tracks": [
+    {"track_id": 1, "name": "Fortress Gates", "duration": 200, "style": "Tech House Intro"},
+    {"track_id": 2, "name": "Overlords Challenge", "duration": 360, "style": "Final Boss"},
+    {"track_id": 3, "name": "Choice Point", "duration": 280, "style": "Decision Theme"},
+    {"track_id": 4, "name": "Destruction Path", "duration": 300, "style": "Epic Finale A"},
+    {"track_id": 5, "name": "Control Path", "duration": 300, "style": "Epic Finale B"},
+    {"track_id": 6, "name": "Cyber Odyssey", "duration": 400, "style": "Credits Theme"}
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "version": "1.0",
+  "global": {
+    "gravity": 5,
+    "friction_normal": 0.62,
+    "friction_ice": 0.74,
+    "friction_sand": 0.47,
+    "jump_force": -12,
+    "move_speed": 8
+  },
+  "biomes": {
+    "chrome_tempest": {
+      "platform_gap_min": 20,
+      "platform_gap_max": 60,
+      "platform_width_min": 40,
+      "platform_width_max": 100,
+      "enemy_density": 0.3,
+      "item_density": 0.2,
+      "hazard_density": 0.1
+    },
+    "crystal_caverns": {
+      "platform_gap_min": 15,
+      "platform_gap_max": 50,
+      "platform_width_min": 50,
+      "platform_width_max": 120,
+      "enemy_density": 0.25,
+      "item_density": 0.25,
+      "hazard_density": 0.15,
+      "ice_factor": 0.74
+    },
+    "volcanic_depths": {
+      "platform_gap_min": 25,
+      "platform_gap_max": 70,
+      "platform_width_min": 30,
+      "platform_width_max": 80,
+      "enemy_density": 0.4,
+      "item_density": 0.15,
+      "hazard_density": 0.3,
+      "moving_platforms": true
+    },
+    "cyber_fortress": {
+      "platform_gap_min": 30,
+      "platform_gap_max": 80,
+      "platform_width_min": 40,
+      "platform_width_max": 100,
+      "enemy_density": 0.45,
+      "item_density": 0.1,
+      "hazard_density": 0.25,
+      "conveyor_platforms": true
+    }
+  },
+  "enemies": {
+    "grunt": {
+      "hp": 30,
+      "damage": 10,
+      "speed": 2,
+      "spawn_rate": 0.3
+    },
+    "flyer": {
+      "hp": 20,
+      "damage": 15,
+      "speed": 4,
+      "spawn_rate": 0.2
+    },
+    "golem": {
+      "hp": 100,
+      "damage": 25,
+      "speed": 1,
+      "spawn_rate": 0.1
+    }
+  },
+  "weapons": {
+    "blaster": {
+      "damage": 10,
+      "fire_rate": 10,
+      "ammo_cost": 1
+    },
+    "spread": {
+      "damage": 8,
+      "fire_rate": 15,
+      "ammo_cost": 2
+    },
+    "plasma": {
+      "damage": 20,
+      "fire_rate": 20,
+      "ammo_cost": 3
+    }
+  }
+}

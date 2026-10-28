@@ -1,0 +1,11 @@
+{
+  "title": "The Awakening - Concept Album",
+  "chapter": 1,
+  "tracks": [
+    {"track_id": 1, "name": "Neon Genesis", "duration": 180, "style": "Synthwave Intro"},
+    {"track_id": 2, "name": "Factory Floor", "duration": 240, "style": "Industrial Beat"},
+    {"track_id": 3, "name": "STRUDs Voice", "duration": 200, "style": "Ambient Dialogue"},
+    {"track_id": 4, "name": "First Blood", "duration": 220, "style": "Action Theme"},
+    {"track_id": 5, "name": "Chrome Horizon", "duration": 260, "style": "Epic Outro"}
+  ]
+}
