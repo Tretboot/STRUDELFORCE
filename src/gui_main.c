@@ -600,6 +600,9 @@ static void draw_title(int cx, int cy, const char *text, int scale) {
     }
 }
 
+/* Forward (Definition unten, vor biome_palettes) */
+static void draw_bg_structure(int sx, int base_y, int slot, int biome, uint32_t col);
+
 /* --- GUI_STATE_MENU: Hauptmenue (Turrican-2-Style) --- */
 static void render_state_menu(void) {
     int i;
@@ -613,6 +616,11 @@ static void render_state_menu(void) {
                      ((uint32_t)(2 + (i & 3)) << 8) |
                      (uint32_t)(10 + ((i >> 1) & 3) * 4);
         draw_rect(0, y1, WIN_W, 2, c);
+    }
+
+    /* Turrican-2-Silhouette: Chrome-Tempest-Tuerme am Menue-Boden (dezent) */
+    for (i = 0; i < 12; i++) {
+        draw_bg_structure(i * 140, WIN_H - 70, i, 0, 0x101A28);
     }
 
     /* Titel mit Schlagschatten + 2 Tonen */
@@ -652,7 +660,7 @@ static void render_state_menu(void) {
 
     /* Steuerung & Footer */
     draw_rect(0, WIN_H - 70, WIN_W, 46, 0x000A0402);
-    draw_string(40, WIN_H - 62, "WASD/PUFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  ESC MENUE", 0xFF707070, 1);
+    draw_string(40, WIN_H - 62, "WASD/PFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  ESC MENUE", 0xFF707070, 1);
     draw_string(40, WIN_H - 44, "CONTROLLER: STICK/D-PAD  A=FEUER  X=BEAM  B=MORPH  RS=WAFFE  START=MENUE  |  F2-F5 STUDIO", 0xFF707070, 1);
     draw_string(40, WIN_H - 26, "(C) 2026 FRANK MITZKATIS & AI CODING AGENTS  -  CREDITS FUER DIE VOLLE LISTE", 0xFF505050, 1);
 
@@ -844,6 +852,142 @@ static void render_game_over_overlay(void) {
  * Index = core_campaign_biome(): 0..4 (Endless: immer 0 = v0.0-Look).
  * Himmelsformel: Kanal = Basis + Multiplikator*Basis*(0.5+0.5*sin) — fuer
  * Biome 0 exakt die historische Formel (10+20f / 20+60f / 60+120f). */
+/* ================================================================
+ * Turrican-2-Visual-Upgrade (v0.1a): pro Biome eigene Welt-Geometrie.
+ * REINES RENDERER-SEIT — das Core bleibt bit-identisch (Determinismus).
+ * Layer 2 = Biome-Silhouetten (1/4 Parallax), Untergrund = Terrassen
+ * mit Strata-Linien (1:1), Layer 0 = Vordergrund-Rohre (1.5x Scroll).
+ * ================================================================ */
+
+/* Deterministischer World-Hash (LCG + Xorshift, pro Biome + Slot + Salt) */
+static int world_hash(int biome, int slot, int salt) {
+    uint32_t s = (uint32_t)slot * 1664525u + (uint32_t)biome * 1013904223u + (uint32_t)salt * 7919u + 24635u;
+    s = s * 1103515245u + 12345u;
+    s ^= s >> 13;
+    s = s * 22695477u + 1u;
+    s ^= s >> 16;
+    return (int)(s & 0x7FFFFFFF);
+}
+
+/* Ganzzahl-Division, abgerundet auf -unendlich (b > 0) */
+static int floor_div(int a, int b) {
+    return (a >= 0) ? a / b : (a - b + 1) / b;
+}
+
+/* Untergrund-Hoehe (px) pro 24px-Block — jedes Biome hat eigene Gelaeufe */
+static int terrain_height(int biome, int block) {
+    int h = world_hash(biome, block, 11) % 100;
+    switch (biome) {
+        case 1:  return 24 + (h % 2) * 10;            /* THE GREAT BATH: flache Wellen     */
+        case 2:  return (h < 55) ? 96 : 28;           /* MECHANICAL HIVE: hohe Rohrblöcke  */
+        case 3:  return 64 + (h % 4) * 22;            /* VOID REACH: tiefe Kerben          */
+        case 4:  return 44 + (h % 5) * 18;            /* CORE FURNACE: Zacken              */
+        default: return 28 + (h % 3) * 14;            /* CHROME TEMPEST: weite Stufen      */
+    }
+}
+
+/* Layer 2: Biome-Silhouette (Standflaeche = base_y, z.B. ground_y) */
+static void draw_bg_structure(int sx, int base_y, int slot, int biome, uint32_t col) {
+    int h = world_hash(biome, slot, 21);
+    int i;
+    switch (biome) {
+        case 1: { /* THE GREAT BATH: Kuppeln mit Krone */
+            int dw = 44 + h % 30;
+            int dh = 96 + h % 64;
+            for (i = 0; i < 5; i++) {
+                int t = i * i;
+                draw_rect(sx + t / 2, base_y - dh + i * (dh / 5), dw - t, dh / 5 + 1, col);
+            }
+            draw_rect(sx + dw / 2 - 8, base_y - dh - 14, 16, 14, col);
+            break;
+        }
+        case 2: { /* MECHANICAL HIVE: Fabrikblöcke + Schornstein + Fensterreihen */
+            int dw = 58 + h % 40;
+            int dh = 150 + h % 96;
+            draw_rect(sx, base_y - dh, dw, dh, col);
+            draw_rect(sx + dw - 14, base_y - dh - 34, 10, 34, col);
+            for (i = 0; i < dh / 36; i++)
+                draw_rect(sx + 6, base_y - dh + 12 + i * 36, dw - 12, 4, col);
+            break;
+        }
+        case 3: { /* VOID REACH: Monolithe mit Kristallspitze */
+            int mw = 18 + h % 14;
+            int mh = 190 + h % 120;
+            draw_rect(sx + 10, base_y - mh, mw, mh, col);
+            draw_rect(sx + 12 + mw / 2, base_y - mh - 18, 4, 18, col);
+            break;
+        }
+        case 4: { /* CORE FURNACE: Ofentürme mit flickernden Glut-Kronen */
+            int dw = 46 + h % 26;
+            int dh = 170 + h % 80;
+            uint32_t glow = ((s_gui_frame / 8) % 2 == 0) ? 0xFF802000 : 0xFFB03800;
+            draw_rect(sx + 8, base_y - dh, dw, dh, col);
+            draw_rect(sx + 8, base_y - dh - 12, dw, 12, glow);
+            draw_rect(sx + 8 + dw / 2 - 3, base_y - dh + 24, 6, 6, glow);
+            break;
+        }
+        default: { /* CHROME TEMPEST: Antennen-Türme */
+            int dh = 170 + h % 100;
+            draw_rect(sx + 12, base_y - dh, 20, dh, col);
+            draw_rect(sx + 18, base_y - dh - 30, 8, 30, col);
+            draw_rect(sx + 20, base_y - dh - 44, 4, 14, col);
+            break;
+        }
+    }
+}
+
+/* Layer 0: Vordergrund-Rohre (Turrican-2-Signatur) — 1.5x Scroll,
+ * pro Slot eigene Hoehe/Breite, Flansche, Naht, Bohrungen, Biome-Farbton */
+static void draw_fg_pipes(int x_off, int biome, uint32_t body_c, uint32_t seam_c) {
+    int i;
+    for (i = 0; i < 5; i++) {
+        int a = i * 320 - x_off;
+        int px = a % WIN_W;
+        if (px < 0) px += WIN_W;
+        int slot = floor_div(a, 320);
+        int h = 100 + world_hash(biome, slot, 31) % 200;
+        int w = 40 + world_hash(biome, slot, 32) % 24;
+        int top = WIN_H - h;
+        int j, yy;
+        draw_rect(px, top, w, h, body_c);
+        draw_rect(px + w / 2 - 2, top, 4, h, seam_c);
+        for (yy = top + 20; yy < WIN_H - 30; yy += 48) {
+            draw_rect(px - 4, yy, w + 8, 8, body_c);
+            draw_rect(px - 4, yy, w + 8, 1, rgb_mod(body_c, 1.6f));
+        }
+        draw_rect(px, top, w, 3, rgb_mod(body_c, 1.7f));
+        for (j = 0; j < w / 8; j++)
+            draw_rect(px + 4 + j * 8, top + 5, 3, 3, rgb_mod(body_c, 0.7f));
+    }
+}
+
+/* HUD-Panel (Amiga-Bevel: hell oben/links, dunkel unten/rechts + Rahmen) */
+static void draw_panel(int x, int y, int w, int h, uint32_t border) {
+    draw_rect(x, y, w, h, 0x0C141E);
+    draw_rect(x, y, w, 1, 0x3E5C7C);
+    draw_rect(x, y, 1, h, 0x3E5C7C);
+    draw_rect(x, y + h - 1, w, 1, 0x02040A);
+    draw_rect(x + w - 1, y, 1, h, 0x02040A);
+    draw_rect_outline(x, y, w, h, border);
+}
+
+/* Segmentierte Status-Bar (24 Segmente, 1px Ritze, zweifarbige Fuellung) */
+static void draw_stat_bar(int x, int y, int w, int h, int pct, uint32_t hi_c, uint32_t lo_c) {
+    int segs = 24, fill, i;
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    fill = (pct * segs) / 100;
+    draw_rect(x, y, w, h, 0x05090E);
+    for (i = 0; i < segs; i++) {
+        int sw = w / segs;
+        if (i < fill)
+            draw_rect(x + i * sw, y, sw - 1, h, (i < fill / 2) ? lo_c : hi_c);
+        else
+            draw_rect(x + i * sw, y, sw - 1, h, 0x0A1218);
+    }
+    draw_rect_outline(x, y, w, h, 0x2A4860);
+}
+
 static const BiomePalette biome_palettes[5] = {
     { "CHROME TEMPEST",  10, 20,  60, 0x4A5868, 0x304050 }, /* blau   (v0.0) */
     { "THE GREAT BATH",   5, 40,  80, 0x2E6870, 0x205058 }, /* teal   (Unterwasser) */
@@ -869,15 +1013,16 @@ static void render_tab_game(void) {
         draw_rect(0, y1, WIN_W, 8, col);
     }
 
-    /* Layer 2: Ruinen-Säulen (1/4 Parallax = 3x bei 12x Welt-Zoom) */
+    int bi = (int)(bp - biome_palettes);
+
+    /* Layer 2: Biome-Silhouetten (1/4 Parallax = 3x bei 12x Welt-Zoom) —
+     * pro Biome eigene Strukturform (Turrican-2-Upgrade, deterministisch) */
     int x_off = (s_game.px >> 16) * 3;
-    for (int i = 0; i < 16; i++) {
-        int px = (i * 120 - x_off) % WIN_W;
+    for (int i = 0; i < 12; i++) {
+        int a = i * 140 - x_off;
+        int px = a % WIN_W;
         if (px < 0) px += WIN_W;
-        /* Voxel Säule (Biome-Palette) */
-        for (int sy = ground_y - 200; sy < ground_y; sy += 16) {
-            draw_voxel(px, sy, 24, 14, 4, bp->pillar);
-        }
+        draw_bg_structure(px, ground_y, floor_div(a, 140), bi, rgb_mod(bp->pillar, 0.72f));
     }
 
     /* Bodenlinie mit Voxel-Platten (scrollt 1:1 mit der Welt = 12x) */
@@ -886,6 +1031,22 @@ static void render_tab_game(void) {
         int bx = (i * 20 - g_off) % WIN_W;
         if (bx < 0) bx += WIN_W;
         draw_voxel(bx, ground_y, 18, 12, 3, bp->ground);
+    }
+
+    /* Untergrund: pro Biome eigene Terrassen (24px-Blöcke) + Strata-Linien */
+    {
+        uint32_t under  = rgb_mod(bp->ground, 0.55f);
+        uint32_t strata = rgb_mod(bp->ground, 0.36f);
+        uint32_t top_hi = rgb_mod(bp->ground, 1.7f);
+        for (int x = 0; x < WIN_W; x++) {
+            int h = terrain_height(bi, floor_div(x + g_off, 24));
+            int top = ground_y + 12;
+            int yy;
+            draw_rect(x, top, 1, h, under);
+            draw_rect(x, top, 1, 2, top_hi);
+            for (yy = top + 16; yy < top + h; yy += 16)
+                draw_rect(x, yy, 1, 2, strata);
+        }
     }
 
     /* Layer 1: Gameplay Entities */
@@ -985,15 +1146,9 @@ static void render_tab_game(void) {
         set_pixel(px + 1, py, 0xFF8000);
     }
 
-    /* Layer 0: Vordergrund-Rohre (1.5x Scroll = 18x, volle Sichthohe) */
-    int fg_off = (s_game.px >> 16) * 18;
-    for (int i = 0; i < 4; i++) {
-        int px = (i * 420 - fg_off) % WIN_W;
-        if (px < 0) px += WIN_W;
-        draw_rect(px, 36, 16, WIN_H - 24 - 36, 0x182028);
-        draw_rect(px + 3, 36, 10, WIN_H - 24 - 36, 0x2A3848);
-        draw_rect(px + 6, 36, 3, WIN_H - 24 - 36, 0x6080A0);
-    }
+    /* Layer 0: Vordergrund-Rohre (1.5x Scroll, Turrican-2-Signatur;
+     * pro Biome + Slot eigene Hoehe/Breite/Farbton, deterministisch) */
+    draw_fg_pipes((s_game.px >> 16) * 18, bi, rgb_mod(bp->pillar, 0.5f), rgb_mod(bp->pillar, 0.3f));
 
     /* Low-HP Interlace Jitter (<25% HP) */
     if (s_game.max_hp > 0 && s_game.hp * 4 < s_game.max_hp) {
@@ -1018,60 +1173,48 @@ static void render_tab_game(void) {
         }
     }
 
-    /* HUD Box (Amiga Style) */
-    draw_rect(20, 50, 480, 114, 0x80001020);
-    draw_rect_outline(20, 50, 480, 114, 0x0080FF);
-
-    /* HP Bar */
-    char buf[128];
-    snprintf(buf, sizeof(buf), "HP: %d / %d", s_game.hp, s_game.max_hp);
-    draw_string(32, 60, buf, 0xFFFFFF, 1);
-    draw_rect(140, 60, 200, 10, 0x300000);
-    int hp_w = s_game.max_hp > 0 ? (s_game.hp * 200) / s_game.max_hp : 0;
-    if (hp_w > 200) hp_w = 200;
-    if (hp_w > 0) draw_rect(140, 60, hp_w, 10, 0x00FF40);
-
-    /* Shield Bar */
-    snprintf(buf, sizeof(buf), "SHIELD: %d", s_game.shield);
-    draw_string(32, 78, buf, 0x00FFFF, 1);
-    draw_rect(140, 78, 200, 10, 0x002040);
-    int sh_w = (s_game.shield * 200) / 100;
-    if (sh_w > 200) sh_w = 200;
-    if (sh_w > 0) draw_rect(140, 78, sh_w, 10, 0x00C0FF);
-
-    /* Weapon & Score */
-    const char *wpn_names[3] = { "SPREAD", "LASER", "BOUNCE" };
-    snprintf(buf, sizeof(buf), "SCORE: %u | KILLS: %u | WPN: %s LV%u",
-             s_game.score, s_game.enemies_killed, wpn_names[s_game.weapon % 3], s_game.weapon_level);
-    draw_string(32, 98, buf, 0xFFE040, 1);
-    snprintf(buf, sizeof(buf), "BIOME: %s | TRUHE: %s",
-             livecode_biome_name(s_livecode.biome), s_livecode.chest_opened ? "GEOEFFNET" : "GESCHLOSSEN");
-    draw_string(32, 114, buf, 0xA0FFB0, 1);
-
-    /* Leben (kleine Schiffs-Icons, wie in Turrican 2) */
+    /* ============ HUD v2: saubere Bevel-Panels (Turrican-2-Style) ============ */
     {
-        int li;
-        draw_string(32, 132, "LIVES:", 0xFF60FF60, 1);
-        for (li = 0; li < (int)s_game.lives; li++) {
-            draw_voxel(100 + li * 22, 130, 16, 7, 2, 0x3858B8);
-        }
-        draw_string(300, 132, "EXTRA-LEBEN AN DEN WELT-RAENDERN!", 0xFF406040, 1);
-    }
+        char buf[96];
+        const char *wpn_names[3] = { "SPREAD", "LASER", "BOUNCE" };
+        int hp_pct = s_game.max_hp > 0 ? (s_game.hp * 100) / s_game.max_hp : 0;
+        uint32_t hp_hi, hp_lo;
+        if (hp_pct > 50)       { hp_hi = 0x40FF80; hp_lo = 0x18C040; }
+        else if (hp_pct > 25)  { hp_hi = 0xFFC040; hp_lo = 0xD09018; }
+        else                   { hp_hi = ((s_gui_frame / 6) % 2 == 0) ? 0xFF4020 : 0xFF8040; hp_lo = 0xC03018; }
 
-    /* Modus-/Level-Zeile (Kampagne: Level + Biome, Endlos: Welle) */
-    if (s_game.mode == MODE_CAMPAIGN) {
-        snprintf(buf, sizeof(buf), "KAMPAGNE: LEVEL %u/%d  -  %s",
-                 (unsigned)s_game.campaign_level, CAMPAIGN_LEVELS, bp->name);
-        draw_string(32, 150, buf, 0xFFFFFF, 1);
-    } else {
-        snprintf(buf, sizeof(buf), "ENDLOS ROGUELIKE: WAVE %u", (unsigned)s_game.wave);
-        draw_string(32, 150, buf, 0xFFFFFF, 1);
-    }
+        /* Linkes Panel: LEBEN + HP + SCHILD */
+        draw_panel(16, 46, 264, 104, 0x2A4860);
+        draw_string(28, 54, "LIVES", 0x7090B0, 1);
+        for (int li = 0; li < (int)s_game.lives; li++)
+            draw_voxel(96 + li * 22, 56, 16, 7, 2, 0x3858B8);
+        draw_string(28, 78, "HP", 0x7090B0, 1);
+        draw_stat_bar(64, 78, 200, 12, hp_pct, hp_hi, hp_lo);
+        draw_string(28, 98, "SCHILD", 0x7090B0, 1);
+        draw_stat_bar(64, 98, 200, 12, s_game.shield, 0x40D8FF, 0x1870C0);
+        draw_string(28, 122, "EXTRA-LEBEN AN DEN WELT-RAENDERN", 0x405868, 1);
 
-    /* Steuerungshinweis */
-    draw_string(WIN_W - 460, 60, "[WASD/Pfeile] Bewegen | [Leertaste] Sprung", 0xC0D0E0, 1);
-    draw_string(WIN_W - 460, 78, "[Strg] Feuer | [Alt] Beam | [C] Waffe | [T] Truhe", 0xC0D0E0, 1);
-    draw_string(WIN_W - 460, 98, "[S] Morph | [F2] Jukebox | [ESC] Hauptmenue | Pad: A/X/RS", 0x00FFFF, 1);
+        /* Zentrales Score-Panel */
+        draw_panel(WIN_W / 2 - 170, 46, 340, 44, 0x2A4860);
+        draw_string(WIN_W / 2 - 156, 52, "SCORE", 0x7090B0, 1);
+        snprintf(buf, sizeof(buf), "%08u", (unsigned)s_game.score);
+        draw_string(WIN_W / 2 - 156, 66, buf, 0xFFFFFF, 2);
+        snprintf(buf, sizeof(buf), "KILLS %u", (unsigned)s_game.enemies_killed);
+        draw_string(WIN_W / 2 + 70, 52, buf, 0x90A8C0, 1);
+
+        /* Rechtes Panel: LEVEL/WAVE + BIOME + WAFFE + TRUHE */
+        draw_panel(WIN_W - 280, 46, 264, 104, 0x2A4860);
+        if (s_game.mode == MODE_CAMPAIGN)
+            snprintf(buf, sizeof(buf), "KAMPAGNE %u/%d", (unsigned)s_game.campaign_level, CAMPAIGN_LEVELS);
+        else
+            snprintf(buf, sizeof(buf), "ENDLOS  WAVE %u", (unsigned)s_game.wave + 1);
+        draw_string(WIN_W - 268, 54, buf, 0xFFFFC040, 2);
+        draw_string(WIN_W - 268, 78, bp->name, 0xA0E0FF, 1);
+        snprintf(buf, sizeof(buf), "WPN: %s   LV %u", wpn_names[s_game.weapon % 3], s_game.weapon_level);
+        draw_string(WIN_W - 268, 94, buf, 0xFFE040, 1);
+        snprintf(buf, sizeof(buf), "TRUHE: %s", s_livecode.chest_opened ? "GEOEFFNET" : "GESCHLOSSEN");
+        draw_string(WIN_W - 268, 110, buf, s_livecode.chest_opened ? 0x60FF90 : 0x405868, 1);
+    }
 }
 
 /* --- TAB 2: TFMX Explorer & 8-Voice Jukebox View --- */

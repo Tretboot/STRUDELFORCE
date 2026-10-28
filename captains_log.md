@@ -294,3 +294,15 @@
 - Playtest `strudelforce_v0.1.exe` (Menü → KAMPAGNE/ENDLOS → STRG/ALT-Feuer → Controller).
 - Erstpush (Remote anlegen), danach CI-Artefakte als Binaries (Windows/Linux), ADF-Experiment beobachten.
 - P0 Level-Design (KIWI), P2 Original-Soundtrack; Lite-/Full-Handoff-ZIPs bei Bedarf neu generieren (MOD/ im Full-ZIP erwägen).
+
+### 7. v0.1a: Turrican-2-Visual-Upgrade — Erster Fix (Anweisung: "Level immer noch gleich, UI grottig")
+- **Problem:** Die 5 Kampagne-"Level" waren reine Paletten-Tauscher (flacher Boden, identische Säulen-Row, gleiche Rohre) + ein 480x114-HUD-Textblock mit Steuerungshinweisen.
+- **Fix (rein Renderer-seit in `gui_main.c`, Core bit-identisch):**
+  - `world_hash` (LCG+Xorshift, deterministisch) + `terrain_height`: pro Biome eigene **Untergrund-Terrassen** (24px-Blöcke) mit Strata-Linien — Chrome=weite Stufen (28-56px), Great Bath=flache Wellen (24-34px), Hive=hohe Rohrblöcke (28/96px), Void=tiefe Kerben (64-130px), Furnace=Zacken (44-116px).
+  - `draw_bg_structure`: pro Biome eigene **Hintergrund-Silhouetten** (ersetzt die einheitlichen Ruinen-Säulen): Antennen-Türme / Kuppeln mit Krone / Fabrikblöcke mit Schornstein+Fenstern / Monolithe mit Kristallspitze / Ofentürme mit flickernden Glut-Kronen (1/4 Parallax).
+  - `draw_fg_pipes`: **Vordergrund-Rohre** (1.5x Scroll, Turrican-2-Signatur) — pro Slot eigene Höhe/Breite (100-300px/40-64px), Flansche, Naht, Bohrungen, Biome-Farbton.
+  - **HUD-Redesign v1:** drei Bevel-Panels (`draw_panel` + `draw_stat_bar`, 24 Segmente): links LIVES/HP/SCHILD (HP-Farbe gruen→gelb→rot, blinkt <25%), Mitte SCORE (8-stellig, Scale 2) + KILLS, rechts KAMPAGNE/ENDLOS-Zeile + Biome + Waffe + Truhe. Alte Steuerungshinweis-Zeilen aus dem Spiel raus (sind im Menü-Footer).
+  - Menü: Turrican-Silhouette (Chrome-Türme) im Hintergrund, "PUFEILE"-Typo gefixt.
+- **Verifikation:** Build 7/7 (keine neuen Warnings). Neues Pixel-Regression-Tool `tools/visual_check.py` (Dump + C-Logik-Spiegelung): **13/13 Checks OK** — Terrassen (43.909 px, 23 Stufen-Wechsel), Silhouetten (51.923 px), Rohre (29.057 px), 3 Panels, segmentierte Bars, altes HUD weg, alle 5 Biome erzeugen unterschiedliche Terrassen. Endless-Run unverändert (score=35150/wave=12 bei 2500 Ticks), Phase-1 43/43, Embedded 3/3.
+- **Wichtig für P0-Level-Design:** Terrain/Silhouetten/Rohre sind aktuell **dekorativ** — der Spieler läuft auf fester Bodenzeile. Wenn echte Plattformen/Kollision kommen, muss die Geometrie als Daten in den Core (Chunk-Generator) wandern, dann rendert der GUI-Player dieselben Daten statt Renderer-Magie.
+- **Dump-Harness-Wissen:** `--dump N <basis>` schreibt 1 PPM je 10 Frames (→ N/10 Dateien); Segmente prozentual: 0-20 Menü, 20-40 Loading (Game startet bei 20%), 40-75 Gameplay, 75 Low-HP, 90 Game-Over-Overlay (0.22-Dimming über allem → Frame-Auswahl für Pixel-Checks beachten).
