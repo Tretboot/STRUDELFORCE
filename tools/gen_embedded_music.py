@@ -2,13 +2,14 @@
 """
 gen_embedded_music.py - Erzeugt src/embedded_music.h (GENERIERT, nicht handeditieren!)
 
-Packt ausgewaehlte Chris Hülsbeck TFMX/MOD-Tracks IN die EXE (static const Arrays):
-  1. Turrican 2: "Load", "World 1 - Dessert", "World 2 - Cave" (Multi-Subsongs!)
-  2. Turrican 3: "Loader", "World 1 - Factory", "World 2 - Dungeons"
-  3. Apidya: "Ongame 1 - Meadow", "Ongame 5 - Bosspanic"
-  4. Wing Commander: "Regular Combat" (Action MOD), "Overall Victory" (MOD)
+Packt ausgewaehlte Chris Huelsbeck TFMX/MOD-Tracks IN die EXE (static const Arrays):
+  1. Turrican 2: "Load" (Fanfare), "World 1 - Desert", "World 2 - Cave" (Multi-Subsongs!)
+  2. Apidya: "Ongame 1 - Meadow" (Chris Huelsbeck Amiga Anthem)
+  3. Software Manager: Multi-Subsongs (22 Subsongs!) fuer dynamische Abspann-Phasen & Gameplay
+  4. 3 Amiga Cracktros: Fairlight, Skidrow, Paradox (fuer das zufaellige Amiga-Start-Intro!)
+  5. 8-Bit & MOD Klassiker: Blue Monday Chiptune, Wing Commander Combat, Lost Patrol
 
-Total Audio-Budget: ~477 KB, bleibt weit unter dem 1.44 MB Floppy-Limit!
+Total Audio-Budget: ~450 KB -> strudelforce.exe bleibt strikt UNTER 1 MB!
 
 Aufruf:  python tools/gen_embedded_music.py
 Output:  src/embedded_music.h
@@ -18,30 +19,18 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# (Symbol-Präfix, Typ, Pfad relativ zum Workspace-Root)
 TRACKS = [
     ("TFMX_APIDYA_MEADOW",   "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx"),
     ("SAM_APIDYA_MEADOW",    "sam",  "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.sam"),
-    ("TFMX_APIDYA_BOSSPANIC", "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 5 - Bosspanic.tfx"),
-    ("SAM_APIDYA_BOSSPANIC",  "sam",  "TFMX Professional/Apidya/Apidya - Ongame 5 - Bosspanic.sam"),
     ("TFMX_T2_LOAD",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - Load.tfx"),
     ("SAM_T2_LOAD",          "sam",  "TFMX Professional/Turrican 2/Turrican 2 - Load.sam"),
     ("TFMX_T2_DESERT",       "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.tfx"),
     ("SAM_T2_DESERT",        "sam",  "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.sam"),
     ("TFMX_T2_CAVE",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.tfx"),
     ("SAM_T2_CAVE",          "sam",  "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.sam"),
-    ("TFMX_APIDYA_TECHNO",   "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 4 - Techno.tfx"),
-    ("SAM_APIDYA_TECHNO",    "sam",  "TFMX Professional/Apidya/Apidya - Ongame 4 - Techno.sam"),
-    ("TFMX_ANSTOSS_1",       "tfmx", "TFMX Professional/Anstoss/Anstoss - Ongame 1.tfx"),
-    ("SAM_ANSTOSS_1",        "sam",  "TFMX Professional/Anstoss/Anstoss - Ongame 1.sam"),
-    ("TFMX_BIFI2",           "tfmx", "TFMX Professional/BiFi Adventure 2/BiFi Adventure 2 - Ongame.tfx"),
-    ("SAM_BIFI2",            "sam",  "TFMX Professional/BiFi Adventure 2/BiFi Adventure 2 - Ongame.sam"),
-    ("TFMX_MADTV9",          "tfmx", "TFMX Professional/Mad TV/Mad TV - Ongame 9.tfx"),
-    ("SAM_MADTV9",           "sam",  "TFMX Professional/Mad TV/Mad TV - Ongame 9.sam"),
     ("TFMX_SOFTMAN",         "tfmx", "TFMX Professional/Software Manager/Software Manager - Msx.tfx"),
     ("SAM_SOFTMAN",          "sam",  "TFMX Professional/Software Manager/Software Manager - Msx.sam"),
     ("MOD_LOST_PATROL",      "mod",  "MOD/Lost_Patrol/tunev1.mod"),
-    ("MOD_BLUE_MONDAY_KGB",  "mod",  "MOD/Pop Songs/- Dance and Pop/1980s/New Order/- in the blue (KGB).mod"),
     ("MOD_BLUE_MONDAY_CHIP", "mod",  "MOD/Pop Songs/- Dance and Pop/1980s/New Order/blue-monday (chip tune).mod"),
     ("MOD_WC_REGULARCOMBAT", "mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_regularcombat.mod"),
     ("MOD_FAIRLIGHT",        "mod",  "MOD/Cracktro/Mod.Fairlight.Mod"),
@@ -52,26 +41,15 @@ TRACKS = [
 NAMES = {
     "TFMX_APIDYA_MEADOW":    "Apidya - Ongame 1 - Meadow (TFMX)",
     "SAM_APIDYA_MEADOW":     "Apidya - Ongame 1 - Meadow (Samples .sam)",
-    "TFMX_APIDYA_BOSSPANIC": "Apidya - Ongame 5 - Bosspanic (TFMX)",
-    "SAM_APIDYA_BOSSPANIC":  "Apidya - Ongame 5 - Bosspanic (Samples .sam)",
     "TFMX_T2_LOAD":          "Turrican 2 - Load (TFMX)",
     "SAM_T2_LOAD":           "Turrican 2 - Load (Samples .sam)",
     "TFMX_T2_DESERT":        "Turrican 2 - World 1 - Desert (TFMX)",
     "SAM_T2_DESERT":         "Turrican 2 - World 1 - Desert (Samples .sam)",
     "TFMX_T2_CAVE":          "Turrican 2 - World 2 - Cave (TFMX)",
     "SAM_T2_CAVE":           "Turrican 2 - World 2 - Cave (Samples .sam)",
-    "TFMX_APIDYA_TECHNO":    "Apidya - Ongame 4 - Techno (TFMX)",
-    "SAM_APIDYA_TECHNO":     "Apidya - Ongame 4 - Techno (Samples .sam)",
-    "TFMX_ANSTOSS_1":        "Anstoss - Ongame 1 (TFMX)",
-    "SAM_ANSTOSS_1":         "Anstoss - Ongame 1 (Samples .sam)",
-    "TFMX_BIFI2":            "BiFi Adventure 2 - Ongame (TFMX)",
-    "SAM_BIFI2":             "BiFi Adventure 2 - Ongame (Samples .sam)",
-    "TFMX_MADTV9":           "Mad TV - Ongame 9 (TFMX)",
-    "SAM_MADTV9":            "Mad TV - Ongame 9 (Samples .sam)",
     "TFMX_SOFTMAN":          "Software Manager - Msx (TFMX)",
     "SAM_SOFTMAN":           "Software Manager - Msx (Samples .sam)",
     "MOD_LOST_PATROL":       "Lost Patrol - tunev1 (MOD)",
-    "MOD_BLUE_MONDAY_KGB":   "New Order - in the blue (KGB) (MOD)",
     "MOD_BLUE_MONDAY_CHIP":  "New Order - blue-monday (chip tune) (MOD)",
     "MOD_WC_REGULARCOMBAT":  "Wing Commander - Regular Combat (MOD)",
     "MOD_FAIRLIGHT":         "Fairlight - Amiga Cracktro (MOD)",
@@ -88,7 +66,7 @@ def main():
     lines.append(" * NICHT HANDEDITIEREN. Tracks aendern -> Generator laufen lassen.")
     lines.append(" *")
     lines.append(" * In-EXE-Musik: Chris Huelsbeck TFMX Master-Soundtracks mit Multi-Subsongs")
-    lines.append(" * (Turrican 2, Turrican 3, Apidya) + Wing Commander MODs.")
+    lines.append(" * (Turrican 2, Apidya, Software Manager) + Amiga Cracktros & MODs.")
     lines.append(" * static const -> kein Heap, Amiga-INCBIN-kompatibel, null Disk-Zugriffe.")
     lines.append(" * ========================================================================= */")
     lines.append("#ifndef EMBEDDED_MUSIC_H")

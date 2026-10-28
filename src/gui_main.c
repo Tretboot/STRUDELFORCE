@@ -64,10 +64,11 @@ typedef enum {
     GUI_STATE_GAME,
     GUI_STATE_GAMEOVER,
     GUI_STATE_STUDIO,
-    GUI_STATE_CREDITS
+    GUI_STATE_CREDITS,
+    GUI_STATE_MANUAL
 } GuiState;
 
-static GuiState s_gui_state = GUI_STATE_MENU;
+static GuiState s_gui_state = GUI_STATE_STUDIO; /* Startet direkt im Amiga Cracktro Intro! */
 static int s_menu_index = 0;        /* aktiver Hauptmenue-Punkt */
 static int s_active_mode = MODE_CAMPAIGN; /* Hauptmodus: Kampagne mit 5 Welten & Plattformen */
 static int s_exp_mode = 0;           /* 0 = Integrierte ROM-Tracks (Default!), 1 = Lokale Dateien/Ordner */
@@ -75,14 +76,19 @@ static int s_exp_rom_selected = 0;   /* ausgewaehlter Track im ROM-Browser */
 static int s_pad_connected = 0;      /* XInput Gamepad 0 verbunden (Footer-Anzeige) */
 static int s_pad_start_prev = 0;     /* XInput Start-Button (Edge-Erkennung) */
 static int s_loading_ticks = 0;     /* Loading-Screen-Fortschritt (50Hz-Ticks) */
+static int s_manual_page = 0;       /* aktuelle Handbuch-Seite (0..4) */
+static int s_is_fullscreen = 0;     /* Vollbild-Status */
+static WINDOWPLACEMENT s_prev_wp = { sizeof(WINDOWPLACEMENT) };
+static int s_filter_mode = 3;       /* 0=AUS, 1=CRT SCANLINES, 2=BLOOM, 3=DEMOSCENE CRT+BLOOM */
 
-#define MENU_ITEM_COUNT 6
+#define MENU_ITEM_COUNT 7
 static const char *menu_labels[MENU_ITEM_COUNT] = {
     "KAMPAGNE (5 LEVELS)",
     "ENDLOS ROGUELIKE",
+    "PILOTEN-HANDBUCH",
     "TFMX JUKEBOX",
     "STRUDEL STUDIO",
-    "AMIGA INTRO",
+    "AMIGA CRACKTRO",
     "CREDITS"
 };
 
@@ -99,7 +105,7 @@ static GameAudio   s_audio;
 static LiveCodeUI  s_livecode;
 static TfmxPlayer  s_tfmx;
 static int         s_tfmx_active = 0;
-static GuiTab      s_current_tab = TAB_GAME;
+static GuiTab      s_current_tab = TAB_INTRO; /* Intro-Tab beim Start */
 static int         s_gui_frame = 0; /* GUI-Frame-Zaehler: animiert Tabs, deren
                                         Quelle (s_game.tick) nur im Game-Tab laeuft */
 
@@ -623,28 +629,156 @@ typedef struct {
     int is_mod;
 } EmbeddedTrack;
 
+/* ============================================================================
+ * VOLLBILD & FENSTER-SKALIERUNG (16:9 Letterbox / Pillarbox)
+ * ============================================================================ */
+static void toggle_fullscreen(HWND hwnd) {
+    DWORD style = GetWindowLong(hwnd, GWL_STYLE);
+    if (!s_is_fullscreen) {
+        MONITORINFO mi = { sizeof(mi) };
+        if (GetWindowPlacement(hwnd, &s_prev_wp) &&
+            GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+            SetWindowLong(hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd, HWND_TOP,
+                mi.rcMonitor.left, mi.rcMonitor.top,
+                mi.rcMonitor.right - mi.rcMonitor.left,
+                mi.rcMonitor.bottom - mi.rcMonitor.top,
+                SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            s_is_fullscreen = 1;
+        }
+    } else {
+        SetWindowLong(hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd, &s_prev_wp);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        s_is_fullscreen = 0;
+    }
+}
+
+/* ============================================================================
+ * DEMOSZENE CRT & PHOSPHOR BLOOM FILTER (0 KB Libs, Mega-Wow-Effekt)
+ * ============================================================================ */
+static void apply_demoscene_postprocess(void) {
+    if (s_filter_mode == 0) return;
+
+    /* 1. CRT Scanlines (Sony Trinitron / Amiga 1084S Zeilengitter) */
+    if (s_filter_mode == 1 || s_filter_mode == 3) {
+        for (int y = 1; y < WIN_H; y += 2) {
+            uint32_t *row = &s_pixels[y * WIN_W];
+            for (int x = 0; x < WIN_W; x++) {
+                uint32_t p = row[x];
+                uint32_t r = (p >> 16) & 0xFF;
+                uint32_t g = (p >> 8) & 0xFF;
+                uint32_t b = p & 0xFF;
+                /* 26% Zeilen-Dunkelstufe */
+                r = (r * 188) >> 8;
+                g = (g * 188) >> 8;
+                b = (b * 188) >> 8;
+                row[x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    /* 2. Phosphor Bloom & Glow (Highlight-Lichter strahlen in Nachbarpixel) */
+    if (s_filter_mode >= 2) {
+        static uint8_t s_glow_r[320 * 180];
+        static uint8_t s_glow_g[320 * 180];
+        static uint8_t s_glow_b[320 * 180];
+
+        /* Schritt A: Downsampling und Schwellwert */
+        for (int gy = 0; gy < 180; gy++) {
+            int sy = gy * 4;
+            uint32_t *srow = &s_pixels[sy * WIN_W];
+            uint8_t *gr = &s_glow_r[gy * 320];
+            uint8_t *gg = &s_glow_g[gy * 320];
+            uint8_t *gb = &s_glow_b[gy * 320];
+            for (int gx = 0; gx < 320; gx++) {
+                int sx = gx * 4;
+                uint32_t c = srow[sx];
+                uint32_t r = (c >> 16) & 0xFF;
+                uint32_t g = (c >> 8) & 0xFF;
+                uint32_t b = c & 0xFF;
+                uint32_t lum = (r * 77 + g * 150 + b * 29) >> 8;
+                if (lum > 140) {
+                    uint32_t f = lum - 140;
+                    gr[gx] = (uint8_t)((r * f) >> 8);
+                    gg[gx] = (uint8_t)((g * f) >> 8);
+                    gb[gx] = (uint8_t)((b * f) >> 8);
+                } else {
+                    gr[gx] = 0; gg[gx] = 0; gb[gx] = 0;
+                }
+            }
+        }
+
+        /* Schritt B: Schneller Box-Glow Blur */
+        for (int gy = 0; gy < 180; gy++) {
+            uint8_t *gr = &s_glow_r[gy * 320];
+            uint8_t *gg = &s_glow_g[gy * 320];
+            uint8_t *gb = &s_glow_b[gy * 320];
+            for (int gx = 1; gx < 319; gx++) {
+                gr[gx] = (gr[gx-1] + gr[gx] * 2 + gr[gx+1]) >> 2;
+                gg[gx] = (gg[gx-1] + gg[gx] * 2 + gg[gx+1]) >> 2;
+                gb[gx] = (gb[gx-1] + gb[gx] * 2 + gb[gx+1]) >> 2;
+            }
+        }
+
+        /* Schritt C: Additives Rueckmischen in Framebuffer */
+        for (int y = 0; y < WIN_H; y++) {
+            int gy = y >> 2;
+            uint32_t *row = &s_pixels[y * WIN_W];
+            uint8_t *gr = &s_glow_r[gy * 320];
+            uint8_t *gg = &s_glow_g[gy * 320];
+            uint8_t *gb = &s_glow_b[gy * 320];
+            for (int x = 0; x < WIN_W; x++) {
+                int gx = x >> 2;
+                uint32_t p = row[x];
+                uint32_t r = ((p >> 16) & 0xFF) + ((uint32_t)gr[gx] * 3 >> 2);
+                uint32_t g = ((p >> 8) & 0xFF)  + ((uint32_t)gg[gx] * 3 >> 2);
+                uint32_t b = (p & 0xFF)         + ((uint32_t)gb[gx] * 3 >> 2);
+                if (r > 255) r = 255;
+                if (g > 255) g = 255;
+                if (b > 255) b = 255;
+                row[x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    /* 3. Subtile Chromatic Aberration bei Mode 3 */
+    if (s_filter_mode == 3) {
+        for (int y = 0; y < WIN_H; y++) {
+            uint32_t *row = &s_pixels[y * WIN_W];
+            for (int x = 2; x < WIN_W - 2; x += 3) {
+                uint32_t pr = row[x - 1];
+                uint32_t pb = row[x + 1];
+                uint32_t c  = row[x];
+                uint32_t r = ((pr >> 16) & 0xFF);
+                uint32_t g = ((c >> 8) & 0xFF);
+                uint32_t b = (pb & 0xFF);
+                row[x] = (((((c >> 16) & 0xFF) * 3 + r) >> 2) << 16) |
+                         (g << 8) |
+                         (((c & 0xFF) * 3 + b) >> 2);
+            }
+        }
+    }
+}
+
 static const EmbeddedTrack EMBEDDED_TRACKS[] = {
     { EMB_TFMX_APIDYA_MEADOW_NAME,    EMB_TFMX_APIDYA_MEADOW,    sizeof(EMB_TFMX_APIDYA_MEADOW),    EMB_SAM_APIDYA_MEADOW,    sizeof(EMB_SAM_APIDYA_MEADOW),    0 }, /* 0: Apidya Meadow (Intro) */
-    { EMB_TFMX_APIDYA_BOSSPANIC_NAME,  EMB_TFMX_APIDYA_BOSSPANIC,  sizeof(EMB_TFMX_APIDYA_BOSSPANIC),  EMB_SAM_APIDYA_BOSSPANIC,  sizeof(EMB_SAM_APIDYA_BOSSPANIC),  0 }, /* 1: Apidya Bosspanic */
-    { EMB_TFMX_T2_LOAD_NAME,          EMB_TFMX_T2_LOAD,          sizeof(EMB_TFMX_T2_LOAD),          EMB_SAM_T2_LOAD,          sizeof(EMB_SAM_T2_LOAD),          0 }, /* 2: Turrican 2 Loader */
-    { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 3: Turrican 2 Desert */
-    { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 4: Turrican 2 Cave */
-    { EMB_TFMX_APIDYA_TECHNO_NAME,    EMB_TFMX_APIDYA_TECHNO,    sizeof(EMB_TFMX_APIDYA_TECHNO),    EMB_SAM_APIDYA_TECHNO,    sizeof(EMB_SAM_APIDYA_TECHNO),    0 }, /* 5: Apidya Techno */
-    { EMB_TFMX_ANSTOSS_1_NAME,        EMB_TFMX_ANSTOSS_1,        sizeof(EMB_TFMX_ANSTOSS_1),        EMB_SAM_ANSTOSS_1,        sizeof(EMB_SAM_ANSTOSS_1),        0 }, /* 6: Anstoss Ongame 1 */
-    { EMB_TFMX_BIFI2_NAME,            EMB_TFMX_BIFI2,            sizeof(EMB_TFMX_BIFI2),            EMB_SAM_BIFI2,            sizeof(EMB_SAM_BIFI2),            0 }, /* 7: BiFi Adventure 2 */
-    { EMB_TFMX_MADTV9_NAME,           EMB_TFMX_MADTV9,           sizeof(EMB_TFMX_MADTV9),           EMB_SAM_MADTV9,           sizeof(EMB_SAM_MADTV9),           0 }, /* 8: Mad TV Ongame 9 */
-    { EMB_TFMX_SOFTMAN_NAME,          EMB_TFMX_SOFTMAN,          sizeof(EMB_TFMX_SOFTMAN),          EMB_SAM_SOFTMAN,          sizeof(EMB_SAM_SOFTMAN),          0 }, /* 9: Software Manager Msx (Sub 21) */
-    { EMB_MOD_LOST_PATROL_NAME,       EMB_MOD_LOST_PATROL,       sizeof(EMB_MOD_LOST_PATROL),       NULL,                     0,                                1 }, /* 10: Lost Patrol tunev1 */
-    { EMB_MOD_BLUE_MONDAY_KGB_NAME,   EMB_MOD_BLUE_MONDAY_KGB,   sizeof(EMB_MOD_BLUE_MONDAY_KGB),   NULL,                     0,                                1 }, /* 11: New Order - in the blue (KGB) */
-    { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 12: New Order - blue-monday (chip tune) */
-    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                     0,                                1 }, /* 13: Wing Commander Combat */
-    { EMB_MOD_FAIRLIGHT_NAME,         EMB_MOD_FAIRLIGHT,         sizeof(EMB_MOD_FAIRLIGHT),         NULL,                     0,                                1 }, /* 14: Fairlight Amiga Cracktro */
-    { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 15: Skidrow Cracktro 10 */
-    { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 16: Paradox Cracktro 12 */
+    { EMB_TFMX_T2_LOAD_NAME,          EMB_TFMX_T2_LOAD,          sizeof(EMB_TFMX_T2_LOAD),          EMB_SAM_T2_LOAD,          sizeof(EMB_SAM_T2_LOAD),          0 }, /* 1: Turrican 2 Loader & Fanfare */
+    { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 2: Turrican 2 Desert */
+    { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 3: Turrican 2 Cave */
+    { EMB_TFMX_SOFTMAN_NAME,          EMB_TFMX_SOFTMAN,          sizeof(EMB_TFMX_SOFTMAN),          EMB_SAM_SOFTMAN,          sizeof(EMB_SAM_SOFTMAN),          0 }, /* 4: Software Manager (22 Subsongs!) */
+    { EMB_MOD_LOST_PATROL_NAME,       EMB_MOD_LOST_PATROL,       sizeof(EMB_MOD_LOST_PATROL),       NULL,                     0,                                1 }, /* 5: Lost Patrol (15-Sample MOD) */
+    { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 6: Blue Monday Chiptune (8-Bit MOD) */
+    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                     0,                                1 }, /* 7: Wing Commander Combat (MOD) */
+    { EMB_MOD_FAIRLIGHT_NAME,         EMB_MOD_FAIRLIGHT,         sizeof(EMB_MOD_FAIRLIGHT),         NULL,                     0,                                1 }, /* 8: Fairlight Cracktro (MOD) */
+    { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 9: Skidrow Cracktro (MOD) */
+    { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 10: Paradox Cracktro (MOD) */
 };
-#define TRACK_IDX_FAIRLIGHT 14
-#define TRACK_IDX_SKIDROW   15
-#define TRACK_IDX_PARADOX   16
+#define TRACK_IDX_FAIRLIGHT 8
+#define TRACK_IDX_SKIDROW   9
+#define TRACK_IDX_PARADOX   10
 
 /* ============================================================================
  * DJ CROSSFADE ENGINE (Weiches Amiga DJ-Ineinander-Ueberblenden)
@@ -1218,9 +1352,10 @@ static void menu_activate(void) {
     switch (s_menu_index) {
         case 0: start_game(MODE_CAMPAIGN); break;
         case 1: start_game(MODE_ENDLESS);  break;
-        case 2: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
-        case 3: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
-        case 4: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
+        case 2: s_gui_state = GUI_STATE_MANUAL; s_manual_page = 0; break;
+        case 3: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
+        case 4: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
+        case 5: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
         default: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
     }
 }
@@ -1243,6 +1378,142 @@ static void pad_menu_poll(void) {
     if (a && !prev_a)
         menu_activate();
     prev_up = up; prev_down = down; prev_a = a;
+}
+
+/* --- GUI_STATE_MANUAL: Ausfuehrliches 5-Seiten Piloten-Handbuch (Amiga-Stil) --- */
+static void render_state_manual(void) {
+    clear_screen(0x00040A);
+
+    /* Retro Amiga Header */
+    draw_rect(0, 0, WIN_W, 40, 0x001020);
+    draw_rect_outline(0, 0, WIN_W, 40, 0x0050A0);
+    draw_string(24, 14, ">>> STRUDELFORCE 0.3.0 - OFFIZIELLES PILOTEN-HANDBUCH <<<", 0x00E0FF, 1);
+    
+    char pbuf[64];
+    snprintf(pbuf, sizeof(pbuf), "SEITE %d / 5   [ < A / LINKS ]   [ D / RECHTS > ]", s_manual_page + 1);
+    draw_string(WIN_W - 460, 14, pbuf, 0xFFE040, 1);
+
+    int mx = 50;
+    int my = 54;
+    int mw = WIN_W - 100;
+    int mh = WIN_H - 106;
+    draw_rect(mx, my, mw, mh, 0x000A14);
+    draw_rect_outline(mx, my, mw, mh, 0x004080);
+    draw_rect_outline(mx + 4, my + 4, mw - 8, mh - 8, 0x002040);
+
+    if (s_manual_page == 0) {
+        /* SEITE 1: MISSION & GESCHICHTE */
+        draw_string(mx + 30, my + 24, "=== KAPITEL I: DIE MISSION & DIE LEGENDE VON STRUDELFORCE ===", 0xFF9040, 2);
+        draw_rect(mx + 30, my + 50, mw - 60, 2, 0xFF8020);
+
+        int ty = my + 68;
+        draw_string(mx + 40, ty,      "Im Jahr 2026 kollabiert das neuronale Datennetz des Amiga-Clusters.", 0xFFFFFF, 1); ty += 22;
+        draw_string(mx + 40, ty,      "Aus den Truemmern erheben sich drei feindliche Biome:", 0xFFFFFF, 1); ty += 22;
+        draw_string(mx + 60, ty,      "1. CHROME TEMPEST: Zersplitterte Neon-Industriemetropolen unter Dauerfeuer.", 0x00E0FF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "2. THE GREAT BATH: Ueberflutete Amiga-Katakomben voller Truhen und Geheimgreifer.", 0x40FF80, 1); ty += 20;
+        draw_string(mx + 60, ty,      "3. MECHANICAL HIVE: Autonome Kampfroboter und schwere Kettenpanzer-Golems.", 0xFFA040, 1); ty += 28;
+
+        draw_string(mx + 40, ty,      "PILOT JULIAN UND DIE CYBER-RUESTUNG:", 0xFFFF40, 1); ty += 22;
+        draw_string(mx + 40, ty,      "Als Elite-Krieger in der cybernetischen Bren-McGuire-Gedaechtnisruestung bist Du", 0xE0E0E0, 1); ty += 20;
+        draw_string(mx + 40, ty,      "die letzte Hoffnung der Menschheit. Deine Ruestung verfuegt ueber ein Arsenal", 0xE0E0E0, 1); ty += 20;
+        draw_string(mx + 40, ty,      "aus Drei-Wege-Splittern, Hochenergielasern und dem legendaeren 360-Grad-Drehstrahl.", 0xE0E0E0, 1); ty += 28;
+
+        draw_string(mx + 40, ty,      "SPIELMODI:", 0xFFFF40, 1); ty += 22;
+        draw_string(mx + 60, ty,      "* KAMPAGNE: 5 grosse Amiga-Levels mit je 3 Wellen, Plattformen, Bossen & Sieg!", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* ENDLOS ROGUELIKE: Unendliche Wellenjagd auf 16.16 Fixed-Point Highscores.", 0xFFFFFF, 1); ty += 35;
+
+        draw_turrican_sprite(mx + mw - 140, my + mh - 90, (s_gui_frame / 4) % 13 + 1, 1);
+    } else if (s_manual_page == 1) {
+        /* SEITE 2: STEUERUNG */
+        draw_string(mx + 30, my + 24, "=== KAPITEL II: PILOTEN-STEUERUNG (KEYBOARD & XINPUT GAMEPAD) ===", 0xFF9040, 2);
+        draw_rect(mx + 30, my + 50, mw - 60, 2, 0xFF8020);
+
+        int ty = my + 68;
+        draw_string(mx + 40, ty,      "TASTATUR-BELEGUNG:", 0x00E0FF, 1); ty += 22;
+        draw_string(mx + 60, ty,      "WASD / PFEILTASTEN    : Laufen, Ducken, Zielen", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "LEERTASTE             : Sprung & Jetpack-Schub", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "STRG / CONTROL        : Primaerwaffe abfeuern (Dauerfeuer)", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "ALT / RECHTS / LINKS  : 360-GRAD TURRICAN-DREHSTRAHL (Lightning Beam)", 0xFFFF40, 1); ty += 20;
+        draw_string(mx + 60, ty,      "C-TASTE               : Waffe wechseln (Spread -> Laser -> Bounce)", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "S-TASTE               : MORPH-BALL (Rollmodus - unverwundbar gegen Fallen!)", 0xFF80FF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "T-TASTE               : Schatztruhe in The Great Bath oeffnen", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "M / N                 : Musikstueck wechseln  |  K / SHIFT+M: Subsong wechseln", 0x80FF80, 1); ty += 28;
+
+        draw_string(mx + 40, ty,      "GAMEPAD-STEUERUNG (XINPUT / XBOX / RETRO-CONTROLLER):", 0x00E0FF, 1); ty += 22;
+        draw_string(mx + 60, ty,      "STICK LINKS / D-PAD   : Laufen, Zielen & Ducken", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "A-BUTTON / CROSS      : Sprung", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "X-BUTTON / SQUARE     : Primaerwaffe abfeuern", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "RECHTER STICK / TRIG  : 360-GRAD DREHSTRAHL IN ALLE RICHTUNGEN", 0xFFFF40, 1); ty += 20;
+        draw_string(mx + 60, ty,      "B-BUTTON / CIRCLE     : Morph-Ball Rollmodus", 0xFF80FF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "RIGHT BUMPER (RB)     : Waffe umschalten  |  Y: Musik wechseln", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "START-BUTTON          : Menue oeffnen / Spiel pausieren", 0xFFFFFF, 1);
+    } else if (s_manual_page == 2) {
+        /* SEITE 3: ARSENAL & AUSRUESTUNG */
+        draw_string(mx + 30, my + 24, "=== KAPITEL III: DAS HIGH-TECH WAFFEN-ARSENAL ===", 0xFF9040, 2);
+        draw_rect(mx + 30, my + 50, mw - 60, 2, 0xFF8020);
+
+        int ty = my + 68;
+        draw_string(mx + 40, ty,      "1. TRIPLE-SPREAD GUN (TASTE C / DEFAULT):", 0xFFC000, 1); ty += 20;
+        draw_string(mx + 60, ty,      "Feuert einen breiten Faecherschuss mit drei bis fuenf Energiebolzen.", 0xFFFFFF, 1); ty += 18;
+        draw_string(mx + 60, ty,      "Perfekt fuer die Beseitigung grosser Gegnerwellen und fliegender Dronen.", 0xC0C0C0, 1); ty += 26;
+
+        draw_string(mx + 40, ty,      "2. HIGH-ENERGY LASER (TASTE C):", 0x00E0FF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "Zwillings-Plasmabolzen mit extremer Durchschlagskraft.", 0xFFFFFF, 1); ty += 18;
+        draw_string(mx + 60, ty,      "Dringt tief in gepanzerte Ziele wie Walker und Tanks ein.", 0xC0C0C0, 1); ty += 26;
+
+        draw_string(mx + 40, ty,      "3. BOUNCE 2.0 (TASTE C):", 0x40FF40, 1); ty += 20;
+        draw_string(mx + 60, ty,      "Smaragd-Energiekugeln, die bis zu vierfach an Decken und Boeden abprallen.", 0xFFFFFF, 1); ty += 18;
+        draw_string(mx + 60, ty,      "Unverzichtbar in engen Hoehlen und verwinkelten Unterwasser-Abschnitten.", 0xC0C0C0, 1); ty += 26;
+
+        draw_string(mx + 40, ty,      "4. 360-GRAD TURRICAN-DREHSTRAHL (TASTE ALT / RECHTER ANALOGSTICK):", 0xFFFF40, 1); ty += 20;
+        draw_string(mx + 60, ty,      "Kontinuierlicher ionisierter Blitzstrahl. Kann per Stick oder Pfeiltasten", 0xFFFFFF, 1); ty += 18;
+        draw_string(mx + 60, ty,      "frei im 360-Grad-Radius um das Schiff gelenkt werden. Zerstoeberer!", 0xC0C0C0, 1); ty += 26;
+
+        draw_string(mx + 40, ty,      "5. MORPH-BALL (TASTE S / GAMEPAD B):", 0xFF80FF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "Verwandelt Julian in eine rotierende Kugel. Rollt durch enge Schaechte", 0xFFFFFF, 1); ty += 18;
+        draw_string(mx + 60, ty,      "und weicht Bodenfallen und tiefen Geschossen muehelos aus.", 0xC0C0C0, 1);
+    } else if (s_manual_page == 3) {
+        /* SEITE 4: SOUND-SYSTEM & LIVE-CODING */
+        draw_string(mx + 30, my + 24, "=== KAPITEL IV: CYBER-PAULA TFMX AUDIO & STRUDEL LIVE-CODING ===", 0xFF9040, 2);
+        draw_rect(mx + 30, my + 50, mw - 60, 2, 0xFF8020);
+
+        int ty = my + 68;
+        draw_string(mx + 40, ty,      "AUTHENTISCHE CHRIS HUELSBECK TFMX REPLAY-ENGINE:", 0x00E0FF, 1); ty += 22;
+        draw_string(mx + 60, ty,      "* 8-Kanal Paula DMA Mixer mit 16574 Hz PAL Samplerate.", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* Echte TFMX-Makrobefehle (Pitch-Bends, Sample-Loops, Arpeggios).", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* 22 Subsongs in Software Manager fuer dynamischen Abspann und Gameplay.", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* Butterweicher DJ-Crossfader fuer klickfreie Phasenwechsel.", 0xFFFF40, 1); ty += 28;
+
+        draw_string(mx + 40, ty,      "STRUDEL LIVE-CODING STUDIO (TASTE F3):", 0x40FF80, 1); ty += 22;
+        draw_string(mx + 60, ty,      "* Echter Cleanroom Mini-Notation Pattern Evaluator.", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* Druecke ESC im Spiel fuer die Livecode-Konsole.", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* 7-Oszillator Detune SuperSaw Lead Synth (F5 im Studio schaltbar).", 0xFF80FF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* Soundgodizer Masterkette (Taste F5): BASS -> WARM -> OVERDRIVE.", 0xFFFF40, 1);
+    } else {
+        /* SEITE 5: GRAFIK & FILTER */
+        draw_string(mx + 30, my + 24, "=== KAPITEL V: DEMOSZENE-GRAFIK, CRT-FILTER & VOLLBILD ===", 0xFF9040, 2);
+        draw_rect(mx + 30, my + 50, mw - 60, 2, 0xFF8020);
+
+        int ty = my + 68;
+        draw_string(mx + 40, ty,      "GRAFIKEINSTELLUNGEN & FILTER (DEMOSZENE WOW-EFFEKTE):", 0x00E0FF, 1); ty += 22;
+        draw_string(mx + 60, ty,      "[ F11 / ALT+ENTER ]  : VOLLBILD-MODUS (Borderless 16:9 Letterbox)", 0xFFFF40, 1); ty += 20;
+        draw_string(mx + 60, ty,      "[ F7 ]               : CRT-SCANLINES (Sony Trinitron / 1084S Scanlines)", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "[ F8 ]               : POST-FX MODUS WECHSELN:", 0x40FF80, 1); ty += 20;
+        draw_string(mx + 80, ty,      "- MODUS 0: AUS (Reine scharfe Pixel)", 0xC0C0C0, 1); ty += 18;
+        draw_string(mx + 80, ty,      "- MODUS 1: CRT SCANLINES (Klassische Roehrenzeilen)", 0xC0C0C0, 1); ty += 18;
+        draw_string(mx + 80, ty,      "- MODUS 2: PHOSPHOR BLOOM & GLOW (Neon-Lichter gluehen)", 0xC0C0C0, 1); ty += 18;
+        draw_string(mx + 80, ty,      "- MODUS 3: DEMOSCENE CRT + BLOOM + ABERRATION (Arcade Pur!)", 0xFFFF40, 1); ty += 28;
+
+        draw_string(mx + 40, ty,      "2.5D VOXEL-ENGINE GESETZE:", 0xFF9040, 1); ty += 22;
+        draw_string(mx + 60, ty,      "* 100% Zero-Float fixed-point Simulation (16.16 fix16_t).", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* 4 Parallax-Ebenen (Sky, Ruinen, Gameplay, Vordergrund).", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* Amiga OCS/AGA indizierte Farbpaletten fuer unverfaelschte Amiga-Farben.", 0xFFFFFF, 1);
+    }
+
+    /* Footer Navigation */
+    draw_rect(0, WIN_H - 45, WIN_W, 45, 0x000E1C);
+    draw_rect_outline(0, WIN_H - 45, WIN_W, 45, 0x004080);
+    draw_string(60, WIN_H - 30, "[ < / LINKS / A ] VORHERIGE SEITE     [ > / RECHTS / D ] NAECHSTE SEITE     [ ESC / ENTER ] ZURUECK ZUM MENUE", 0x80D0FF, 1);
 }
 
 /* --- Render-Routinen fuer Tabs --- */
@@ -1390,8 +1661,8 @@ static void render_state_menu(void) {
 
     /* Steuerung & Footer */
     draw_rect(0, WIN_H - 70, WIN_W, 46, 0x000A0402);
-    draw_string(40, WIN_H - 62, "WASD/PFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  M MUSIK  ESC MENUE", 0xFF707070, 1);
-    draw_string(40, WIN_H - 44, "CONTROLLER: STICK/D-PAD  A=FEUER  X=BEAM  B=MORPH  RS=WAFFE  Y=MUSIK  START=MENUE  |  F2-F5 STUDIO", 0xFF707070, 1);
+    draw_string(40, WIN_H - 62, "WASD/PFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  H HANDBUCH", 0xFF80A0C0, 1);
+    draw_string(40, WIN_H - 44, "[F7] CRT SCANLINES  [F8] BLOOM & GLOW  [F11 / ALT+ENTER] VOLLBILD  [F5] SOUNDGODIZER", 0xFFFF8020, 1);
     draw_string(40, WIN_H - 26, "(C) 2026 FRANK MITZKATIS & AI CODING AGENTS  -  CREDITS FUER DIE VOLLE LISTE", 0xFF505050, 1);
 
     render_status_bar();
@@ -1563,13 +1834,13 @@ typedef struct {
 } CreditSongStep;
 
 static const CreditSongStep s_credit_playlist[] = {
-    { 9,  0 }, /* 1. Software Manager - Msx (Subsong 0 - Intro & Amiga Exploration) */
-    { 9, 21 }, /* 2. Software Manager - Msx (Subsong 21 - Deep Melodic Reflection) */
-    { 4,  0 }, /* 3. Turrican 2 - Cave (Subterranean Atmosphere) */
-    { 11, 0 }, /* 4. New Order - in the blue (KGB) (80s Synthpop Masterpiece) */
-    { 14, 0 }, /* 5. Fairlight - Amiga Cracktro Classic (Chip Masterpiece) */
-    { 3,  0 }, /* 6. Turrican 2 - Desert (Surface Battle Anthem) */
-    { 0,  0 }  /* 7. Apidya - Meadow (Pastoral Synthesis) */
+    { 4,  0 }, /* Phase 0: Software Manager Subsong 0 (Opening & Overview) */
+    { 4,  3 }, /* Phase 1: Software Manager Subsong 3 (Architecture & Audio Spec) */
+    { 4,  7 }, /* Phase 2: Software Manager Subsong 7 (Workflow Essay & Demoscene) */
+    { 4, 14 }, /* Phase 3: Software Manager Subsong 14 (Captain's Log Sandbox) */
+    { 4, 21 }, /* Phase 4: Software Manager Subsong 21 (Deep Reflection & Amiga Heritage) */
+    { 2,  0 }, /* Phase 5: Turrican 2 Desert */
+    { 3,  0 }  /* Phase 6: Turrican 2 Cave */
 };
 #define CREDIT_PLAYLIST_COUNT (int)(sizeof(s_credit_playlist) / sizeof(s_credit_playlist[0]))
 
@@ -1786,13 +2057,26 @@ static void render_state_credits(void) {
         /* Wenn die Luecke zwischen Kapitel II und III erreicht wird (oder nach ~40s):
          * Nahtloser DJ-Wechsel von Software Manager Subsong 0 auf Subsong 21! */
         int cur_top_line = s_credit_scroll_y / line_h;
-        if (s_credit_music_step == 0 && (cur_top_line >= (45 + EMBEDDED_CREDITS_GAP_LINE) || s_credit_music_timer >= 2000)) {
-            s_credit_music_step = 1; /* Subsong 21 */
-            s_credit_music_timer = 0;
-            music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
-        } else if (s_credit_music_step > 0 && s_credit_music_timer >= 2200) {
+        if (s_credit_music_step == 0 && cur_top_line >= EMBEDDED_CREDITS_PHASE_1_LINE) {
+            s_credit_music_step = 1;
+            trigger_dj_crossfade();
+            music_play_embedded(s_credit_playlist[1].track_idx, s_credit_playlist[1].subsong);
+        } else if (s_credit_music_step == 1 && cur_top_line >= EMBEDDED_CREDITS_PHASE_2_LINE) {
+            s_credit_music_step = 2;
+            trigger_dj_crossfade();
+            music_play_embedded(s_credit_playlist[2].track_idx, s_credit_playlist[2].subsong);
+        } else if (s_credit_music_step == 2 && cur_top_line >= EMBEDDED_CREDITS_PHASE_3_LINE) {
+            s_credit_music_step = 3;
+            trigger_dj_crossfade();
+            music_play_embedded(s_credit_playlist[3].track_idx, s_credit_playlist[3].subsong);
+        } else if (s_credit_music_step == 3 && cur_top_line >= EMBEDDED_CREDITS_PHASE_4_LINE) {
+            s_credit_music_step = 4;
+            trigger_dj_crossfade();
+            music_play_embedded(s_credit_playlist[4].track_idx, s_credit_playlist[4].subsong);
+        } else if (s_credit_music_timer >= 2200) {
             s_credit_music_timer = 0;
             s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
+            trigger_dj_crossfade();
             music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
         }
     }
@@ -1801,7 +2085,7 @@ static void render_state_credits(void) {
         s_credit_scroll_y = total_scroll;
         if (!s_credit_fanfare_played) {
             s_credit_fanfare_played = 1;
-            music_play_embedded(3, 2); /* Turrican 2 Desert Subsong 2 = LEVEL COMPLETE FANFARE! */
+            music_play_embedded(1, 2); /* Turrican 2 Load Subsong 2 = LEVEL COMPLETE FANFARE! */
         }
     }
 
@@ -2943,25 +3227,28 @@ static void render_tab_strudel(void) {
     draw_string(50, 530, "  - Pausen:          ~ oder -", 0xD0E0FF, 1);
 }
 
-/* --- TAB 4: Amiga Copper Intro View --- */
+/* --- TAB 4: Amiga Copper Cracktro Intro View (Demoszene 3D Vektor-Logo) --- */
 static void render_tab_intro(void) {
-    draw_rect(0, 36, WIN_W, WIN_H - 60, 0x000018);
+    draw_rect(0, 0, WIN_W, WIN_H, 0x000010);
 
-    /* Wenn noch kein Cracktro laeuft, automatisch Fairlight Cracktro anwerfen */
+    /* Wenn noch kein Cracktro laeuft, zufaellig Fairlight/Skidrow/Paradox waehlen */
     static int s_intro_mod_started = 0;
+    static int s_intro_trk_step = 0;
     if (!s_intro_mod_started) {
         s_intro_mod_started = 1;
-        music_play_embedded(TRACK_IDX_FAIRLIGHT, 0);
+        s_intro_trk_step = rand() % 3;
+        int trk = (s_intro_trk_step == 0) ? TRACK_IDX_FAIRLIGHT :
+                  (s_intro_trk_step == 1) ? TRACK_IDX_SKIDROW : TRACK_IDX_PARADOX;
+        music_play_embedded(trk, 0);
     }
 
-    /* 3 Bouncing Copperbars (GUI-Frame-Quelle: laeuft in ALLEN Tabs, nicht nur im Game) */
+    /* 1. Amiga Copper Gradient Bars */
     float y1 = 360.0f + 160.0f * sinf((float)s_gui_frame * 0.05f);
     float y2 = 360.0f + 180.0f * sinf((float)s_gui_frame * 0.07f + 1.8f);
     float y3 = 360.0f + 140.0f * sinf((float)s_gui_frame * 0.09f + 3.2f);
 
-    for (int y = 36; y < WIN_H - 24; y++) {
+    for (int y = 0; y < WIN_H; y++) {
         float r = 0, g = 0, b = 15;
-
         float d1 = fabsf((float)y - y1);
         if (d1 < 45.0f) {
             float i1 = 1.0f - (d1 / 45.0f);
@@ -2980,39 +3267,121 @@ static void render_tab_intro(void) {
         if (r > 255.0f) r = 255.0f;
         if (g > 255.0f) g = 255.0f;
         if (b > 255.0f) b = 255.0f;
-
         uint32_t col = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
         draw_rect(0, y, WIN_W, 1, col);
     }
 
-    /* Cracktro Banner */
-    draw_rect(180, 92, 920, 48, 0x000E24);
-    draw_rect_outline(180, 92, 920, 48, 0x00FFFF);
-    draw_string(210, 102, ">>> COMMODORE AMIGA 500 CRACKTRO JUKEBOX (PROTRACKER 4-KANAL) <<<", 0x00FFFF, 1);
+    /* 2. Demoscene 3D Rotating Wireframe STRUDELFORCE Vector-Cube */
     {
-        char cr_buf[140];
-        snprintf(cr_buf, sizeof(cr_buf), "TRACK: %s  |  [ LEERTASTE / M / N : WECHSELN ]", s_current_track_name);
-        draw_string(210, 120, cr_buf, 0xFFE040, 1);
+        int cx = WIN_W / 2;
+        int cy = 250;
+        float f = (float)s_gui_frame;
+        float ax = f * 0.024f;
+        float ay = f * 0.038f;
+        float az = f * 0.016f;
+
+        float cosX = cosf(ax), sinX = sinf(ax);
+        float cosY = cosf(ay), sinY = sinf(ay);
+        float cosZ = cosf(az), sinZ = sinf(az);
+
+        static const float cube_v[8][3] = {
+            { -70, -70, -70 }, {  70, -70, -70 },
+            {  70,  70, -70 }, { -70,  70, -70 },
+            { -70, -70,  70 }, {  70, -70,  70 },
+            {  70,  70,  70 }, { -70,  70,  70 },
+        };
+        static const int cube_e[12][2] = {
+            {0,1},{1,2},{2,3},{3,0},
+            {4,5},{5,6},{6,7},{7,4},
+            {0,4},{1,5},{2,6},{3,7}
+        };
+
+        int px[8], py[8];
+        for (int v = 0; v < 8; v++) {
+            float x = cube_v[v][0];
+            float y = cube_v[v][1];
+            float z = cube_v[v][2];
+
+            float x1 = x * cosY - z * sinY;
+            float z1 = x * sinY + z * cosY;
+            float y1_r = y * cosX - z1 * sinX;
+            float z2 = y * sinX + z1 * cosX;
+            float x2 = x1 * cosZ - y1_r * sinZ;
+            float y2_r = x1 * sinZ + y1_r * cosZ;
+
+            float fov = 340.0f;
+            float dist = z2 + 280.0f;
+            if (dist < 10.0f) dist = 10.0f;
+            px[v] = cx + (int)((x2 * fov) / dist);
+            py[v] = cy + (int)((y2_r * fov) / dist);
+        }
+
+        for (int e = 0; e < 12; e++) {
+            draw_line(px[cube_e[e][0]], py[cube_e[e][0]], px[cube_e[e][1]], py[cube_e[e][1]], 0x00E0FF);
+            draw_line(px[cube_e[e][0]] + 1, py[cube_e[e][0]], px[cube_e[e][1]] + 1, py[cube_e[e][1]], 0x0080C0);
+        }
+
+        static const float oct_v[6][3] = {
+            { -95, 0, 0 }, { 95, 0, 0 }, { 0, -95, 0 }, { 0, 95, 0 }, { 0, 0, -95 }, { 0, 0, 95 }
+        };
+        int opx[6], opy[6];
+        for (int v = 0; v < 6; v++) {
+            float x = oct_v[v][0]; float y = oct_v[v][1]; float z = oct_v[v][2];
+            float x1 = x * cosY - z * sinY; float z1 = x * sinY + z * cosY;
+            float y1_r = y * cosX - z1 * sinX; float z2 = y * sinX + z1 * cosX;
+            float x2 = x1 * cosZ - y1_r * sinZ; float y2_r = x1 * sinZ + y1_r * cosZ;
+            float dist = z2 + 280.0f;
+            if (dist < 10.0f) dist = 10.0f;
+            opx[v] = cx + (int)((x2 * 340.0f) / dist);
+            opy[v] = cy + (int)((y2_r * 340.0f) / dist);
+        }
+        for (int a = 0; a < 6; a++) {
+            for (int b = a + 1; b < 6; b++) {
+                if (a / 2 != b / 2) {
+                    draw_line(opx[a], opy[a], opx[b], opy[b], 0xFFFF40);
+                }
+            }
+        }
     }
 
-    /* Amiga Logo */
-    draw_string(240, 160, "   _____ _______ _____  _    _ _____  ______ _      ______ ____  _____   _____ ______ ", 0xFFFFFF, 1);
-    draw_string(240, 172, "  / ____|__   __|  __ \\| |  | |  __ \\|  ____| |    |  ____/ __ \\|  __ \\ / ____|  ____|", 0xFFFFFF, 1);
-    draw_string(240, 184, " | (___    | |  | |__) | |  | | |  | | |__  | |    | |__ | |  | | |__) | |    | |__   ", 0xFFFFFF, 1);
-    draw_string(240, 196, "  \\___ \\   | |  |  _  /| |  | | |  | |  __| | |    |  __|| |  | |  _  /| |    |  __|  ", 0xFFFFFF, 1);
-    draw_string(240, 208, "  ____) |  | |  | | \\ \\| |__| | |__| | |____| |____| |   | |__| | | \\ \\| |____| |____ ", 0xFFFFFF, 1);
-    draw_string(240, 220, " |_____/   |_|  |_|  \\_\\\\____/|_____/|______|______|_|    \\____/|_|  \\_\\\\_____|______|", 0xFFFFFF, 1);
+    /* 3. Tanzendes 3D-Sinus-ASCII-Logo STRUDELFORCE */
+    const char *logo_chars = "S T R U D E L F O R C E";
+    int nchars = (int)strlen(logo_chars);
+    int lx0 = (WIN_W - nchars * 28) / 2;
+    for (int i = 0; i < nchars; i++) {
+        if (logo_chars[i] == ' ') continue;
+        float sy = 390.0f + 18.0f * sinf((float)i * 0.45f + (float)s_gui_frame * 0.08f);
+        uint32_t col = ((i % 2) == 0) ? 0xFFFFA020 : 0xFF00E0FF;
+        draw_char(lx0 + i * 28 + 2, (int)sy + 2, logo_chars[i], 0x400010, 3);
+        draw_char(lx0 + i * 28, (int)sy, logo_chars[i], col, 3);
+    }
 
-    draw_string(360, 260, "COMMODORE AMIGA 500 * 50HZ PAL CORE * CYBER-PAULA TFMX AUDIO", 0xFFE040, 1);
+    /* Cracktro Banner */
+    draw_rect(180, 50, 920, 48, 0x000E24);
+    draw_rect_outline(180, 50, 920, 48, 0x00FFFF);
+    draw_string(210, 60, ">>> COMMODORE AMIGA 500 CRACKTRO JUKEBOX (PROTRACKER 4-KANAL) <<<", 0x00FFFF, 1);
+    {
+        char cr_buf[160];
+        snprintf(cr_buf, sizeof(cr_buf), "TRACK: %s  |  [ LEERTASTE / M / N : WECHSELN ]", s_current_track_name);
+        draw_string(210, 78, cr_buf, 0xFFE040, 1);
+    }
 
-    /* Sinus-tanzender Scroller */
-    const char *scroller = "+++ STRUDELFORCE 2026 +++ AMIGA 500 RETRO POWER +++ 16.16 FIXED POINT PHYSICS +++ LIVE-CODE MINI-NOTATION +++ CHRIS HUELSBECK TFMX SOUNDTRACK +++ DRUECKE F1 FUER DAS SPIEL +++";
+    /* Bottom Information & Navigation */
+    draw_string(WIN_W / 2 - 250, 440, "COMMODORE AMIGA 500 * 50HZ PAL CORE * CYBER-PAULA TFMX AUDIO", 0xFFE040, 1);
+
+    if ((s_gui_frame / 20) % 2 == 0) {
+        const char *ent_msg = ">>> DRUECKE LEERTASTE / ENTER / START FUERS HAUPTMENUE <<<";
+        draw_string(WIN_W / 2 - (int)strlen(ent_msg) * 4, 465, ent_msg, 0x00FFFF, 1);
+    }
+
+    /* Sinus-tanzender Amiga-Scroller */
+    const char *scroller = "+++ STRUDELFORCE 0.3.0 +++ 100% 50HZ PAL AMIGA ENGINE +++ CHRIS HUELSBECK TFMX SOUNDTRACK +++ TURRICAN II 360-DEGREE LIGHTNING BEAM +++ DEMOSCENE CRT & BLOOM FILTERS +++ DRUECKE ENTER ODER LEERTASTE FUERS HAUPTMENUE +++";
     int slen = (int)strlen(scroller);
     int offset = s_gui_frame / 2;
 
     for (int col = 0; col < 120; col++) {
         char ch = scroller[(col + offset) % slen];
-        float sy = 480.0f + 25.0f * sinf((float)col * 0.15f + (float)s_gui_frame * 0.08f);
+        float sy = 530.0f + 16.0f * sinf((float)col * 0.14f + (float)s_gui_frame * 0.07f);
         draw_char(40 + col * 10, (int)sy, ch, 0xFFFF00, 2);
     }
 }
@@ -3041,6 +3410,21 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         case WM_KEYDOWN:
             /* --- Globale F-Keys & ESC (State-Maschine) --- */
             if (wParam == VK_F5) { god_toggle(); return 0; }
+            if (wParam == VK_F7) {
+                s_filter_mode = (s_filter_mode == 1 ? 0 : 1);
+                snprintf(s_status_msg, sizeof(s_status_msg), "Filter: %s", s_filter_mode == 1 ? "CRT SCANLINES AN" : "AUS");
+                return 0;
+            }
+            if (wParam == VK_F8) {
+                s_filter_mode = (s_filter_mode + 1) % 4;
+                const char *fnames[4] = { "AUS (Scharf)", "CRT SCANLINES", "PHOSPHOR BLOOM", "DEMOSCENE CRT+BLOOM" };
+                snprintf(s_status_msg, sizeof(s_status_msg), "Filter: %s", fnames[s_filter_mode]);
+                return 0;
+            }
+            if (wParam == VK_F11 || (wParam == VK_RETURN && (GetKeyState(VK_MENU) & 0x8000))) {
+                toggle_fullscreen(hWnd);
+                return 0;
+            }
 
             /* F1: Hauptmenue/Game-Over -> neues Spiel; sonst -> zurueck zum Spiel */
             if (wParam == VK_F1) {
@@ -3070,7 +3454,11 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             /* Tastatur-Kuerzel fuer Studio-Tabs */
             if (s_gui_state == GUI_STATE_STUDIO) {
                 if (s_current_tab == TAB_INTRO) {
-                    if (wParam == VK_SPACE || wParam == 'M' || wParam == 'N') {
+                    if (wParam == VK_RETURN || wParam == VK_SPACE || wParam == VK_ESCAPE) {
+                        s_gui_state = GUI_STATE_MENU;
+                        return 0;
+                    }
+                    if (wParam == 'M' || wParam == 'N') {
                         static int s_intro_trk_step = 0;
                         s_intro_trk_step = (s_intro_trk_step + 1) % 3;
                         int trk = (s_intro_trk_step == 0) ? TRACK_IDX_FAIRLIGHT :
@@ -3101,6 +3489,24 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 return 0;
             }
 
+            /* --- Handbuch-Navigation --- */
+            if (s_gui_state == GUI_STATE_MANUAL) {
+                if (wParam == VK_LEFT || wParam == 'A' || wParam == 'a') {
+                    if (s_manual_page > 0) s_manual_page--;
+                } else if (wParam == VK_RIGHT || wParam == 'D' || wParam == 'd') {
+                    if (s_manual_page < 4) s_manual_page++;
+                } else if (wParam == VK_ESCAPE || wParam == VK_RETURN) {
+                    s_gui_state = GUI_STATE_MENU;
+                }
+                return 0;
+            }
+
+            /* H-Taste im Menue: Handbuch oeffnen */
+            if (s_gui_state == GUI_STATE_MENU && (wParam == 'H' || wParam == 'h')) {
+                s_gui_state = GUI_STATE_MANUAL;
+                s_manual_page = 0;
+                return 0;
+            }
             /* --- Hauptmenue-Navigation --- */
             if (s_gui_state == GUI_STATE_MENU) {
                 if (wParam == VK_UP)   s_menu_index = (s_menu_index + MENU_ITEM_COUNT - 1) % MENU_ITEM_COUNT;
@@ -4279,14 +4685,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                                 if (s_tfmx_active && s_tfmx.num_subsongs > 2) {
                                     music_subsong_switch(2); /* Level Clear Fanfare */
                                 } else {
-                                    music_play_embedded(9, 0); /* Wing Commander Victory MOD */
+                                    music_play_embedded(7, 0); /* Wing Commander Combat MOD */
                                 }
                             }
                         }
                     } else if (s_game.state == STATE_VICTORY) {
                         if (s_last_subsong_reason != 5) {
                             s_last_subsong_reason = 5;
-                            music_play_embedded(9, 0); /* Sieg Fanfare MOD */
+                            music_play_embedded(7, 0); /* Sieg Fanfare MOD */
                         }
                     } else if (s_game.state == STATE_GAMEOVER) {
                         if (s_last_subsong_reason != 3) {
@@ -4372,6 +4778,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     render_state_loading();
                 } else if (s_gui_state == GUI_STATE_CREDITS) {
                     render_state_credits();
+                } else if (s_gui_state == GUI_STATE_MANUAL) {
+                    render_state_manual();
                 } else if (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER) {
                     render_tab_game();
                     if (s_gui_state == GUI_STATE_GAMEOVER) {
@@ -4390,13 +4798,43 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     } else {
                         render_tab_intro();
                     }
-                    render_top_bar();
-                    render_status_bar();
+                    if (s_gui_state != GUI_STATE_STUDIO || s_current_tab != TAB_INTRO) {
+                        render_top_bar();
+                        render_status_bar();
+                    }
                 }
 
-                /* In Fenster blitten */
+                /* Demoszene CRT & Phosphor Bloom Filter anwenden */
+                apply_demoscene_postprocess();
+
+                /* Vollbild 16:9 Letterbox / Pillarbox Skalierung */
+                RECT cr;
+                GetClientRect(hWnd, &cr);
+                int cw = cr.right - cr.left;
+                int ch = cr.bottom - cr.top;
+                if (cw <= 0 || ch <= 0) { cw = WIN_W; ch = WIN_H; }
+
+                int dst_w = cw;
+                int dst_h = (cw * 9) / 16;
+                if (dst_h > ch) {
+                    dst_h = ch;
+                    dst_w = (ch * 16) / 9;
+                }
+                int dst_x = (cw - dst_w) / 2;
+                int dst_y = (ch - dst_h) / 2;
+
+                if (s_is_fullscreen && (dst_x > 0 || dst_y > 0)) {
+                    static int s_fs_cleared = 0;
+                    if (s_fs_cleared < 2) {
+                        HBRUSH bbr = (HBRUSH)GetStockObject(BLACK_BRUSH);
+                        FillRect(hdc, &cr, bbr);
+                        s_fs_cleared++;
+                    }
+                }
+
+                /* In Fenster / Vollbild blitten */
                 StretchDIBits(
-                    hdc, 0, 0, WIN_W, WIN_H,
+                    hdc, dst_x, dst_y, dst_w, dst_h,
                     0, 0, WIN_W, WIN_H,
                     s_pixels, &s_bmi, DIB_RGB_COLORS, SRCCOPY
                 );
