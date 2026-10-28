@@ -1,0 +1,74 @@
+{
+  "player_jump": {
+    "sample_id": 0,
+    "volume": 128,
+    "pan": 128,
+    "duration_ms": 150
+  },
+  "player_shoot": {
+    "sample_id": 1,
+    "volume": 100,
+    "pan": 128,
+    "duration_ms": 50
+  },
+  "player_hit": {
+    "sample_id": 2,
+    "volume": 150,
+    "pan": 128,
+    "duration_ms": 200
+  },
+  "enemy_hit": {
+    "sample_id": 3,
+    "volume": 120,
+    "pan": 128,
+    "duration_ms": 100
+  },
+  "enemy_die": {
+    "sample_id": 4,
+    "volume": 140,
+    "pan": 128,
+    "duration_ms": 300
+  },
+  "powerup": {
+    "sample_id": 5,
+    "volume": 130,
+    "pan": 128,
+    "duration_ms": 250
+  },
+  "explosion": {
+    "sample_id": 6,
+    "volume": 180,
+    "pan": 128,
+    "duration_ms": 400
+  },
+  "level_start": {
+    "sample_id": 7,
+    "volume": 160,
+    "pan": 128,
+    "duration_ms": 500
+  },
+  "level_complete": {
+    "sample_id": 8,
+    "volume": 170,
+    "pan": 128,
+    "duration_ms": 600
+  },
+  "ui_select": {
+    "sample_id": 9,
+    "volume": 80,
+    "pan": 128,
+    "duration_ms": 30
+  },
+  "ui_hover": {
+    "sample_id": 10,
+    "volume": 60,
+    "pan": 128,
+    "duration_ms": 20
+  },
+  "boss_spawn": {
+    "sample_id": 11,
+    "volume": 200,
+    "pan": 128,
+    "duration_ms": 800
+  }
+}

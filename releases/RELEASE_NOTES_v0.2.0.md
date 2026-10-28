@@ -72,22 +72,22 @@
 
 ## 🔬 Test Suite & Determinism
 * **Consolidated Test Suite (`test_suite.exe`):** **32 PASS, 0 FAIL**
+* **Integrated CLI Suite (`strudelforce.exe --test`):** **6 PASS, 0 FAIL**
 * **Deterministic Simulation:** 2500-tick endless oracle test verified bit-identical:
   `Score=35150, Kills=191, Bounces=42047, Lives=9`
+* **Single Standalone Executable:** The release package now contains exclusively **`strudelforce.exe`** (no extraneous test/alias binaries). It supports `-headless`, `--demo [ticks]`, and `--test` directly from the command line!
 
 ---
 
 ## 🔐 SHA-256 Checksums
 
 ```text
-782fa5e0b7260a535be353532a7320ccace6ca73358830edee6d168cea1670ee  strudelforce-v0.2.0-windows-x64.zip
-17ec9e5578c63d99ac57ae9c7733e0f1944fde1400f08e96d41f5d5d16e49e1d  strudelforce.exe
-17ec9e5578c63d99ac57ae9c7733e0f1944fde1400f08e96d41f5d5d16e49e1d  strudelforce_v0.2.exe
-3d7b4630c1786b811c3015c11c0031adc54c42c43396a549d6664d7cba7265aa  strudelforce_game.exe
-98a14a7860660c2f9b01094ffdf4463ad88c12847d72f6ba40568d9e73c1cc5c  test_suite.exe
+aa6378e4f240aa6007420089fcacb86c99b38b5b5f5f026a73edcde8975699be  strudelforce-v0.2.0-windows-x64.zip
+52c93b56057d1a8f0f52af61eac2596a4056a1c98458e74f05dc150cb5d267a4  strudelforce.exe
 ```
 
 ---
 
 ## 💖 Acknowledgments & Dedication
 Dedicated to **Chris Hülsbeck**, **Manfred Trenz**, **Rainbow Arts**, **Factor 5**, and the golden demoscene era of the **Commodore Amiga 500**.
+

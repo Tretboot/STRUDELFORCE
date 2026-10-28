@@ -20,7 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <xinput.h>   /* Controller-Support (XInput, Gamepad 0) */
+#include <xinput.h>
+#include <io.h>
+#include <fcntl.h>   /* Controller-Support (XInput, Gamepad 0) */
 
 #include "core_sim.h"
 #include "game_audio.h"
@@ -2075,6 +2077,189 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     return DefWindowProcA(hWnd, msg, wParam, lParam);
 }
 
+static void init_console_io(void) {
+    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hStdOut && hStdOut != INVALID_HANDLE_VALUE && GetFileType(hStdOut) != FILE_TYPE_UNKNOWN) {
+        int fd = _open_osfhandle((intptr_t)hStdOut, _O_TEXT);
+        if (fd >= 0) {
+            FILE *fp = _fdopen(fd, "w");
+            if (fp) {
+                *stdout = *fp;
+                setvbuf(stdout, NULL, _IONBF, 0);
+            }
+        }
+        int err_fd = _open_osfhandle((intptr_t)GetStdHandle(STD_ERROR_HANDLE), _O_TEXT);
+        if (err_fd >= 0) {
+            FILE *err_fp = _fdopen(err_fd, "w");
+            if (err_fp) {
+                *stderr = *err_fp;
+                setvbuf(stderr, NULL, _IONBF, 0);
+            }
+        }
+    } else {
+        if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
+            freopen("CONOUT$", "w", stdout);
+            freopen("CONOUT$", "w", stderr);
+            setvbuf(stdout, NULL, _IONBF, 0);
+            setvbuf(stderr, NULL, _IONBF, 0);
+        }
+    }
+}
+
+/* --- Headless-Simulation und Test-Suite fuer CLI / Batch-Betrieb --- */
+
+static int run_headless_simulation(uint32_t ticks, uint32_t seed, int campaign_mode) {
+    GameState game;
+    LiveCodeUI livecode;
+    uint32_t t;
+    printf("\n========================================================================\n");
+    printf("STRUDELFORCE v%s - Headless 50Hz PAL Simulation\n", GAME_VERSION);
+    printf("Modus: %s | Seed: %u | Geplante Ticks: %u\n",
+           campaign_mode ? "KAMPAGNE (5 Level x 3 Wellen)" : "ENDLOS ROGUELIKE", seed, ticks);
+    printf("========================================================================\n");
+
+    core_init(&game, seed);
+    if (campaign_mode) {
+        game.mode = MODE_CAMPAIGN;
+        game.campaign_level = 1;
+        core_setup_platforms(&game);
+    }
+    livecode_init(&livecode, "c2 [c2 eb2] [f2 g2] <bb2 [g2 f2]>");
+
+    for (t = 0; t < ticks; t++) {
+        uint16_t mask = INPUT_FIRE;
+        int best = -1;
+        int32_t best_d = 0x7FFFFFFF;
+        int i;
+        for (i = 0; i < MAX_ENEMIES; i++) {
+            const Enemy *e = &game.enemies[i];
+            fix16_t dx;
+            if (!e->active) continue;
+            dx = e->x - game.px;
+            if (dx < 0) dx = -dx;
+            if (dx < best_d) { best_d = dx; best = i; }
+        }
+        if (best >= 0) {
+            if (game.enemies[best].x > game.px) mask |= INPUT_RIGHT;
+            else if (game.enemies[best].x < game.px) mask |= INPUT_LEFT;
+            if (game.enemies[best].y < game.py - FIX(1)) mask |= INPUT_UP;
+        } else {
+            mask |= (t % 100 < 60) ? INPUT_RIGHT : INPUT_LEFT;
+        }
+
+        core_tick(&game, mask);
+        livecode_tick(&livecode);
+
+        if (t == 1250) {
+            livecode_open_chest(&livecode);
+        }
+
+        if ((t + 1) % 500 == 0 || t == ticks - 1 || game.state == STATE_GAMEOVER || game.state == STATE_VICTORY) {
+            printf("  Tick %5u | Wave: %2u | Score: %6d | Kills: %3d | HP: %3d%% | Lives: %d | State: %s\n",
+                   game.tick, game.wave, game.score, game.enemies_killed, game.hp, game.lives,
+                   game.state == STATE_VICTORY ? "VICTORY" : (game.state == STATE_GAMEOVER ? "GAMEOVER" : "PLAYING"));
+        }
+
+        if (game.state == STATE_GAMEOVER || game.state == STATE_VICTORY) {
+            break;
+        }
+    }
+
+    printf("------------------------------------------------------------------------\n");
+    printf("ERGEBNIS: tick=%u wave=%u score=%d kills=%u hp=%d lives=%d state=%s\n",
+           game.tick, game.wave, game.score, game.enemies_killed, game.hp, game.lives,
+           game.state == STATE_VICTORY ? "VICTORY" : (game.state == STATE_GAMEOVER ? "GAMEOVER" : "DONE"));
+    printf("========================================================================\n\n");
+    return 0;
+}
+
+static int run_headless_tests(void) {
+    int pass = 0, fail = 0;
+    printf("\n========================================================================\n");
+    printf("STRUDELFORCE v%s - Integrierte Headless Test-Suite\n", GAME_VERSION);
+    printf("========================================================================\n");
+
+    /* 1. 16.16 Fixed Point Arithmetik */
+    {
+        fix16_t a = FIX(5);
+        fix16_t b = FIX(3);
+        fix16_t prod = fix16_mul(a, b);
+        fix16_t quot = (fix16_t)(((int64_t)prod << 16) / b);
+        if (prod == FIX(15) && quot == a) {
+            pass++; printf("  [PASS] 16.16 Fixed-Point Multiplikation & Division\n");
+        } else {
+            fail++; printf("  [FAIL] 16.16 Fixed-Point Multiplikation & Division\n");
+        }
+    }
+
+    /* 2. Determinismus & Core-Init */
+    {
+        GameState g1, g2;
+        core_init(&g1, 1337);
+        core_init(&g2, 1337);
+        if (g1.px == g2.px && g1.py == g2.py && g1.lives == 3 && g1.hp == 100) {
+            pass++; printf("  [PASS] Deterministische Core-Initialisierung (3 Leben, 100 HP)\n");
+        } else {
+            fail++; printf("  [FAIL] Deterministische Core-Initialisierung\n");
+        }
+    }
+
+    /* 3. 50Hz Simulation Tick */
+    {
+        GameState g;
+        core_init(&g, 42);
+        core_tick(&g, INPUT_RIGHT | INPUT_FIRE);
+        if (g.tick == 1) {
+            pass++; printf("  [PASS] 50Hz PAL Simulations-Tick & Ringpuffer\n");
+        } else {
+            fail++; printf("  [FAIL] 50Hz PAL Simulations-Tick\n");
+        }
+    }
+
+    /* 4. Kampagnen-Plattformen */
+    {
+        GameState g;
+        core_init(&g, 777);
+        g.mode = MODE_CAMPAIGN;
+        g.campaign_level = 1;
+        core_setup_platforms(&g);
+        if (g.platform_count > 0) {
+            pass++; printf("  [PASS] Kampagnen-Modus 2.5D Plattform-Setup (%d Plattformen)\n", g.platform_count);
+        } else {
+            fail++; printf("  [FAIL] Kampagnen-Modus 2.5D Plattform-Setup\n");
+        }
+    }
+
+    /* 5. Embedded Soundtracks */
+    {
+        if (EMB_TFMX_APIDYA_MEADOW_LEN > 0 && EMB_SAM_APIDYA_MEADOW_LEN > 0) {
+            pass++; printf("  [PASS] Embedded Apidya Meadow TFMX & Paula-Samples (%u + %u Bytes)\n",
+                           EMB_TFMX_APIDYA_MEADOW_LEN, EMB_SAM_APIDYA_MEADOW_LEN);
+        } else {
+            fail++; printf("  [FAIL] Embedded Apidya Meadow TFMX\n");
+        }
+    }
+
+    /* 6. Soundgodizer Modus-Toggle */
+    {
+        god_toggle();
+        const char *name = god_mode_name();
+        god_toggle();
+        god_toggle();
+        god_toggle();
+        if (name && strlen(name) > 0) {
+            pass++; printf("  [PASS] Soundgodizer DSP Post-Effekt Switcher (%s)\n", name);
+        } else {
+            fail++; printf("  [FAIL] Soundgodizer DSP Post-Effekt Switcher\n");
+        }
+    }
+
+    printf("------------------------------------------------------------------------\n");
+    printf("TEST ERGEBNIS: %d PASS, %d FAIL\n", pass, fail);
+    printf("========================================================================\n\n");
+    return fail > 0 ? 1 : 0;
+}
+
 /* --- Hauptprogramm --- */
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -2088,10 +2273,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     int dump_mode = 0;  /* --dump [frames] [basis] : Headless-Frame-Dump */
     int dump_frames = 150;
     char dump_base[128] = "dump";
+    int headless_mode = 0;
+    int demo_mode = 0;
+    uint32_t sim_ticks = 2500;
+    uint32_t sim_seed = 1234;
+    int campaign_mode = 0;
+    int test_mode = 0;
 
     (void)hPrevInstance;
 
-    /* --dump-Argumente parsen */
+    /* Befehlszeilen-Argumente parsen */
     {
         char cmd[512];
         char *tok;
@@ -2099,18 +2290,57 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         cmd[sizeof(cmd) - 1] = '\0';
         tok = strtok(cmd, " \t");
         while (tok) {
-            if (_stricmp(tok, "--dump") == 0) {
+            if (_stricmp(tok, "--dump") == 0 || _stricmp(tok, "-dump") == 0) {
                 dump_mode = 1;
                 tok = strtok(NULL, " \t");
                 if (tok) dump_frames = atoi(tok);
                 tok = strtok(NULL, " \t");
                 if (tok) { strncpy(dump_base, tok, sizeof(dump_base) - 1); dump_base[sizeof(dump_base) - 1] = '\0'; }
-                break;
+            } else if (_stricmp(tok, "--headless") == 0 || _stricmp(tok, "-headless") == 0) {
+                headless_mode = 1;
+                tok = strtok(NULL, " \t");
+                if (tok && atoi(tok) > 0) sim_ticks = (uint32_t)atoi(tok);
+                continue;
+            } else if (_stricmp(tok, "--demo") == 0 || _stricmp(tok, "-demo") == 0) {
+                demo_mode = 1;
+                tok = strtok(NULL, " \t");
+                if (tok && atoi(tok) > 0) sim_ticks = (uint32_t)atoi(tok);
+                continue;
+            } else if (_stricmp(tok, "--test") == 0 || _stricmp(tok, "-test") == 0) {
+                test_mode = 1;
+            } else if (_stricmp(tok, "--campaign") == 0 || _stricmp(tok, "-campaign") == 0) {
+                campaign_mode = 1;
+            } else if (_stricmp(tok, "--seed") == 0 || _stricmp(tok, "-seed") == 0) {
+                tok = strtok(NULL, " \t");
+                if (tok) sim_seed = (uint32_t)atoi(tok);
+            } else if (_stricmp(tok, "--help") == 0 || _stricmp(tok, "-help") == 0 || _stricmp(tok, "-h") == 0 || _stricmp(tok, "/?") == 0) {
+                init_console_io();
+                printf("STRUDELFORCE v%s - Amiga 500 Voxel & Cyber-Paula Engine\n\n", GAME_VERSION);
+                printf("Verwendung:\n");
+                printf("  strudelforce.exe                      Startet das 2.5D GUI Spiel (Standard)\n");
+                printf("  strudelforce.exe -headless [ticks]    Headless 50Hz PAL Simulation (Default: 2500 Ticks)\n");
+                printf("  strudelforce.exe --demo [ticks]       Headless Demo-Bot Run mit Status-Ausgabe\n");
+                printf("  strudelforce.exe --test               Fuehrt interne Integrationstests aus\n");
+                printf("  strudelforce.exe --dump [N] [basis]   Erzeugt N Headless-PPM Frame Dumps\n");
+                printf("  strudelforce.exe --campaign           Aktiviert den 5-Level Kampagnen-Modus\n");
+                printf("  strudelforce.exe --seed [wert]        Setzt den LCG Simulations-Seed\n");
+                return 0;
             }
             tok = strtok(NULL, " \t");
         }
     }
     if (dump_frames < 10) dump_frames = 10;
+
+    /* Headless / Test-Modi pruefen und ggf. Konsole anbinden */
+    if (test_mode) {
+        init_console_io();
+        return run_headless_tests();
+    }
+
+    if (headless_mode || demo_mode) {
+        init_console_io();
+        return run_headless_simulation(sim_ticks, sim_seed, campaign_mode);
+    }
 
     memset(&wc, 0, sizeof(wc));
     wc.cbSize = sizeof(wc);

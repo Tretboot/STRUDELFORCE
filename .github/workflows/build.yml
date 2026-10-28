@@ -85,9 +85,6 @@ jobs:
         run: |
           mkdir release_dist
           Copy-Item strudelforce.exe release_dist/
-          Copy-Item strudelforce_v0.2.exe release_dist/
-          Copy-Item strudelforce_game.exe release_dist/
-          Copy-Item test_suite.exe release_dist/
           Copy-Item README.md release_dist/
           if (Test-Path "TFMX Professional/Turrican 2") {
             New-Item -ItemType Directory -Path "release_dist/TFMX Professional/Turrican 2" -Force

@@ -1,0 +1,66 @@
+{
+  "menu_theme": {
+    "name": "Main Menu Theme",
+    "tempo": 125,
+    "channels": 4,
+    "patterns": 8,
+    "loop": 1,
+    "description": "Catchy 16-bit style menu theme with Arpeggios"
+  },
+  "level_1_desert": {
+    "name": "Desert Outpost",
+    "tempo": 140,
+    "channels": 4,
+    "patterns": 12,
+    "loop": 1,
+    "description": "Upbeat adventure theme for Desert level"
+  },
+  "level_2_cave": {
+    "name": "Cave Depths",
+    "tempo": 110,
+    "channels": 4,
+    "patterns": 10,
+    "loop": 1,
+    "description": "Mysterious slow tempo for Cave level"
+  },
+  "level_3_volcano": {
+    "name": "Volcanic Wastes",
+    "tempo": 160,
+    "channels": 4,
+    "patterns": 14,
+    "loop": 1,
+    "description": "Intense fast-paced theme for Volcano level"
+  },
+  "level_4_fortress": {
+    "name": "Fortress of Shadows",
+    "tempo": 130,
+    "channels": 4,
+    "patterns": 16,
+    "loop": 1,
+    "description": "Dark ominous theme for final level"
+  },
+  "boss_theme": {
+    "name": "Boss Battle",
+    "tempo": 170,
+    "channels": 4,
+    "patterns": 8,
+    "loop": 1,
+    "description": "Epic high intensity boss battle theme"
+  },
+  "game_over": {
+    "name": "Game Over",
+    "tempo": 80,
+    "channels": 2,
+    "patterns": 4,
+    "loop": 0,
+    "description": "Dramatic short game over theme"
+  },
+  "victory": {
+    "name": "Victory Fanfare",
+    "tempo": 150,
+    "channels": 4,
+    "patterns": 6,
+    "loop": 0,
+    "description": "Triumphant celebration fanfare"
+  }
+}

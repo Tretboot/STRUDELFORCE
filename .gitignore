@@ -56,6 +56,10 @@ flowdump_*.bmp
 # --- Handoff-Artefakte ---
 MANIFEST.json
 *.zip
+*.zip.txt
+kiwi_injector*.py
+kiwi_code_injector.py
+kiwi_hotfix.py
 ClaudeRun/
 
 # --- Python ---

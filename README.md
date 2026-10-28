@@ -13,9 +13,9 @@
 > Ein kompromissloser Retro-Action-Shooter auf Amiga-Hardware-Restriktionen (512 KB Chip-RAM, OCS/AGA Bitplanes, Copper-Listen), Chris Hülsbecks legendärer **TFMX Professional Sound-Engine**, ProTracker MOD, TidalCycles/Strudel Live-Coding und richtungsbeschatteten 2.5D-Voxeln.
 
 ### 📦 Offizieller Release-Download: [v0.2.0](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
-* **Windows x64 Binary-Paket:** [`strudelforce-v0.2.0-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/strudelforce-v0.2.0-windows-x64.zip) (ca. 1.45 MB)
+* **Windows x64 Binary-Paket:** [`strudelforce-v0.2.0-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/strudelforce-v0.2.0-windows-x64.zip) (ca. 2.8 MB)
 * **Prüfsummen:** [`SHA256SUMS.txt`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/SHA256SUMS.txt)
-* **Sofort spielbar:** Enthält `strudelforce.exe` (2.5D Voxel GUI), `strudelforce_game.exe` (ANSI Terminal), `test_suite.exe` (32 Checks) sowie die originalen Turrican 2 und Apidya TFMX-Soundtracks.
+* **Sofort spielbar (Single-Binary):** Enthält die eigenständige **`strudelforce.exe`** (2.5D Voxel GUI, inklusive integrierter CLI-Optionen `-headless`, `--demo` und `--test`) sowie die originalen Turrican 2 und Apidya TFMX-Soundtracks. Keine verwirrenden Extra-Dateien mehr nötig!
 
 ```text
    _____ _______ _____  _    _ _____  ______ _      ______ ____  _____   _____ ______ 
@@ -134,6 +134,19 @@ Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.m
 | **Y-Taste** | Nächster Musiktitel (Jukebox / TFMX / MOD) |
 | **Rechter Schulterbutton (RB/RS)** | Waffe wechseln |
 | **Start-Taste** | Hauptmenü / Pause |
+
+### 💻 Befehlszeilen-Optionen (Single-Binary CLI)
+`strudelforce.exe` kann sowohl interaktiv mit vollständiger 2.5D GUI als auch headless im Terminal ausgeführt werden:
+
+| Parameter | Funktion |
+|---|---|
+| `strudelforce.exe` | Startet das vollständige 2.5D GUI Spiel (Standard) |
+| `strudelforce.exe -headless [ticks]` | 50Hz PAL Simulation im Terminal (Standard: 2500 Ticks) |
+| `strudelforce.exe --demo [ticks]` | Autonomer Demo-Bot mit Live-Status |
+| `strudelforce.exe --campaign` | Aktiviert den 5-Level Kampagnen-Modus |
+| `strudelforce.exe --test` | Führt interne Integrationstests headless aus |
+| `strudelforce.exe --dump [N] [basis]` | Erzeugt N Headless-PPM Frame Dumps |
+| `strudelforce.exe --help` | Zeigt die Befehlszeilen-Hilfe an |
 
 ---
 
