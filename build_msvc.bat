@@ -2,15 +2,15 @@
 rem ============================================================================
 rem STRUDELFORCE Windows MSVC Build Script (Consolidated Monolithic Architecture)
 rem
-rem 3 Kern-Ziele:
+rem 3 Kern-Ziele (Release v0.2.0):
 rem   [1/3] strudelforce_game.exe - 50Hz ANSI/ASCII Terminal-Spiel & Headless Demo
-rem   [2/3] strudelforce_v0.1.exe - HAUPT-VERSION: 2.5D Voxel GUI, Jukebox, Explorer
+rem   [2/3] strudelforce.exe      - HAUPT-VERSION v0.2.0: 2.5D Voxel GUI, Jukebox, Explorer
 rem   [3/3] test_suite.exe        - Konsolidierte Headless Integrationstest-Suite
 rem ============================================================================
 
 setlocal enabledelayedexpansion
 
-echo === STRUDELFORCE MSVC Build (Consolidated Architecture) ===
+echo === STRUDELFORCE MSVC Build v0.2.0 (Consolidated Architecture) ===
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
 if errorlevel 1 (
@@ -36,12 +36,13 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] Kompiliere strudelforce_v0.1.exe (HAUPT-VERSION: 2.5D Voxel GUI)...
-cl %CFLAGS% src\gui_main.c %CORE_SRCS% %LIBS% /Fe:strudelforce_v0.1.exe
+echo [2/3] Kompiliere strudelforce.exe (HAUPT-VERSION v0.2.0: 2.5D Voxel GUI)...
+cl %CFLAGS% src\gui_main.c %CORE_SRCS% %LIBS% /Fe:strudelforce.exe
 if errorlevel 1 (
-    echo FEHLER beim Kompilieren von strudelforce_v0.1.exe
+    echo FEHLER beim Kompilieren von strudelforce.exe
     exit /b 1
 )
+copy /Y strudelforce.exe strudelforce_v0.2.exe >nul
 
 echo.
 echo [3/3] Kompiliere test_suite.exe (Konsolidierte Test-Suite)...
@@ -53,8 +54,9 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================================
-echo ERFOLG: Alle STRUDELFORCE Executables wurden erfolgreich gebaut!
+echo ERFOLG: Alle STRUDELFORCE v0.2.0 Executables wurden erfolgreich gebaut!
+echo   - strudelforce.exe      : HAUPT-VERSION v0.2.0 zum Spielen (2.5D GUI)
+echo   - strudelforce_v0.2.exe : Alias-Binary fuer Versions-Tracking
 echo   - strudelforce_game.exe : 50Hz ANSI/ASCII Terminal-Spiel
-echo   - strudelforce_v0.1.exe : HAUPT-VERSION zum Spielen (2.5D GUI)
-echo   - test_suite.exe        : Konsolidierte Testsuite (alle Subsysteme)
+echo   - test_suite.exe        : Konsolidierte Testsuite (32 automatische Checks)
 echo ============================================================================

@@ -222,3 +222,4 @@ if __name__ == "__main__":
     apply_mode = "--apply" in sys.argv
     success = reconcile(zpath, apply_changes=apply_mode)
     sys.exit(0 if success else 1)
+

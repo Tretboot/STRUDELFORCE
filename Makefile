@@ -31,13 +31,13 @@ all: game gui test
 help:
 	@echo "make all          - Baut Spiel, GUI und Testsuite"
 	@echo "make game         - 50Hz Terminal Frontend (strudelforce_game)"
-	@echo "make gui          - Win32 2.5D Voxel GUI (strudelforce_v0.1)"
+	@echo "make gui          - Win32 2.5D Voxel GUI (strudelforce)"
 	@echo "make test         - Fuehrt die konsolidierte Testsuite aus"
 	@echo "make c89_check    - Prueft strict C89 Syntax der Kernmodule"
 	@echo "make verify       - Fuehrt alle Python-Oracles und Selftests aus"
 
 gui: $(GUI_SRCS)
-	$(CC) $(CFLAGS) $(GUI_SRCS) -o strudelforce_v0.1 -lgdi32 -lwinmm -luser32 $(LDFLAGS)
+	$(CC) $(CFLAGS) $(GUI_SRCS) -o strudelforce -lgdi32 -lwinmm -luser32 $(LDFLAGS)
 
 game: $(GAME_SRCS)
 	$(CC) $(CFLAGS) $(GAME_SRCS) -o strudelforce_game -lwinmm $(LDFLAGS)

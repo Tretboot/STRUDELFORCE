@@ -1,96 +1,110 @@
-name: Build & Verify
+name: Build & Release
 
-# STRUDELFORCE CI (Release v0.1):
-#  - windows: kompletter MSVC-Build (7 Targets) + Selftests + Oracle, Artefakt = EXEs
-#  - linux:   GCC-Check des Kerns + portabler Embedded-Music-Selftest + Python-Oracle
-#  - amiga:   EXPERIMENTELLER ADF-Build (m68k-amigaos-gcc + amitools). Benötigt die
-#             lokale "TFMX Professional/"-Library (nicht im Repo, lizenzbedingt) ->
-#             scheitert in der CI erwartungsgemäß, bis die Staging-Tracks ersetzt
-#             werden (embedded_music.h). continue-on-error: true.
+# STRUDELFORCE CI & Automated Release (v0.2.0 Consolidated Monolith)
 on:
   push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
   pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   windows-msvc:
-    name: Windows (MSVC, alle 7 Targets)
+    name: Windows (MSVC Consolidated Monolith)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build (build_msvc.bat, 7 Targets)
+      - name: Build (build_msvc.bat)
         run: build_msvc.bat
         shell: cmd
 
-      - name: Selftests (Embedded-Musik, Phase-1, Terminal-Demo)
+      - name: Selftests (Integrationstest-Suite & Terminal-Demos)
         run: |
-          test_embedded_music.exe
-          strudelforce_test.exe
+          test_suite.exe
           strudelforce_game.exe --demo 2500 --no-intro --no-sound
           strudelforce_game.exe --campaign --demo 20000 --no-intro --no-sound
         shell: cmd
 
-      - name: Python-Oracle (Endlos + Kampagne)
+      - name: Python-Oracle (Endlos + Kampagne + Selftest)
         run: |
           python verify_core_sim.py --seed 1234 --ticks 2500
           python verify_core_sim.py --seed 1234 --campaign
+          python tools/selftest.py
 
       - name: Upload Windows-Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: strudelforce-windows-v0.1
+          name: strudelforce-windows-v0.2.0
           path: |
-            strudelforce_v0.1.exe
+            strudelforce.exe
+            strudelforce_v0.2.exe
             strudelforce_game.exe
-            test_embedded_music.exe
+            test_suite.exe
 
   linux-gcc:
-    name: Linux (GCC: Kern-Check + portabler Selftest + Oracle)
+    name: Linux (GCC Monolith & Portabler Selftest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: GCC-Kern-Check (C99, Wall/Wextra)
         run: |
-          gcc -std=c99 -Wall -Wextra -c src/core_sim.c -o /tmp/core_sim.o
-          gcc -std=c99 -Wall -Wextra -c src/tfmx_player.c -o /tmp/tfmx_player.o
-          gcc -std=c99 -Wall -Wextra -c src/mod_player.c -o /tmp/mod_player.o
+          gcc -std=c99 -Wall -Wextra -Isrc -c src/game_logic.c -o /tmp/game_logic.o
+          gcc -std=c99 -Wall -Wextra -Isrc -c src/engine_core.c -o /tmp/engine_core.o
+          gcc -std=c99 -Wall -Wextra -Isrc -c src/soundengine_core.c -o /tmp/soundengine_core.o
 
-      - name: test_embedded_music (portabel, ohne Win-Audio)
+      - name: Linux Integrationstest (test_suite)
         run: |
-          gcc -std=c99 -O2 src/test_embedded_music.c src/tfmx_player.c src/mod_player.c -lm -o test_embedded_music
-          ./test_embedded_music
+          gcc -std=c99 -O2 -Isrc src/test_suite.c src/game_logic.c src/engine_core.c src/soundengine_core.c -lm -o test_suite
+          ./test_suite
 
-      - name: Python-Oracle (Endlos + Kampagne)
+      - name: Python-Oracle (Endlos + Kampagne + Selftest)
         run: |
           python3 verify_core_sim.py --seed 1234 --ticks 2500
           python3 verify_core_sim.py --seed 1234 --campaign
+          python3 tools/selftest.py
 
-  amiga-adf:
-    name: Amiga ADF (Experiment: m68k-amigaos-gcc + amitools)
-    runs-on: ubuntu-latest
-    continue-on-error: true
+  release:
+    name: Publish GitHub Release (v*)
+    needs: [windows-msvc, linux-gcc]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install m68k-amigaos-gcc + amitools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-m68k-amigaos
-          pip3 install --user amitools
-          export PATH="$HOME/.local/bin:$PATH"
+      - name: Build Windows Binaries
+        run: build_msvc.bat
+        shell: cmd
 
-      - name: Build 880K ADF (braucht TFMX-Library local -> in CI oft fehlgeschlagen)
+      - name: Package Release ZIP
+        shell: pwsh
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          make stage_amiga_music amiga_adf
-          ls -la strudelforce.adf
+          mkdir release_dist
+          Copy-Item strudelforce.exe release_dist/
+          Copy-Item strudelforce_v0.2.exe release_dist/
+          Copy-Item strudelforce_game.exe release_dist/
+          Copy-Item test_suite.exe release_dist/
+          Copy-Item README.md release_dist/
+          if (Test-Path "TFMX Professional/Turrican 2") {
+            New-Item -ItemType Directory -Path "release_dist/TFMX Professional/Turrican 2" -Force
+            Copy-Item "TFMX Professional/Turrican 2/*" "release_dist/TFMX Professional/Turrican 2/"
+          }
+          if (Test-Path "TFMX Professional/Apidya") {
+            New-Item -ItemType Directory -Path "release_dist/TFMX Professional/Apidya" -Force
+            Copy-Item "TFMX Professional/Apidya/*" "release_dist/TFMX Professional/Apidya/"
+          }
+          Compress-Archive -Path release_dist/* -DestinationPath strudelforce-v0.2.0-windows-x64.zip
+          $hash = (Get-FileHash strudelforce-v0.2.0-windows-x64.zip -Algorithm SHA256).Hash
+          "$hash  strudelforce-v0.2.0-windows-x64.zip" | Out-File -Encoding utf8 SHA256SUMS.txt
 
-      - name: Upload ADF (falls gebaut)
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: strudelforce-amiga-adf
-          path: strudelforce.adf
-          if-no-files-found: ignore
+          files: |
+            strudelforce-v0.2.0-windows-x64.zip
+            SHA256SUMS.txt
+          generate_release_notes: true

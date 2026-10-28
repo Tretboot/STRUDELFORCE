@@ -1,6 +1,7 @@
-# 🚀 STRUDELFORCE (v0.2 Consolidated)
+# 🚀 STRUDELFORCE v0.2.0 (Consolidated Monolith)
 
 [![Amiga 500](https://img.shields.io/badge/Platform-Amiga%20500%20%2F%20PC-blue.svg)](https://en.wikipedia.org/wiki/Amiga_500)
+[![Release: v0.2.0](https://img.shields.io/badge/Release-v0.2.0-brightgreen.svg)](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
 [![PAL 50Hz](https://img.shields.io/badge/Timing-50Hz%20PAL%20VBlank-green.svg)](#)
 [![Fixed Point](https://img.shields.io/badge/Math-16.16%20Fixed--Point%20Zero--Float-orange.svg)](#)
 [![Audio](https://img.shields.io/badge/Sound-Cyber--Paula%208--Voice%20TFMX%2BMOD-magenta.svg)](#)
@@ -10,6 +11,11 @@
 
 > **"Amiga 500 trifft Cyber-Paula & 2.5D-Voxel-Action (Turrican-Hommage)."**  
 > Ein kompromissloser Retro-Action-Shooter auf Amiga-Hardware-Restriktionen (512 KB Chip-RAM, OCS/AGA Bitplanes, Copper-Listen), Chris Hülsbecks legendärer **TFMX Professional Sound-Engine**, ProTracker MOD, TidalCycles/Strudel Live-Coding und richtungsbeschatteten 2.5D-Voxeln.
+
+### 📦 Offizieller Release-Download: [v0.2.0](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
+* **Windows x64 Binary-Paket:** [`strudelforce-v0.2.0-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/strudelforce-v0.2.0-windows-x64.zip) (ca. 1.45 MB)
+* **Prüfsummen:** [`SHA256SUMS.txt`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/SHA256SUMS.txt)
+* **Sofort spielbar:** Enthält `strudelforce.exe` (2.5D Voxel GUI), `strudelforce_game.exe` (ANSI Terminal), `test_suite.exe` (32 Checks) sowie die originalen Turrican 2 und Apidya TFMX-Soundtracks.
 
 ```text
    _____ _______ _____  _    _ _____  ______ _      ______ ____  _____   _____ ______ 
@@ -25,10 +31,12 @@
 
 ## ⚡ Highlights & Features
 
-1. **Grafisches 2.5D-Voxel-Frontend (`strudelforce_v0.1.exe`):**
+1. **Grafisches 2.5D-Voxel-Frontend (`strudelforce.exe`):**
    - 1280x720 HD mit nativer Win32/GDI-Pipeline (keine externen DLL-Abhängigkeiten nötig).
    - Echte **2.5D-Voxel-Projektion** mit direktionalem Face-Shading (Top-Highlight, Front-Base, Side-Shadow) – kein Texturen-Minecraft-Look.
    - **4 Parallax-Ebenen:** Deep-Sky-Copperverläufe, Ruinen-Säulen, Gameplay-Ebene, Vordergrund-Rohre.
+   - **Multi-Tier 2.5D Plattform-System:** Erhöhte Industrie-Laufstege, Aquädukte und Tempel-Altäre (Turrican-2 Vertikalität).
+   - **Dynamischer Chris Hülsbeck Kampagnen-Soundtrack:** Turrican 2 Level-Soundtracks (Desert, Cave, Factory, Flight, Aliens) und Jukebox-Shuffle (`M`/`N` oder Gamepad `Y`).
    - Amiga-Zeilen-Interlace-Jitter bei kritischer Energie (`HP < 25%`).
    - Turrican-2-inspiriertes Hauptmenü, Ladebildschirm, Sieg- und Game-Over-Overlays.
    - **F5 Soundgodizer:** Analog-Wärme, Bass-Boost, tanh-Soft-Drive und Haas-Stereo-Wide.
@@ -136,8 +144,8 @@ Erfordert Visual Studio / Build Tools (automatische vcvars-Erkennung):
 ```cmd
 build_msvc.bat
 ```
-Baut alle drei Kern-Executables:
-- `strudelforce_v0.1.exe`: Haupt-Spiel (2.5D Voxel GUI, Jukebox, Studio)
+Baut alle drei Kern-Executables (v0.2.0):
+- `strudelforce.exe` (bzw. `strudelforce_v0.2.exe`): Haupt-Spiel (2.5D Voxel GUI, Jukebox, Studio)
 - `strudelforce_game.exe`: 50Hz ANSI/ASCII Terminal-Spiel (`--demo 2500`, `--campaign`)
 - `test_suite.exe`: Konsolidierte Testsuite (32 automatische Checks)
 
@@ -145,7 +153,7 @@ Baut alle drei Kern-Executables:
 ```bash
 make all        # Baut Spiel, GUI und Testsuite
 make game       # Baut strudelforce_game
-make gui        # Baut strudelforce_v0.1
+make gui        # Baut strudelforce (2.5D GUI)
 make test       # Baut und führt die Testsuite aus
 make c89_check  # Strict C89-Syntaxprüfung
 make verify     # Führt Python-Oracles und Selftests aus
@@ -171,7 +179,7 @@ STRUDELFORCE_Master/
 │   ├── game_logic.c            # 16.16 Fixed-Point Physik, 3-Leben, Waffen, Kampagne/Endlos
 │   ├── soundengine_core.c      # Universal Audio Hub: TFMX, MOD, Strudel AST, Paula, Win-Audio
 │   ├── engine_core.c           # 2.5D Voxel-Planer, Zero-Float Amiga-Shims, Retro-Intro
-│   ├── gui_main.c              # Win32/GDI 2.5D Voxel-GUI (strudelforce_v0.1.exe)
+│   ├── gui_main.c              # Win32/GDI 2.5D Voxel-GUI (strudelforce.exe / strudelforce_v0.2.exe)
 │   ├── game_main.c             # 50Hz ANSI Terminal-Spiel Frontend (strudelforce_game.exe)
 │   ├── main_pc.c               # Raylib 2.5D Frontend
 │   ├── test_suite.c            # Konsolidierte Integrationstest-Suite (32 Checks)

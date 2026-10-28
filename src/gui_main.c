@@ -33,7 +33,7 @@
 #include "retro_font.h"
 #include "embedded_music.h"
 
-#define GAME_VERSION "0.1"
+#define GAME_VERSION "0.2.0"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")

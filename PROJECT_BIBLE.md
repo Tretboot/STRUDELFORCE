@@ -84,7 +84,7 @@ Jede Codeänderung muss ausnahmslos diesen Gesetzen gehorchen:
 | Gameplay-Logik | `strudelforce.h` | `src/game_logic.c` | 16.16 Physik, LCG-RNG, Kollision, Turrican-3-Leben, Spawner, Endlos/Kampagne, Biome-Chunks, Livecode-Puffer. |
 | Universal Sound Engine | `strudelforce.h` | `src/soundengine_core.c` | Hub für TFMX-Player, MOD-Player, Strudel-Cleanroom AST, Game-SFX, Cyber-Paula Mixer, Soundgodizer, Win-Audio. |
 | Engine Core | `strudelforce.h` | `src/engine_core.c` | 2.5D Voxel-Planer, 4 Parallax-Layer, Directional Face Shading, Amiga Copper/Bitplane-Shims, Copper-Intro. |
-| GUI Frontend | `strudelforce.h` | `src/gui_main.c` | Win32/GDI 2.5D GUI (`strudelforce_v0.1.exe`), Menü Turrican-2-Stil, Loading-Screen, Jukebox, TFMX-Explorer. |
+| GUI Frontend | `strudelforce.h` | `src/gui_main.c` | Win32/GDI 2.5D GUI (`strudelforce.exe` / `strudelforce_v0.2.exe`), Menü Turrican-2-Stil, Loading-Screen, Jukebox, TFMX-Explorer. |
 | Terminal Frontend | `strudelforce.h` | `src/game_main.c` | 50Hz ANSI/ASCII Terminal-Spiel (`strudelforce_game.exe`), Headless Bot (`--demo 2500`), WAV-Dumper. |
 | PC Raylib Frontend | `strudelforce.h` | `src/main_pc.c` | 1280x720 Raylib 2.5D Renderer (optional). |
 | Integrationstest-Suite | `strudelforce.h` | `src/test_suite.c` | Headless Test aller Module: 2500 Ticks LCG-Determinismus, Kampagne, Strudel-AST, Audio-Hub, Game-SFX, SfMixer. |
@@ -152,7 +152,7 @@ build_msvc.bat
 ```
 Baut alle 3 Haupt-Executables:
 - `strudelforce_game.exe` (50Hz ANSI/ASCII Terminal-Spiel)
-- `strudelforce_v0.1.exe` (Win32 2.5D Voxel GUI)
+- `strudelforce.exe` (Win32 2.5D Voxel GUI, Alias `strudelforce_v0.2.exe`)
 - `test_suite.exe` (Headless Integrationstest)
 
 ### GCC / Linux / Make

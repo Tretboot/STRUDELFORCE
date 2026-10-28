@@ -36,7 +36,8 @@ strudelforce.adf
 # die spielbaren Embedded-Tracks liegen bereits in src/embedded_music.h
 TFMX Professional/
 MOD/
-releases/
+releases/*.zip
+releases/*.exe
 archive/
 Kickstart/
 STRUDELFORCE_Merged_*.zip
