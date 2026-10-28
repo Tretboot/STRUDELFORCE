@@ -213,6 +213,13 @@ typedef struct {
     uint8_t  active;
 } Pickup;
 
+typedef struct {
+    fix16_t x, y, w, h;
+    uint8_t kind; /* 0: solid catwalk, 1: stone pillar, 2: hazard */
+} LevelPlatform;
+
+#define MAX_LEVEL_PLATFORMS 16
+
 typedef struct GameState {
     /* Spieler */
     fix16_t  px, py, pvx, pvy;
@@ -243,6 +250,10 @@ typedef struct GameState {
     uint8_t  mode;
     uint8_t  campaign_level;
 
+    /* Level-Plattformen */
+    LevelPlatform platforms[MAX_LEVEL_PLATFORMS];
+    uint8_t       platform_count;
+
     /* Statische Ringbuffer */
     Projectile projectiles[MAX_PROJECTILES];
     Enemy      enemies[MAX_ENEMIES];
@@ -267,6 +278,7 @@ typedef struct GameState {
 /* Core Simulation API */
 void     core_init(GameState *s, uint32_t seed);
 void     core_tick(GameState *s, uint16_t input_mask);
+void     core_setup_platforms(GameState *s);
 uint32_t core_rng(GameState *s);
 int      core_dir8_from_vec(fix16_t dx, fix16_t dy);
 uint8_t  core_campaign_biome(const GameState *s);

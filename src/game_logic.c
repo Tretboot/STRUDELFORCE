@@ -131,6 +131,61 @@ int biome_next_chunk(uint32_t *seed, int16_t *biome_out, int16_t *chest_open_out
 
 /* ================= Initialisierung ================= */
 
+void core_setup_platforms(GameState *s) {
+    uint8_t b;
+    s->platform_count = 0;
+    if (s->mode != MODE_CAMPAIGN) return;
+    b = core_campaign_biome(s);
+
+    #define ADD_PLAT(px, py, pw, ph, pk) do { \
+        if (s->platform_count < MAX_LEVEL_PLATFORMS) { \
+            s->platforms[s->platform_count].x = FIX(px); \
+            s->platforms[s->platform_count].y = FIX(py); \
+            s->platforms[s->platform_count].w = FIX(pw); \
+            s->platforms[s->platform_count].h = FIX(ph); \
+            s->platforms[s->platform_count].kind = (uint8_t)(pk); \
+            s->platform_count++; \
+        } \
+    } while(0)
+
+    if (b == 0) {
+        /* Chrome Tempest: Staggered Industrial Catwalks */
+        ADD_PLAT(8, 5, 22, 1, 0);
+        ADD_PLAT(60, 5, 22, 1, 0);
+        ADD_PLAT(30, 11, 30, 1, 0);
+        ADD_PLAT(16, 17, 18, 1, 0);
+        ADD_PLAT(56, 17, 18, 1, 0);
+    } else if (b == 1) {
+        /* The Great Bath: Ancient Stepped Aqueduct & Altar */
+        ADD_PLAT(10, 4, 18, 1, 1);
+        ADD_PLAT(62, 4, 18, 1, 1);
+        ADD_PLAT(24, 9, 42, 1, 1);
+        ADD_PLAT(36, 15, 18, 1, 1);
+    } else if (b == 2) {
+        /* Mechanical Hive: Biomechanical Girders */
+        ADD_PLAT(6, 6, 24, 1, 0);
+        ADD_PLAT(60, 6, 24, 1, 0);
+        ADD_PLAT(24, 12, 42, 1, 0);
+        ADD_PLAT(12, 18, 20, 1, 0);
+        ADD_PLAT(58, 18, 20, 1, 0);
+    } else if (b == 3) {
+        /* Volcanic / Air Combat: Floating Magma Basalts */
+        ADD_PLAT(12, 5, 18, 1, 2);
+        ADD_PLAT(60, 5, 18, 1, 2);
+        ADD_PLAT(30, 10, 30, 1, 2);
+        ADD_PLAT(18, 16, 20, 1, 2);
+        ADD_PLAT(52, 16, 20, 1, 2);
+    } else {
+        /* Cyber Fortress: Multi-Tier Battlements */
+        ADD_PLAT(8, 5, 22, 1, 0);
+        ADD_PLAT(60, 5, 22, 1, 0);
+        ADD_PLAT(26, 11, 38, 1, 0);
+        ADD_PLAT(14, 17, 18, 1, 0);
+        ADD_PLAT(58, 17, 18, 1, 0);
+    }
+    #undef ADD_PLAT
+}
+
 void core_init(GameState *s, uint32_t seed) {
     memset(s, 0, sizeof(GameState));
     s->world_w = fix16_from_int(WORLD_W_UNITS);
@@ -152,6 +207,7 @@ void core_init(GameState *s, uint32_t seed) {
     s->mode = MODE_ENDLESS;
     s->campaign_level = 1;
     s->rng_state = seed ? seed : 1u;
+    core_setup_platforms(s);
 }
 
 /* ================= Spawner ================= */
@@ -555,7 +611,10 @@ void core_tick(GameState *s, uint16_t input) {
         }
     } else if (s->state == STATE_LEVEL_CLEAR) {
         if (--s->state_timer == 0) {
-            if (s->campaign_level < CAMPAIGN_LEVELS) s->campaign_level++;
+            if (s->campaign_level < CAMPAIGN_LEVELS) {
+                s->campaign_level++;
+                core_setup_platforms(s);
+            }
             s->state = STATE_WAVE_INTRO;
             s->state_timer = WAVE_INTRO_TICKS;
         }
@@ -591,6 +650,23 @@ void core_tick(GameState *s, uint16_t input) {
             s->on_ground = 1;
         } else {
             s->on_ground = 0;
+            /* Plattform-Kollision von oben (Drop-Through bei Morphing/Down) */
+            if (s->pvy <= 0 && !s->morphing) {
+                fix16_t feet = s->py;
+                fix16_t prev_feet = s->py - s->pvy;
+                uint8_t pi;
+                for (pi = 0; pi < s->platform_count; pi++) {
+                    const LevelPlatform *pl = &s->platforms[pi];
+                    if (s->px >= pl->x && s->px <= pl->x + pl->w) {
+                        if (prev_feet >= pl->y && feet <= pl->y + FIX(0.45)) {
+                            s->py = pl->y;
+                            if (s->pvy < 0) s->pvy = 0;
+                            s->on_ground = 1;
+                            break;
+                        }
+                    }
+                }
+            }
         }
         {
             fix16_t hw = s->morphing ? MORPH_HALF_W : PLAYER_HALF_W;

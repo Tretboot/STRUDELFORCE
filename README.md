@@ -108,6 +108,7 @@ Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.m
 | **C** | Waffe wechseln |
 | **S** | Morph-Ball Modus |
 | **T** | Schatztruhe öffnen (*The Great Bath*) |
+| **M** / **N** | Nächster Musiktitel (Jukebox / TFMX / MOD) |
 | **F1** / **ENTER** | Spiel starten / Zurück zum Spiel |
 | **F2** | TFMX Jukebox & Explorer |
 | **F3** | Strudel Live-Code Studio |
@@ -122,6 +123,7 @@ Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.m
 | **A-Taste** | Feuer / Menü-Auswahl |
 | **X-Taste** | Halt-Strahl |
 | **B-Taste** | Morph-Ball |
+| **Y-Taste** | Nächster Musiktitel (Jukebox / TFMX / MOD) |
 | **Rechter Schulterbutton (RB/RS)** | Waffe wechseln |
 | **Start-Taste** | Hauptmenü / Pause |
 
