@@ -496,12 +496,16 @@ static const EmbeddedTrack EMBEDDED_TRACKS[] = {
     { EMB_TFMX_T2_LOAD_NAME,          EMB_TFMX_T2_LOAD,          sizeof(EMB_TFMX_T2_LOAD),          EMB_SAM_T2_LOAD,          sizeof(EMB_SAM_T2_LOAD),          0 }, /* 2: Turrican 2 Loader */
     { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 3: Turrican 2 Desert */
     { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 4: Turrican 2 Cave */
-    { EMB_TFMX_T3_LOADER_NAME,        EMB_TFMX_T3_LOADER,        sizeof(EMB_TFMX_T3_LOADER),        EMB_SAM_T3_LOADER,        sizeof(EMB_SAM_T3_LOADER),        0 }, /* 5: Turrican 3 Loader */
-    { EMB_TFMX_T3_FACTORY_NAME,       EMB_TFMX_T3_FACTORY,       sizeof(EMB_TFMX_T3_FACTORY),       EMB_SAM_T3_FACTORY,       sizeof(EMB_SAM_T3_FACTORY),       0 }, /* 6: Turrican 3 Factory */
-    { EMB_TFMX_T3_DUNGEONS_NAME,      EMB_TFMX_T3_DUNGEONS,      sizeof(EMB_TFMX_T3_DUNGEONS),      EMB_SAM_T3_DUNGEONS,      sizeof(EMB_SAM_T3_DUNGEONS),      0 }, /* 7: Turrican 3 Dungeons */
-    { EMB_TFMX_APIDYA_TECHNO_NAME,    EMB_TFMX_APIDYA_TECHNO,    sizeof(EMB_TFMX_APIDYA_TECHNO),    EMB_SAM_APIDYA_TECHNO,    sizeof(EMB_SAM_APIDYA_TECHNO),    0 }, /* 8: Apidya Techno */
-    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                      0,                                1 }, /* 9: Wing Commander Combat */
-    { EMB_MOD_WC_OVERALLVICTORY_NAME, EMB_MOD_WC_OVERALLVICTORY, sizeof(EMB_MOD_WC_OVERALLVICTORY), NULL,                      0,                                1 }, /* 10: Wing Commander Victory */
+    { EMB_TFMX_APIDYA_TECHNO_NAME,    EMB_TFMX_APIDYA_TECHNO,    sizeof(EMB_TFMX_APIDYA_TECHNO),    EMB_SAM_APIDYA_TECHNO,    sizeof(EMB_SAM_APIDYA_TECHNO),    0 }, /* 5: Apidya Techno */
+    { EMB_TFMX_ANSTOSS_1_NAME,        EMB_TFMX_ANSTOSS_1,        sizeof(EMB_TFMX_ANSTOSS_1),        EMB_SAM_ANSTOSS_1,        sizeof(EMB_SAM_ANSTOSS_1),        0 }, /* 6: Anstoss Ongame 1 */
+    { EMB_TFMX_BIFI2_NAME,            EMB_TFMX_BIFI2,            sizeof(EMB_TFMX_BIFI2),            EMB_SAM_BIFI2,            sizeof(EMB_SAM_BIFI2),            0 }, /* 7: BiFi Adventure 2 */
+    { EMB_TFMX_MADTV9_NAME,           EMB_TFMX_MADTV9,           sizeof(EMB_TFMX_MADTV9),           EMB_SAM_MADTV9,           sizeof(EMB_SAM_MADTV9),           0 }, /* 8: Mad TV Ongame 9 */
+    { EMB_TFMX_SOFTMAN_NAME,          EMB_TFMX_SOFTMAN,          sizeof(EMB_TFMX_SOFTMAN),          EMB_SAM_SOFTMAN,          sizeof(EMB_SAM_SOFTMAN),          0 }, /* 9: Software Manager Msx (Sub 21) */
+    { EMB_MOD_LOST_PATROL_NAME,       EMB_MOD_LOST_PATROL,       sizeof(EMB_MOD_LOST_PATROL),       NULL,                     0,                                1 }, /* 10: Lost Patrol tunev1 */
+    { EMB_MOD_BLUE_MONDAY_KGB_NAME,   EMB_MOD_BLUE_MONDAY_KGB,   sizeof(EMB_MOD_BLUE_MONDAY_KGB),   NULL,                     0,                                1 }, /* 11: New Order - in the blue (KGB) */
+    { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 12: New Order - blue-monday (chip tune) */
+    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                     0,                                1 }, /* 13: Wing Commander Combat */
+    { EMB_MOD_WC_OVERALLVICTORY_NAME, EMB_MOD_WC_OVERALLVICTORY, sizeof(EMB_MOD_WC_OVERALLVICTORY), NULL,                     0,                                1 }, /* 14: Wing Commander Victory */
 };
 #define EMBEDDED_TRACK_COUNT (int)(sizeof(EMBEDDED_TRACKS) / sizeof(EMBEDDED_TRACKS[0]))
 
@@ -579,13 +583,50 @@ static void music_subsong_next(void) {
 }
 
 
-/* Shuffle / Frankenstein Sample-Swap: Kombiniert TFX-Pattern von Track A mit SAM-Bank von Track B */
+/* Extrahieren des Sample-Bereichs fuer universellen TFMX <-> MOD Sample-Austausch */
+static void get_track_sample_buffer(const EmbeddedTrack *t, const uint8_t **out_sam, uint32_t *out_len) {
+    if (!t) { *out_sam = NULL; *out_len = 0; return; }
+    if (!t->is_mod) {
+        *out_sam = t->sam;
+        *out_len = t->sam_len;
+        return;
+    }
+    if (t->tfx_len >= 1084) {
+        char sig[5];
+        memcpy(sig, t->tfx + 1080, 4); sig[4] = '\0';
+        int is_pt = (!memcmp(sig, "M.K.", 4) || !memcmp(sig, "M!K!", 4) || !memcmp(sig, "FLT4", 4) || !memcmp(sig, "4CHN", 4));
+        if (is_pt) {
+            int maxpat = 0;
+            for (int i = 0; i < 128; i++) if (t->tfx[952 + i] > maxpat) maxpat = t->tfx[952 + i];
+            uint32_t off = 1084u + (uint32_t)(maxpat + 1) * 1024u;
+            if (off < t->tfx_len) {
+                *out_sam = t->tfx + off;
+                *out_len = t->tfx_len - off;
+                return;
+            }
+        }
+    }
+    if (t->tfx_len >= 600) {
+        int maxpat = 0;
+        for (int i = 0; i < 128; i++) if (t->tfx[472 + i] > maxpat) maxpat = t->tfx[472 + i];
+        uint32_t off = 600u + (uint32_t)(maxpat + 1) * 1024u;
+        if (off < t->tfx_len) {
+            *out_sam = t->tfx + off;
+            *out_len = t->tfx_len - off;
+            return;
+        }
+    }
+    *out_sam = t->tfx;
+    *out_len = t->tfx_len;
+}
+
+/* Shuffle / Frankenstein Sample-Swap: Universeller Tausch zwischen TFMX & MOD Samples! */
 static char s_frankenstein_status[128] = "";
 
 static void explorer_shuffle_swap(void) {
-    int tfx_idx = rand() % 9; /* 0..8 sind die 9 TFMX-Tracks inkl. Apidya Techno */
-    int sam_idx = rand() % 9;
-    if (sam_idx == tfx_idx) sam_idx = (tfx_idx + 1 + (rand() % 8)) % 9;
+    int tfx_idx = rand() % EMBEDDED_TRACK_COUNT;
+    int sam_idx = rand() % EMBEDDED_TRACK_COUNT;
+    if (sam_idx == tfx_idx) sam_idx = (tfx_idx + 1 + (rand() % (EMBEDDED_TRACK_COUNT - 1))) % EMBEDDED_TRACK_COUNT;
 
     const EmbeddedTrack *trk_tfx = &EMBEDDED_TRACKS[tfx_idx];
     const EmbeddedTrack *trk_sam = &EMBEDDED_TRACKS[sam_idx];
@@ -594,14 +635,46 @@ static void explorer_shuffle_swap(void) {
     s_exp_playing = 0;
     tfmx_player_stop(&s_exp_tfmx);
 
-    if (tfmx_player_load_mem(&s_exp_tfmx, trk_tfx->tfx, trk_tfx->tfx_len,
-                             (const int8_t *)trk_sam->sam, trk_sam->sam_len)) {
-        s_exp_subsong = 0;
-        tfmx_player_start(&s_exp_tfmx, 0);
-        s_exp_playing = 1;
-        snprintf(s_frankenstein_status, sizeof(s_frankenstein_status),
-                 "FRANKEN-SWAP: TFX [%s] x SAM [%s]", trk_tfx->name, trk_sam->name);
-        snprintf(s_status_msg, sizeof(s_status_msg), "%s", s_frankenstein_status);
+    const uint8_t *sam_ptr = NULL;
+    uint32_t sam_len = 0;
+    get_track_sample_buffer(trk_sam, &sam_ptr, &sam_len);
+
+    if (!trk_tfx->is_mod) {
+        if (sam_ptr && sam_len > 64 &&
+            tfmx_player_load_mem(&s_exp_tfmx, trk_tfx->tfx, trk_tfx->tfx_len,
+                                 (const int8_t *)sam_ptr, sam_len)) {
+            s_exp_subsong = 0;
+            tfmx_player_start(&s_exp_tfmx, 0);
+            s_exp_playing = 1;
+            snprintf(s_frankenstein_status, sizeof(s_frankenstein_status),
+                     "FRANKEN-SWAP: TFX [%s] x SAM [%s]", trk_tfx->name, trk_sam->name);
+            snprintf(s_status_msg, sizeof(s_status_msg), "%s", s_frankenstein_status);
+        }
+    } else {
+        if (mod_player_load_mem(&s_exp_mod, trk_tfx->tfx, trk_tfx->tfx_len)) {
+            if (sam_ptr && sam_len > 1024) {
+                for (int s = 1; s <= 31; s++) {
+                    if (s_exp_mod.smp[s].len > 0) {
+                        uint32_t new_off = (uint32_t)((s * 4096u) % sam_len);
+                        s_exp_mod.smp[s].data = (const int8_t *)(sam_ptr + new_off);
+                        if (new_off + s_exp_mod.smp[s].len > sam_len) {
+                            s_exp_mod.smp[s].len = sam_len - new_off;
+                        }
+                        if (s_exp_mod.smp[s].rep > s_exp_mod.smp[s].len) {
+                            s_exp_mod.smp[s].rep = 0;
+                            s_exp_mod.smp[s].replen = s_exp_mod.smp[s].len > 2 ? 2 : 0;
+                        } else if (s_exp_mod.smp[s].rep + s_exp_mod.smp[s].replen > s_exp_mod.smp[s].len) {
+                            s_exp_mod.smp[s].replen = s_exp_mod.smp[s].len - s_exp_mod.smp[s].rep;
+                        }
+                    }
+                }
+            }
+            mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+            s_exp_mod_playing = 1;
+            snprintf(s_frankenstein_status, sizeof(s_frankenstein_status),
+                     "FRANKEN-SWAP: MOD [%s] x SAM [%s]", trk_tfx->name, trk_sam->name);
+            snprintf(s_status_msg, sizeof(s_status_msg), "%s", s_frankenstein_status);
+        }
     }
 }
 
@@ -791,7 +864,7 @@ static int music_load_index(int idx) {
             (void)fread(s_mod_buf, 1, (size_t)size, f);
             fclose(f);
         }
-        if (size > 1084 && mod_player_load_mem(&s_mod, s_mod_buf, (uint32_t)size)) {
+        if (size >= 600 && mod_player_load_mem(&s_mod, s_mod_buf, (uint32_t)size)) {
             char *dot;
             mod_player_start(&s_mod, GAME_AUDIO_RATE);
             s_mod_active = 1;
@@ -826,7 +899,7 @@ static int music_load_index(int idx) {
 }
 
 static void music_play_campaign_level(int level) {
-    static const int camp_map[5] = { 3, 4, 6, 7, 1 };
+    static const int camp_map[5] = { 3, 4, 8, 6, 1 };
     int idx = (level >= 1 && level <= 5) ? (level - 1) : 0;
     int emb_id = camp_map[idx];
 
@@ -1260,8 +1333,23 @@ static int  s_credit_speed = 1;
 static int  s_credit_music_step = 0;
 static int  s_credit_music_timer = 0;
 static int  s_credit_fanfare_played = 0;
-static const int s_credit_playlist[] = { 4, 3, 7, 6, 8, 0, 2 }; /* Cave, Desert, Dungeons, Factory, Techno, Meadow, Loader */
-#define CREDIT_PLAYLIST_COUNT 7
+
+typedef struct {
+    int track_idx;
+    int subsong;
+} CreditSongStep;
+
+static const CreditSongStep s_credit_playlist[] = {
+    { 9, 21 }, /* Software Manager - Msx (Subsong 21 - Melodic Credits Theme) */
+    { 10, 0 }, /* Lost Patrol - tunev1 (Soundtracker Classic) */
+    { 4,  0 }, /* Turrican 2 - Cave (Subterranean Atmosphere) */
+    { 11, 0 }, /* New Order - in the blue (KGB) (80s Synthpop Masterpiece) */
+    { 9,  0 }, /* Software Manager - Msx (Subsong 0 - Main Theme) */
+    { 3,  0 }, /* Turrican 2 - Desert (Surface Battle Anthem) */
+    { 0,  0 }, /* Apidya - Meadow (Pastoral Synthesis) */
+    { 14, 0 }  /* Wing Commander - Overall Victory (Classic Fanfare) */
+};
+#define CREDIT_PLAYLIST_COUNT (int)(sizeof(s_credit_playlist) / sizeof(s_credit_playlist[0]))
 
 static void credits_add_line(const char *text) {
     if (s_credit_line_count >= MAX_CREDIT_LINES) return;
@@ -1432,7 +1520,7 @@ static void credits_init(void) {
 
     /* Musik-Start mit Turrican 2 Cave (Track 4) */
     s_credit_music_step = 0;
-    music_play_embedded(s_credit_playlist[0], 0);
+    music_play_embedded(s_credit_playlist[0].track_idx, s_credit_playlist[0].subsong);
 }
 
 static void pad_credits_poll(void) {
@@ -1454,7 +1542,7 @@ static void pad_credits_poll(void) {
     int y_btn = (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
     if (y_btn && !prev_y) {
         s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
-        music_play_embedded(s_credit_playlist[s_credit_music_step], 0);
+        music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
     }
     prev_y = y_btn;
 }
@@ -1489,7 +1577,7 @@ static void render_state_credits(void) {
         if (s_credit_music_timer >= 1800) { /* ca. 36 Sekunden pro Track */
             s_credit_music_timer = 0;
             s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
-            music_play_embedded(s_credit_playlist[s_credit_music_step], 0);
+            music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
         }
     }
 
@@ -2390,7 +2478,7 @@ static void render_tab_explorer(void) {
     int t2_active = (s_exp_mode == 1);
     draw_rect(24, 54, 218, 26, t1_active ? 0x004080 : 0x001830);
     draw_rect_outline(24, 54, 218, 26, t1_active ? 0x00FFFF : 0x003060);
-    draw_string(30, 62, "[*] 11 INTEGR. ROM-TRACKS", t1_active ? 0x00FFFF : 0x80A0C0, 1);
+    draw_string(30, 62, "[*] 15 INTEGR. ROM-TRACKS", t1_active ? 0x00FFFF : 0x80A0C0, 1);
 
     draw_rect(246, 54, 230, 26, t2_active ? 0x004080 : 0x001830);
     draw_rect_outline(246, 54, 230, 26, t2_active ? 0x00FFFF : 0x003060);
@@ -2761,7 +2849,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
                 } else if (wParam == 'M' || wParam == 'm') {
                     s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
-                    music_play_embedded(s_credit_playlist[s_credit_music_step], 0);
+                    music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
                 }
                 return 0;
             }
@@ -2906,7 +2994,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                                     (void)fread(s_exp_mod_buf, 1, (size_t)sz, f);
                                     fclose(f);
                                 }
-                                if (sz > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)sz)) {
+                                if (sz >= 600 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)sz)) {
                                     mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
                                     s_exp_mod_playing = 1;
                                     snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", s_exp_path_buf);
@@ -2972,7 +3060,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                                         (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
                                         fclose(f);
                                     }
-                                    if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
+                                    if (size >= 600 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
                                         mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
                                         s_exp_mod_playing = 1;
                                         snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
@@ -3090,7 +3178,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                                         (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
                                         fclose(f);
                                     }
-                                    if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
+                                    if (size >= 600 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
                                         mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
                                         s_exp_mod_playing = 1;
                                         snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);

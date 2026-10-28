@@ -30,6 +30,29 @@ class Mod:
         elif sig == b"6CHN": s.nch = 6
         elif sig in (b"8CHN", b"FLT8", b"OCTA"): s.nch = 8
         elif sig[2:] == b"CH" and sig[:2].isdigit() and 1 <= int(sig[:2]) <= 8: s.nch = int(sig[:2])
+        elif len(buf) >= 600 and 1 <= buf[470] <= 128:
+            # Soundtracker 15-sample format (1987-1989)
+            s.nch = 4
+            s.title = buf[:20].split(b"\0")[0].decode("latin-1")
+            s.songlen = buf[470]
+            s.restart = buf[471]
+            s.orders = list(buf[472:600])
+            s.npat = max(s.orders) + 1
+            off = 600 + s.npat * 256 * 4
+            if off > len(buf): raise LoadError("patterns truncated")
+            s.pat = buf[600:off]
+            s.smp = [Smp() for _ in range(32)]
+            for i in range(1, 16):
+                h = buf[20+(i-1)*30:20+i*30]; x = s.smp[i]
+                x.name = h[:22].split(b"\0")[0].decode("latin-1")
+                ln = struct.unpack(">H", h[22:24])[0]*2
+                x.vol = min(64, h[25]); x.rep = struct.unpack(">H", h[26:28])[0]*2
+                x.replen = struct.unpack(">H", h[28:30])[0]*2
+                x.data = buf[off:off+ln]; x.len = len(x.data)
+                if x.rep > x.len: x.rep = 0; x.replen = 0
+                if x.rep + x.replen > x.len: x.replen = x.len - x.rep
+                off += ln
+            return
         else: raise LoadError("unsupported signature %r (15-sample MOD?)" % sig)
         s.title = buf[:20].split(b"\0")[0].decode("latin-1")
         s.songlen = buf[950]

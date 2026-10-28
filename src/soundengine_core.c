@@ -882,17 +882,54 @@ int mod_player_load_mem(ModPlayer *m, const uint8_t *buf, uint32_t size) {
     uint32_t off;
     int i, maxpat = 0;
     char sig[5];
+    int is_15 = 0;
     memset(m, 0, sizeof(*m));
-    if (!buf || size < 1084) return 0;
-    memcpy(sig, buf + 1080, 4); sig[4] = '\0';
-    if (!memcmp(sig, "M.K.", 4) || !memcmp(sig, "M!K!", 4) || !memcmp(sig, "FLT4", 4) || !memcmp(sig, "4CHN", 4)) m->nch = 4;
-    else if (!memcmp(sig, "6CHN", 4)) m->nch = 6;
-    else if (!memcmp(sig, "8CHN", 4) || !memcmp(sig, "FLT8", 4) || !memcmp(sig, "OCTA", 4)) m->nch = 8;
-    else if (sig[2] == 'C' && sig[3] == 'H' && sig[0] >= '0' && sig[0] <= '9' && sig[1] >= '0' && sig[1] <= '9') {
-        int n = (sig[0] - '0') * 10 + (sig[1] - '0');
-        if (n < 1 || n > MOD_MAX_CH) return 0;
-        m->nch = (uint8_t)n;
-    } else return 0;                       /* 15-sample / unknown */
+    if (!buf || size < 600) return 0;
+    if (size >= 1084) {
+        memcpy(sig, buf + 1080, 4); sig[4] = '\0';
+        if (!memcmp(sig, "M.K.", 4) || !memcmp(sig, "M!K!", 4) || !memcmp(sig, "FLT4", 4) || !memcmp(sig, "4CHN", 4)) m->nch = 4;
+        else if (!memcmp(sig, "6CHN", 4)) m->nch = 6;
+        else if (!memcmp(sig, "8CHN", 4) || !memcmp(sig, "FLT8", 4) || !memcmp(sig, "OCTA", 4)) m->nch = 8;
+        else if (sig[2] == 'C' && sig[3] == 'H' && sig[0] >= '0' && sig[0] <= '9' && sig[1] >= '0' && sig[1] <= '9') {
+            int n = (sig[0] - '0') * 10 + (sig[1] - '0');
+            if (n < 1 || n > MOD_MAX_CH) return 0;
+            m->nch = (uint8_t)n;
+        } else {
+            is_15 = 1;
+        }
+    } else {
+        is_15 = 1;
+    }
+    if (is_15) {
+        /* Soundtracker 15-sample format (1987-1989): 600-byte header */
+        m->songlen = buf[470];
+        if (m->songlen == 0 || m->songlen > 128) return 0;
+        m->nch = 4;
+        memcpy(m->title, buf, 20); m->title[20] = '\0';
+        m->restart = buf[471];
+        m->orders = buf + 472;
+        for (i = 0; i < 128; i++) if (buf[472 + i] > maxpat) maxpat = buf[472 + i];
+        m->npat = (uint8_t)(maxpat + 1);
+        m->patdata = buf + 600;
+        off = 600u + (uint32_t)m->npat * 1024u;
+        if (off > size) return 0;
+        for (i = 1; i <= 15; i++) {
+            const uint8_t *h = buf + 20 + (i - 1) * 30;
+            ModSample *s = &m->smp[i];
+            s->len = (uint32_t)be16(h + 22) * 2u;
+            s->fine = 0;
+            s->vol = (uint8_t)(h[25] > 64 ? 64 : h[25]);
+            s->rep = (uint32_t)be16(h + 26) * 2u;
+            s->replen = (uint32_t)be16(h + 28) * 2u;
+            s->data = (const int8_t *)(buf + off);
+            if (off + s->len > size) s->len = off < size ? size - off : 0;
+            if (s->rep > s->len) { s->rep = 0; s->replen = 0; }
+            if (s->rep + s->replen > s->len) s->replen = s->len - s->rep;
+            off += (uint32_t)be16(h + 22) * 2u;
+        }
+        m->buf = buf; m->size = size; m->loaded = 1;
+        return 1;
+    }
     memcpy(m->title, buf, 20); m->title[20] = '\0';
     m->songlen = buf[950];
     if (m->songlen == 0 || m->songlen > 128) return 0;

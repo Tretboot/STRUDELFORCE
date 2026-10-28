@@ -159,3 +159,4 @@ with open('src/turrican_sprites.h', 'w') as f:
     f.write("\n".join(header_lines) + "\n")
 
 print(f"SUCCESS: src/turrican_sprites.h created ({os.path.getsize('src/turrican_sprites.h')} bytes)!")
+

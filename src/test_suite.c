@@ -154,6 +154,15 @@ static void test_tfmx_playback(void) {
     CHECK(tfmx.loaded == 1, "TFMX geladen");
     tfmx_player_start(&tfmx, 0);
     CHECK(tfmx.playing == 1, "TFMX gestartet");
+
+    TfmxPlayer sm_tfmx;
+    tfmx_player_init(&sm_tfmx);
+    CHECK(tfmx_player_load_mem(&sm_tfmx, EMB_TFMX_SOFTMAN, EMB_TFMX_SOFTMAN_LEN,
+                               (const int8_t *)EMB_SAM_SOFTMAN, EMB_SAM_SOFTMAN_LEN),
+          "Software Manager TFMX+SAM mem load");
+    CHECK(sm_tfmx.loaded == 1 && sm_tfmx.num_subsongs >= 22, "Software Manager 22 Subsongs verifiziert");
+    tfmx_player_start(&sm_tfmx, 21);
+    CHECK(sm_tfmx.playing == 1, "Software Manager Subsong 21 gestartet");
     soundengine_init(&audio);
     for (i = 0; i < 50; i++) {
         int k;
@@ -189,6 +198,14 @@ static void test_mod_playback(void) {
     }
     printf("  MOD Peak Amplitude ueber 50 Ticks: %d\n", peak);
     CHECK(peak > 500, "MOD generiert echtes Audio (Peak > 500)");
+
+    ModPlayer st15;
+    mod_player_init(&st15);
+    CHECK(mod_player_load_mem(&st15, EMB_MOD_LOST_PATROL, EMB_MOD_LOST_PATROL_LEN),
+          "Lost Patrol 15-Sample Soundtracker load");
+    CHECK(st15.loaded == 1 && st15.nch == 4, "Soundtracker 15-Sample 4-Kanal geladen");
+    mod_player_start(&st15, GAME_AUDIO_RATE);
+    CHECK(st15.playing == 1, "Lost Patrol 15-Sample MOD gestartet");
 }
 
 int main(int argc, char **argv) {
