@@ -1,7 +1,7 @@
-# 🚀 STRUDELFORCE v0.2.0 (Consolidated Monolith)
+# 🚀 STRUDELFORCE 0.3.0 (Consolidated Monolith)
 
 [![Amiga 500](https://img.shields.io/badge/Platform-Amiga%20500%20%2F%20PC-blue.svg)](https://en.wikipedia.org/wiki/Amiga_500)
-[![Release: v0.2.0](https://img.shields.io/badge/Release-v0.2.0-brightgreen.svg)](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
+[![Stable: 0.2.0](https://img.shields.io/badge/Release-v0.2.0-brightgreen.svg)](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
 [![PAL 50Hz](https://img.shields.io/badge/Timing-50Hz%20PAL%20VBlank-green.svg)](#)
 [![Fixed Point](https://img.shields.io/badge/Math-16.16%20Fixed--Point%20Zero--Float-orange.svg)](#)
 [![Audio](https://img.shields.io/badge/Sound-Cyber--Paula%208--Voice%20TFMX%2BMOD-magenta.svg)](#)
@@ -24,7 +24,7 @@
   \___ \   | |  |  _  /| |  | | |  | |  __| | |    |  __|| |  | |  _  /| |    |  __|  
   ____) |  | |  | | \ \| |__| | |__| | |____| |____| |   | |__| | | \ \| |____| |____ 
  |_____/   |_|  |_|  \_\____/|_____/|______|______|_|    \____/|_|  \_\\_____|______|
-                                                                          v0.2 MONOLITH
+                                                                          0.3.0 TURRICAN
 ```
 
 ---
@@ -134,6 +134,23 @@ Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.m
 | **Y-Taste** | Nächster Musiktitel (Jukebox / TFMX / MOD) |
 | **Rechter Schulterbutton (RB/RS)** | Waffe wechseln |
 | **Start-Taste** | Hauptmenü / Pause |
+
+### ⚔️ Turrican-2 Waffengrafiken & Holding Beam (0.3.0)
+Die Waffen und Spezialfaehigkeiten verfuegen nun ueber authentische 2.5D Retro-Grafiken nach Turrican-2-Vorbild:
+* **360° Surround Holding Beam (ALT / Controller X):** Ein rotierender, elektrisch knisternder Blitzstrahl mit Emitter-Ring um das Schiff, dynamischem Jitter und Treffer-Funkenstern.
+* **Laser (WEAPON_LASER):** Hochenergetische Twin-Laser-Bolzen mit blau-cyanem Voxel-Koerper, weissem Kern und Schweif-Nachleuchten.
+* **Spread-Shot (WEAPON_SPREAD):** Aerodynamische Plasma-Keile mit goldenem Kern und Funkenschweif.
+* **Bounce (WEAPON_BOUNCE):** Hochglanz-Smaragd-Voxelkugeln mit weissem Glanzpunkt und Rebound-Schwung.
+* **Muzzle-Flash:** Dynamisches Muendungsfeuer am Raumschiffbug beim Abfeuern.
+* **HUD Retro-Waffen-Badge:** Bevel-Badge im HUD mit visuellem Waffen-Icon und 5-Stufen-Power-LED-Meter.
+
+### 🏛️ Turrican-2 Benchmark Level-System
+Das Levelsystem umfasst nun 17 Chunks und 9 Kampagnen-Welten inklusive der legendaeren Turrican-2-Welten:
+1. **Turrican 2 - World 1:** Desert Outpost (Original TFMX 'World 1 - Dessert')
+2. **Turrican 2 - World 2:** Cave Depths (Original TFMX 'World 2 - Cave')
+3. **Turrican 2 - World 3:** Magma Flight (Original TFMX 'World 3 - Flight')
+4. **Turrican 2 - World 5:** Alien Citadel (Original TFMX 'World 5 - Aliens')
+5. **Erweitertes Kiwi-Archiv:** Vollstaendiges 22-Chunk 32x32 Set in levels/levels_kiwi_extended.json.
 
 ### 💻 Befehlszeilen-Optionen (Single-Binary CLI)
 `strudelforce.exe` kann sowohl interaktiv mit vollständiger 2.5D GUI als auch headless im Terminal ausgeführt werden:

@@ -35,7 +35,7 @@
 #include "retro_font.h"
 #include "embedded_music.h"
 
-#define GAME_VERSION "0.2.0"
+#define GAME_VERSION "0.3.0"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -233,6 +233,185 @@ static void draw_voxel(int x, int y, int w, int h, int depth, uint32_t base_c) {
     /* Bottom Line (Schattenkante) */
     for (int i = 0; i < w; i++) {
         set_pixel(x + i, y + h - 1, bot_c);
+    }
+}
+
+/* Bresenham Line Drawing */
+static void draw_line(int x0, int y0, int x1, int y1, uint32_t c) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy, e2;
+    while (1) {
+        set_pixel(x0, y0, c);
+        if (x0 == x1 && y0 == y1) break;
+        e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+/* 360-Grad Surround Holding Beam (Turrican 2 Blitzstrahl) */
+static void draw_holding_beam(int px, int py, uint8_t angle) {
+    float rad = (float)angle * (6.283185307f / 256.0f);
+    float cos_a = cosf(rad);
+    float sin_a = sinf(rad);
+    float nx = -sin_a;
+    float ny = cos_a;
+    int beam_len = 220;
+    int segments = 14;
+
+    /* Rotierender Emitter-Ring um das Schiff */
+    for (int a = 0; a < 6; a++) {
+        float r_ang = (float)s_gui_frame * 0.15f + (float)a * 1.047f;
+        int rx = px + (int)(cosf(r_ang) * 26.0f);
+        int ry = py + (int)(sinf(r_ang) * 18.0f);
+        set_pixel(rx, ry, (a & 1) ? 0x00FFFF : 0xFFFFFF);
+        set_pixel(rx + 1, ry, 0x00A0E0);
+    }
+
+    /* Blitz-Strahl Segmente mit dynamischem Jitter */
+    int prev_x = px;
+    int prev_y = py;
+    for (int s = 1; s <= segments; s++) {
+        float dist = (float)s * ((float)beam_len / (float)segments);
+        float jit = sinf((float)s_gui_frame * 0.7f + (float)s * 1.6f) * (s < segments ? 4.5f : 0.0f);
+        int cur_x = px + (int)(cos_a * dist + nx * jit);
+        int cur_y = py + (int)(sin_a * dist + ny * jit);
+
+        /* Doppelter Blitzfaden (Kern weiss, Rand cyan) */
+        draw_line(prev_x, prev_y, cur_x, cur_y, 0x00E0FF);
+        draw_line(prev_x + 1, prev_y, cur_x + 1, cur_y, 0xFFFFFF);
+
+        /* Energie-Knotenperle */
+        if (s % 2 == 0) {
+            draw_rect(cur_x - 1, cur_y - 1, 3, 3, 0x80FFFF);
+            set_pixel(cur_x, cur_y, 0xFFFFFF);
+        }
+        prev_x = cur_x;
+        prev_y = cur_y;
+    }
+
+    /* Beam-Spitze: Energetischer Treffer-Funkenstern */
+    int tip_x = px + (int)(cos_a * (float)beam_len);
+    int tip_y = py + (int)(sin_a * (float)beam_len);
+    draw_line(tip_x - 8, tip_y, tip_x + 8, tip_y, 0xFFFFFF);
+    draw_line(tip_x, tip_y - 8, tip_x, tip_y + 8, 0xFFFFFF);
+    draw_line(tip_x - 5, tip_y - 5, tip_x + 5, tip_y + 5, 0x00E0FF);
+    draw_line(tip_x - 5, tip_y + 5, tip_x + 5, tip_y - 5, 0x00E0FF);
+}
+
+/* Dynamisches Muendungsfeuer beim Schiessen */
+static void draw_muzzle_flash(int nx, int ny, uint8_t weapon) {
+    if (weapon == WEAPON_LASER) {
+        /* Gebuendelter Cyan-Laserblitz */
+        draw_rect(nx, ny - 2, 20, 5, 0x00E0FF);
+        draw_rect(nx + 2, ny - 1, 14, 3, 0xFFFFFF);
+        draw_line(nx + 4, ny - 4, nx + 12, ny - 1, 0x80FFFF);
+        draw_line(nx + 4, ny + 4, nx + 12, ny + 1, 0x80FFFF);
+    } else if (weapon == WEAPON_BOUNCE) {
+        /* Smaragd-Expansionsring */
+        draw_rect(nx, ny - 3, 10, 7, 0x00E040);
+        draw_rect(nx + 2, ny - 2, 6, 5, 0x80FF90);
+        set_pixel(nx + 4, ny, 0xFFFFFF);
+    } else {
+        /* Goldener Streu-Faecher */
+        draw_rect(nx, ny - 1, 12, 3, 0xFFC000);
+        draw_rect(nx + 2, ny, 8, 1, 0xFFFFFF);
+        draw_line(nx + 2, ny - 5, nx + 10, ny - 2, 0xFF8020);
+        draw_line(nx + 2, ny + 5, nx + 10, ny + 2, 0xFF8020);
+    }
+}
+
+/* Turrican-2 Projektil: Laser-Twin-Bolt */
+static void draw_projectile_laser(int x, int y) {
+    /* Schweif-Nachleuchten */
+    draw_rect(x - 14, y + 2, 12, 2, 0x003870);
+    draw_rect(x - 6, y + 1, 6, 4, 0x0078C0);
+    /* 2.5D Extrudierter Laser-Koerper */
+    draw_voxel(x, y - 1, 24, 7, 2, 0x00B8F0);
+    /* Reiner weisser Hochenergie-Kern */
+    draw_rect(x + 2, y + 1, 20, 3, 0xFFFFFF);
+}
+
+/* Turrican-2 Projektil: Spread-Shotgun-Dart */
+static void draw_projectile_spread(int x, int y) {
+    /* Funken-Schweif */
+    set_pixel(x - 8, y + 2, 0x802000);
+    set_pixel(x - 5, y + 1, 0xC04010);
+    set_pixel(x - 5, y + 3, 0xC04010);
+    /* Aerodynamischer Pfeil-Koerper */
+    draw_voxel(x - 2, y, 8, 6, 2, 0xFF6010);
+    draw_voxel(x + 4, y + 1, 8, 4, 2, 0xFFD030);
+    /* Spitzen-Highlight */
+    set_pixel(x + 11, y + 2, 0xFFFFFF);
+    set_pixel(x + 10, y + 2, 0xFFFFFF);
+}
+
+/* Turrican-2 Projektil: Bouncing Emerald Sphere */
+static void draw_projectile_bounce(int x, int y) {
+    /* Glanzvoller Smaragd-Voxelball */
+    draw_voxel(x, y, 14, 14, 4, 0x00C838);
+    draw_rect(x + 2, y + 2, 8, 8, 0x40FF70);
+    /* Reiner weisser Glanzpunkt (oben links) */
+    set_pixel(x + 3, y + 3, 0xFFFFFF);
+    set_pixel(x + 4, y + 3, 0xFFFFFF);
+    set_pixel(x + 3, y + 4, 0xFFFFFF);
+    /* Schattierungs-Kante unten rechts */
+    draw_rect(x + 6, y + 8, 4, 2, 0x006018);
+}
+
+/* Turrican-2 Projektil: Pulsierendes Feind-Plasma */
+static void draw_projectile_enemy(int x, int y) {
+    uint32_t pulse_c = ((s_gui_frame / 4) % 2 == 0) ? 0xFF2040 : 0xFF6030;
+    draw_voxel(x, y, 12, 12, 3, 0xA01020);
+    draw_rect(x + 2, y + 2, 6, 6, pulse_c);
+    set_pixel(x + 4, y + 4, 0xFFFFFF);
+    set_pixel(x + 5, y + 4, 0xFFFFFF);
+}
+
+/* HUD Retro-Waffen-Badge mit Power-LED-Leiste */
+static void draw_weapon_hud_badge(int x, int y, uint8_t weapon, uint8_t level) {
+    /* 2.5D Badge-Rahmen */
+    draw_rect(x, y, 42, 26, 0x0B1622);
+    draw_rect_outline(x, y, 42, 26, 0x3A5C80);
+    draw_rect(x + 1, y + 1, 40, 1, 0x6088B0);
+
+    /* Waffen-Icon in der Badge */
+    if (weapon == WEAPON_LASER) {
+        /* Twin-Laser Emitter */
+        draw_rect(x + 6, y + 5, 28, 3, 0x00E0FF);
+        draw_rect(x + 8, y + 6, 22, 1, 0xFFFFFF);
+        draw_rect(x + 6, y + 11, 28, 3, 0x00E0FF);
+        draw_rect(x + 8, y + 12, 22, 1, 0xFFFFFF);
+        draw_rect(x + 4, y + 4, 4, 12, 0x406080);
+    } else if (weapon == WEAPON_BOUNCE) {
+        /* Bouncing Ball mit Rebound-Kurve */
+        draw_rect(x + 6, y + 14, 18, 1, 0x006020);
+        draw_line(x + 6, y + 14, x + 16, y + 6, 0x20A040);
+        draw_line(x + 16, y + 6, x + 26, y + 14, 0x20A040);
+        draw_voxel(x + 20, y + 5, 10, 10, 2, 0x00E040);
+        set_pixel(x + 22, y + 7, 0xFFFFFF);
+    } else {
+        /* Spread 3-Wege Pfeile */
+        draw_rect(x + 6, y + 9, 8, 3, 0x507090);
+        draw_line(x + 14, y + 10, x + 30, y + 6, 0xFFD020);
+        draw_line(x + 14, y + 10, x + 34, y + 10, 0xFFFFFF);
+        draw_line(x + 14, y + 10, x + 30, y + 14, 0xFFD020);
+        draw_rect(x + 32, y + 9, 4, 3, 0xFF9010);
+    }
+
+    /* 5-Stufen Power-LEDs darunter */
+    uint32_t led_on = (weapon == WEAPON_LASER) ? 0x00FFFF :
+                      ((weapon == WEAPON_BOUNCE) ? 0x40FF60 : 0xFFE040);
+    uint32_t led_off = 0x14202C;
+    for (int l = 1; l <= 5; l++) {
+        int lx = x + 3 + (l - 1) * 8;
+        int ly = y + 19;
+        uint32_t col = (l <= level) ? led_on : led_off;
+        draw_rect(lx, ly, 6, 4, col);
+        if (l <= level) {
+            set_pixel(lx + 1, ly + 1, 0xFFFFFF);
+        }
     }
 }
 
@@ -1226,7 +1405,17 @@ static void render_tab_game(void) {
 
     /* Blaster unter Rumpf-Mitte (dunkel, nicht grell-weiß) */
     draw_voxel(p_screen_x + 18, p_screen_y + 14, 18, 6, 2, 0x283848);
+
+    /* Muendungsfeuer beim Schiessen */
+    if (s_game.fire_cooldown > 0) {
+        draw_muzzle_flash(p_screen_x + 62, p_screen_y + 4, s_game.weapon);
+    }
     } /* Ende player_visible */
+
+    /* 360-Grad Surround Holding Beam (Turrican 2 ALT / Controller X) */
+    if (s_game.beam_active) {
+        draw_holding_beam(p_screen_x + 30, p_screen_y + 8, s_game.beam_angle);
+    }
 
     /* 3.5 Extraleben-Pickups (an den Welt-Raendern, Bob-Animation) */
     for (int i = 0; i < MAX_PICKUPS; i++) {
@@ -1261,7 +1450,7 @@ static void render_tab_game(void) {
         }
     }
 
-    /* 3. Projektile */
+    /* 3. Projektile (Turrican 2 High-End Voxel-Grafik) */
     for (int i = 0; i < MAX_PROJECTILES; i++) {
         const Projectile *b = &s_game.projectiles[i];
         if (!b->active) continue;
@@ -1269,14 +1458,13 @@ static void render_tab_game(void) {
         int by = ground_y - 40 - (b->y >> 16) * 16;
 
         if (b->kind == PROJ_BOUNCE) {
-            /* Bouncing Sphere Voxel */
-            draw_voxel(bx, by, 12, 12, 4, 0x00FF40);
+            draw_projectile_bounce(bx, by);
         } else if (b->kind == PROJ_ENEMY) {
-            /* Rote Plasma-Kugeln */
-            draw_voxel(bx, by, 10, 10, 3, 0xFF2040);
+            draw_projectile_enemy(bx, by);
+        } else if (s_game.weapon == WEAPON_LASER || b->vx > (9 << 16)) {
+            draw_projectile_laser(bx, by);
         } else {
-            /* Spread Darts / Lasers */
-            draw_voxel(bx, by, 16, 6, 2, 0xFFC000);
+            draw_projectile_spread(bx, by);
         }
     }
 
@@ -1347,19 +1535,25 @@ static void render_tab_game(void) {
         draw_string(WIN_W / 2 + 70, 52, buf, 0x90A8C0, 1);
 
         /* Rechtes Panel: LEVEL/WAVE + BIOME + WAFFE + TRUHE + MUSIK */
-        draw_panel(WIN_W - 280, 46, 264, 126, 0x2A4860);
+        draw_panel(WIN_W - 280, 46, 264, 150, 0x2A4860);
         if (s_game.mode == MODE_CAMPAIGN)
             snprintf(buf, sizeof(buf), "KAMPAGNE %u/%d", (unsigned)s_game.campaign_level, CAMPAIGN_LEVELS);
         else
             snprintf(buf, sizeof(buf), "ENDLOS  WAVE %u", (unsigned)s_game.wave + 1);
         draw_string(WIN_W - 268, 54, buf, 0xFFFFC040, 2);
-        draw_string(WIN_W - 268, 78, bp->name, 0xA0E0FF, 1);
-        snprintf(buf, sizeof(buf), "WPN: %s   LV %u", wpn_names[s_game.weapon % 3], s_game.weapon_level);
-        draw_string(WIN_W - 268, 94, buf, 0xFFE040, 1);
+        draw_string(WIN_W - 268, 76, bp->name, 0xA0E0FF, 1);
+
+        /* 2.5D Retro Weapon Badge & Power-Meter */
+        draw_weapon_hud_badge(WIN_W - 268, 92, s_game.weapon, s_game.weapon_level);
+        snprintf(buf, sizeof(buf), "%s", wpn_names[s_game.weapon % 3]);
+        draw_string(WIN_W - 218, 94, buf, (s_game.weapon == 1 ? 0x00FFFF : (s_game.weapon == 2 ? 0x50FF70 : 0xFFE040)), 1);
+        snprintf(buf, sizeof(buf), "POWER LV %u/5", s_game.weapon_level);
+        draw_string(WIN_W - 218, 108, buf, 0x90B0D0, 1);
+
         snprintf(buf, sizeof(buf), "TRUHE: %s", s_livecode.chest_opened ? "GEOEFFNET" : "GESCHLOSSEN");
-        draw_string(WIN_W - 268, 108, buf, s_livecode.chest_opened ? 0x60FF90 : 0x405868, 1);
+        draw_string(WIN_W - 268, 124, buf, s_livecode.chest_opened ? 0x60FF90 : 0x405868, 1);
         snprintf(buf, sizeof(buf), "MUSIK [M]: %-14.14s", s_current_track_name);
-        draw_string(WIN_W - 268, 122, buf, 0x00FFFF, 1);
+        draw_string(WIN_W - 268, 138, buf, 0x00FFFF, 1);
     }
 
     /* Musik-Toast (Overlay bei Songwechsel) */
@@ -2113,7 +2307,7 @@ static int run_headless_simulation(uint32_t ticks, uint32_t seed, int campaign_m
     LiveCodeUI livecode;
     uint32_t t;
     printf("\n========================================================================\n");
-    printf("STRUDELFORCE v%s - Headless 50Hz PAL Simulation\n", GAME_VERSION);
+    printf("STRUDELFORCE %s - Headless 50Hz PAL Simulation\n", GAME_VERSION);
     printf("Modus: %s | Seed: %u | Geplante Ticks: %u\n",
            campaign_mode ? "KAMPAGNE (5 Level x 3 Wellen)" : "ENDLOS ROGUELIKE", seed, ticks);
     printf("========================================================================\n");
@@ -2176,7 +2370,7 @@ static int run_headless_simulation(uint32_t ticks, uint32_t seed, int campaign_m
 static int run_headless_tests(void) {
     int pass = 0, fail = 0;
     printf("\n========================================================================\n");
-    printf("STRUDELFORCE v%s - Integrierte Headless Test-Suite\n", GAME_VERSION);
+    printf("STRUDELFORCE %s - Integrierte Headless Test-Suite\n", GAME_VERSION);
     printf("========================================================================\n");
 
     /* 1. 16.16 Fixed Point Arithmetik */
@@ -2315,7 +2509,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 if (tok) sim_seed = (uint32_t)atoi(tok);
             } else if (_stricmp(tok, "--help") == 0 || _stricmp(tok, "-help") == 0 || _stricmp(tok, "-h") == 0 || _stricmp(tok, "/?") == 0) {
                 init_console_io();
-                printf("STRUDELFORCE v%s - Amiga 500 Voxel & Cyber-Paula Engine\n\n", GAME_VERSION);
+                printf("STRUDELFORCE %s - Amiga 500 Voxel & Cyber-Paula Engine\n\n", GAME_VERSION);
                 printf("Verwendung:\n");
                 printf("  strudelforce.exe                      Startet das 2.5D GUI Spiel (Standard)\n");
                 printf("  strudelforce.exe -headless [ticks]    Headless 50Hz PAL Simulation (Default: 2500 Ticks)\n");

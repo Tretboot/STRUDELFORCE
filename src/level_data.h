@@ -28,21 +28,34 @@ static const LvChunk LV_CHUNKS[] = {
  {"bath_columns", {"................","..#.....#.....#.","..#..*..#..*..#.","..#.....#.....#.","..#~~~~~#~~~~~#.","~~#~~f~~#~~~~~#~","~~#~~~~~#~~f~~#~","~~~~~~~~~~~~~~~~","~~~~~~~~~~~~~~~~","~~~~~~~~~~~~~~~~","################","################"}, 9,9,255,255, 2,2,0},
  {"chrome_storm_bridge", {"................","....f......f....","................","................","..*....*....*...","................","..--..--..--..--","................","................","................","##..##..##..##..","##^^##^^##^^##^^"}, 9,9,255,255, 3,1,0},
  {"boss_arena", {"################","#..............#","#.......G......#","#...--....--...#","#..............#","...............E","#.....####.....#","#..............#","#^^..........^^#","...............#","################","################"}, 9,255,255,255, 5,15,17},
+ {"turrican_desert_dunes", {"................","................","...*..*..*......","................","....####........","....#..#...*....","..###..#####....","................","......w.........","................","################","################"}, 9,9,255,255, 2,15,0},
+ {"turrican_desert_canyon", {"................","...D.D.D.D......","................","....?B?B?.......","................","........----....","....S........f..","........####....","...---..........","................","####^^^^^^^^####","################"}, 9,9,255,255, 3,15,0},
+ {"turrican_cave_stalactites", {"####..####..####","#..#..#..#..#..#","#..#..#..#..#..#","................","....---.........",".........U......",".....####.......","................","...*......*..o..","................","####~~~~~~~~####","################"}, 9,9,255,255, 3,15,0},
+ {"turrican_magma_pit", {"................","....f......f....","................","..MM......MM....","....MM..MM......","................","....------......","................","..t........t....","................","##^^^^^^^^^^^^##","################"}, 9,9,255,255, 4,15,0},
+ {"turrican_alien_citadel", {"MMMMMMMMMMMMMMMM","M..............M","M..*...CC...*..M","M...########...M","....#......#....","....#..==..#....","....#......#....","................","...w........w...","................","MMMMMMMMMMMMMMMM","MMMMMMMMMMMMMMMM"}, 9,9,255,255, 4,15,0},
 };
-#define LV_NUM_CHUNKS 12
+#define LV_NUM_CHUNKS 17
 static const uint8_t LV_SEQ_0[] = {0,1,2,3,1,11};
 static const uint8_t LV_SEQ_1[] = {0,5,4,7,5,11};
 static const uint8_t LV_SEQ_2[] = {0,6,5,6,7,11};
 static const uint8_t LV_SEQ_3[] = {0,9,8,9,11};
 static const uint8_t LV_SEQ_4[] = {0,10,2,10,5,11};
+static const uint8_t LV_SEQ_5[] = {0,12,13,5,11};
+static const uint8_t LV_SEQ_6[] = {0,14,9,4,11};
+static const uint8_t LV_SEQ_7[] = {0,15,10,15,11};
+static const uint8_t LV_SEQ_8[] = {0,16,6,7,11};
 static const LvLevel LV_LEVELS[] = {
  {"Dream World 1 (Giana-Hommage)", 3, 3, 0, 0, "user_music/dream_world.strudel", 0, 6, LV_SEQ_0, 200},
  {"Hive Shaft (Turrican-Hommage)", 2, 2, 0, 1, "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.tfx", 0, 6, LV_SEQ_1, 300},
  {"Machine Factory (Turrican 3 Tribute)", 2, 2, 0, 1, "TFMX Professional/Turrican 3/Turrican 3 - World 1 - Factory.tfx", 0, 6, LV_SEQ_2, 300},
  {"The Great Bath", 1, 1, 0, 2, "user_music/great_bath.mod", 0, 5, LV_SEQ_3, 250},
  {"Chrome Tempest Bridges", 0, 0, 0, 1, "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx", 0, 6, LV_SEQ_4, 220},
+ {"Turrican 2 - World 1: Desert Outpost", 2, 2, 0, 1, "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.tfx", 0, 5, LV_SEQ_5, 300},
+ {"Turrican 2 - World 2: Cave Depths", 1, 1, 0, 1, "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.tfx", 0, 5, LV_SEQ_6, 300},
+ {"Turrican 2 - World 3: Magma Flight", 0, 0, 0, 1, "TFMX Professional/Turrican 2/Turrican 2 - World 3 - Flight.tfx", 0, 5, LV_SEQ_7, 250},
+ {"Turrican 2 - World 5: Alien Citadel", 2, 2, 0, 1, "TFMX Professional/Turrican 2/Turrican 2 - World 5 - Aliens.tfx", 0, 5, LV_SEQ_8, 320},
 };
-#define LV_NUM_LEVELS 5
+#define LV_NUM_LEVELS 9
 /* Roguelike assembler - deterministic (Xorshift32). Mirror: tools/level_tool.py rl_build() */
 static uint32_t lv_xorshift(uint32_t *s) { uint32_t x = *s; x ^= x << 13; x ^= x >> 17; x ^= x << 5; *s = x; return x; }
 static int lv_find_flag(uint8_t f) { int i; for (i = 0; i < LV_NUM_CHUNKS; i++) if (LV_CHUNKS[i].flags & f) return i; return 0; }
