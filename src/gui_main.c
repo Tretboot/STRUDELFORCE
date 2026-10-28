@@ -1985,9 +1985,9 @@ static void render_state_menu(void) {
     int i;
     clear_screen(0x000000);
 
-    /* OBERE AMIGA INFO-LEISTE (Kein Ueberlappen, sofort sichtbar!) */
-    draw_rect(0, 0, WIN_W, 30, 0x000B18);
-    draw_rect_outline(0, 0, WIN_W, 30, 0x003A70);
+    /* OBERE AMIGA INFO-LEISTE (Sauber abgesetzt, kein Randfehler!) */
+    draw_rect(0, 0, WIN_W, 32, 0x000B18);
+    draw_line(0, 31, WIN_W, 31, 0x004080);
     draw_string(20, 9, "[>] INTRO: APIDYA MEADOW (16.5 kHz PAULA STEREO)", 0x40E0FF, 1);
     draw_string(WIN_W / 2 - 140, 9, "[F11 / ALT+ENTER] VOLLBILD", 0xFFFF40, 1);
     char pad_buf[64];
@@ -2229,12 +2229,13 @@ typedef struct {
 
 static const CreditSongStep s_credit_playlist[] = {
     { 4,  0 }, /* Phase 0: Software Manager Subsong 0 (Opening & Overview) */
-    { 4,  3 }, /* Phase 1: Software Manager Subsong 3 (Architecture & Audio Spec) */
-    { 4,  7 }, /* Phase 2: Software Manager Subsong 7 (Workflow Essay & Demoscene) */
-    { 4, 14 }, /* Phase 3: Software Manager Subsong 14 (Captain's Log Sandbox) */
-    { 4, 21 }, /* Phase 4: Software Manager Subsong 21 (Deep Reflection & Amiga Heritage) */
-    { 2,  0 }, /* Phase 5: Turrican 2 Desert */
-    { 3,  0 }  /* Phase 6: Turrican 2 Cave */
+    { 5,  0 }, /* Phase 1: Lost Patrol (15-Sample MOD Atmosphaere) */
+    { 4, 21 }, /* Phase 2: Software Manager Subsong 21 (Amiga Heritage Thema) */
+    { 6,  0 }, /* Phase 3: Blue Monday Chiptune (8-Bit MOD) */
+    { 2,  0 }, /* Phase 4: Turrican 2 Desert (TFMX) */
+    { 8,  0 }, /* Phase 5: Fairlight Cracktro (MOD) */
+    { 3,  0 }, /* Phase 6: Turrican 2 Cave (TFMX) */
+    { 0,  0 }  /* Phase 7: Apidya Meadow (TFMX) */
 };
 #define CREDIT_PLAYLIST_COUNT (int)(sizeof(s_credit_playlist) / sizeof(s_credit_playlist[0]))
 
@@ -4125,10 +4126,12 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
                 if (wParam == VK_UP) {
                     s_gfx_setting_cursor = (s_gfx_setting_cursor + 6) % 7;
+                    music_play_embedded(4, ((s_gfx_setting_cursor * 3 + 2) % 20) + 1);
                     return 0;
                 }
                 if (wParam == VK_DOWN) {
                     s_gfx_setting_cursor = (s_gfx_setting_cursor + 1) % 7;
+                    music_play_embedded(4, ((s_gfx_setting_cursor * 3 + 2) % 20) + 1);
                     return 0;
                 }
                 if (wParam == VK_LEFT || wParam == VK_RIGHT) {
@@ -4140,6 +4143,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     else if (s_gfx_setting_cursor == 4) s_bilinear = !s_bilinear;
                     else if (s_gfx_setting_cursor == 5) toggle_fullscreen(hWnd);
                     else if (s_gfx_setting_cursor == 6) s_color_mode = (s_color_mode + 4 + dir) % 4;
+                    music_play_embedded(4, ((s_gfx_setting_cursor * 3 + dir + 1) % 20) + 1);
                     return 0;
                 }
             }
@@ -5010,10 +5014,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wc.lpszClassName = "StrudelForceGUI";
     RegisterClassExA(&wc);
 
+    RECT win_rect = { 0, 0, WIN_W, WIN_H };
+    AdjustWindowRectEx(&win_rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE, 0);
+    int adjusted_w = win_rect.right - win_rect.left;
+    int adjusted_h = win_rect.bottom - win_rect.top;
+
     hWnd = CreateWindowExA(
         0, "StrudelForceGUI", "STRUDELFORCE " GAME_VERSION " - Amiga 500 Voxel Engine & Cyber-Paula TFMX Studio",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        CW_USEDEFAULT, CW_USEDEFAULT, WIN_W, WIN_H,
+        CW_USEDEFAULT, CW_USEDEFAULT, adjusted_w, adjusted_h,
         NULL, NULL, hInstance, NULL
     );
 
@@ -5061,9 +5070,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         /* Nur kuratierte Action-Soundtracks im Jukebox-Pool */
     }
 
-    /* Intro: Embedded Apidya Meadow (TFMX + Original-Amiga-Samples) — laeuft im Hauptmenue */
+    /* Allererster Start: Zufaelliges Cracktro-MOD (Fairlight / Skid Row / Paradox) */
     s_last_wave = s_game.wave;
-    music_play_embedded(0, 0);
+    {
+        int initial_cracktro = TRACK_IDX_FAIRLIGHT + (rand() % 3);
+        music_play_embedded(initial_cracktro, 0);
+    }
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
@@ -5431,8 +5443,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         s_audio.ext_render = NULL;
                     }
                 } else {
-                    /* Menu-/Loading-/Game-Over: Jukebox-Track (auch Embedded-Intro) weiter laufen */
-                    int menu_music = (s_gui_state != GUI_STATE_STUDIO);
+                    /* Menu-/Loading-/Game-Over / TAB_INTRO: Jukebox-Track & Cracktro MOD weiter laufen */
+                    int menu_music = (s_gui_state != GUI_STATE_STUDIO || s_current_tab == TAB_INTRO);
                     livecode_tick(&s_livecode);
                     if (menu_music && s_mod_active) {
                         s_audio.ext_render = NULL;
@@ -5448,8 +5460,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 }
 
                 /* 16574 Hz Audio rendern & in den Transport-Ring legen
-                 * (MOD-Jukebox: im Spiel UND in Menu/Loading/Game-Over, nicht im Studio) */
-                if (s_mod_active && s_gui_state != GUI_STATE_STUDIO) {
+                 * (MOD-Audio: im Spiel, im Menu/Loading/Game-Over UND im TAB_INTRO Cracktro!) */
+                if (s_mod_active && (s_gui_state != GUI_STATE_STUDIO || s_current_tab == TAB_INTRO)) {
                     mod_player_render(&s_mod, abuf, WIN_AUDIO_BUF_SAMPLES);
                 } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_EXPLORER && s_exp_mod_playing) {
                     mod_player_render(&s_exp_mod, abuf, WIN_AUDIO_BUF_SAMPLES);
