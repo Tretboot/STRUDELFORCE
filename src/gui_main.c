@@ -51,7 +51,8 @@ typedef enum {
     TAB_GAME = 0,   /* nur noch als Referenz (GUI_STATE_GAME ersetzt den Tab) */
     TAB_EXPLORER,
     TAB_STRUDEL,
-    TAB_INTRO
+    TAB_INTRO,
+    TAB_GRAPHICS
 } GuiTab;
 
 /* ================= GUI State Machine =================
@@ -73,24 +74,148 @@ static int s_menu_index = 0;        /* aktiver Hauptmenue-Punkt */
 static int s_active_mode = MODE_CAMPAIGN; /* Hauptmodus: Kampagne mit 5 Welten & Plattformen */
 static int s_exp_mode = 0;           /* 0 = Integrierte ROM-Tracks (Default!), 1 = Lokale Dateien/Ordner */
 static int s_exp_rom_selected = 0;   /* ausgewaehlter Track im ROM-Browser */
-static int s_pad_connected = 0;      /* XInput Gamepad 0 verbunden (Footer-Anzeige) */
-static int s_pad_start_prev = 0;     /* XInput Start-Button (Edge-Erkennung) */
+static int s_pad_connected = 0;      /* Gamepad verbunden (XInput oder DirectInput/PS4) */
+static int s_pad_start_prev = 0;     /* Start-Button Edge-Erkennung */
 static int s_loading_ticks = 0;     /* Loading-Screen-Fortschritt (50Hz-Ticks) */
 static int s_manual_page = 0;       /* aktuelle Handbuch-Seite (0..4) */
 static int s_is_fullscreen = 0;     /* Vollbild-Status */
 static WINDOWPLACEMENT s_prev_wp = { sizeof(WINDOWPLACEMENT) };
-static int s_filter_mode = 3;       /* 0=AUS, 1=CRT SCANLINES, 2=BLOOM, 3=DEMOSCENE CRT+BLOOM */
 
-#define MENU_ITEM_COUNT 7
+/* --- RetroArch-Grade Grafik-Einstellungen --- */
+static int s_filter_mode = 4;       /* 0=AUS, 1=BILINEAR, 2=TRINITRON, 3=1084S, 4=RETROARCH CRT, 5=ARCADE VIGNETTE */
+static int s_scanline_strength = 2; /* 0=25%, 1=50%, 2=75%, 3=100% */
+static int s_phosphor_mask = 1;     /* RGB Subpixel Triad Mask */
+static int s_bloom_mode = 2;        /* 0=AUS, 1=Zart, 2=Stark, 3=Max */
+static int s_bilinear = 1;          /* Bilineare Glaettung */
+static int s_color_mode = 0;        /* 0=OCS 32, 1=AGA 256, 2=CYBER, 3=GREEN MONO */
+static int s_gfx_setting_cursor = 0;/* Cursor im Grafik-Studio */
+
+#define MENU_ITEM_COUNT 8
 static const char *menu_labels[MENU_ITEM_COUNT] = {
     "KAMPAGNE (5 LEVELS)",
     "ENDLOS ROGUELIKE",
     "PILOTEN-HANDBUCH",
+    "GRAFIK-STUDIO (CRT/SHADER)",
     "TFMX JUKEBOX",
     "STRUDEL STUDIO",
     "AMIGA CRACKTRO",
     "CREDITS"
 };
+
+/* --- Unified Gamepad Struct (Unterstuetzt PS4/DirectInput & Xbox/XInput) --- */
+typedef struct {
+    int connected;
+    int up, down, left, right;
+    int btn_fire;    /* Cross / A */
+    int btn_jump;    /* A / Space */
+    int btn_morph;   /* Circle / B */
+    int btn_weapsw;  /* Triangle / Y / R1 */
+    int btn_beam;    /* Square / X / L1 / R2 */
+    int btn_start;   /* Options / Start */
+    int btn_lb, btn_rb;
+    float stick_rx, stick_ry; /* Rechter Analogstick fuer 360-Grad Laser */
+    char name[32];
+} UnifiedGamepad;
+
+static UnifiedGamepad s_pad = {0};
+
+static void poll_gamepad(void) {
+    memset(&s_pad, 0, sizeof(s_pad));
+
+    /* 1. XInput Versuch (Xbox Controller) */
+    XINPUT_STATE xs;
+    if (XInputGetState(0, &xs) == ERROR_SUCCESS) {
+        s_pad.connected = 1;
+        strncpy(s_pad.name, "XBOX CONTROLLER", sizeof(s_pad.name) - 1);
+        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) || xs.Gamepad.sThumbLY > 5000) s_pad.up = 1;
+        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) || xs.Gamepad.sThumbLY < -5000) s_pad.down = 1;
+        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) || xs.Gamepad.sThumbLX < -5000) s_pad.left = 1;
+        if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) || xs.Gamepad.sThumbLX > 5000) s_pad.right = 1;
+
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) s_pad.btn_fire = 1;
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) s_pad.btn_beam = 1;
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_B) s_pad.btn_morph = 1;
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) s_pad.btn_weapsw = 1;
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) s_pad.btn_lb = 1;
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) s_pad.btn_rb = 1;
+        if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_START) s_pad.btn_start = 1;
+        if (xs.Gamepad.bRightTrigger > 30) s_pad.btn_beam = 1;
+
+        if (abs(xs.Gamepad.sThumbRX) > 4000 || abs(xs.Gamepad.sThumbRY) > 4000) {
+            s_pad.stick_rx = (float)xs.Gamepad.sThumbRX / 32768.0f;
+            s_pad.stick_ry = -(float)xs.Gamepad.sThumbRY / 32768.0f;
+        }
+        s_pad_connected = 1;
+        return;
+    }
+
+    /* 2. WinMM DirectInput Versuch (PS4 DualShock 4 / PS5 DualSense / Generic USB) */
+    JOYINFOEX jex;
+    memset(&jex, 0, sizeof(jex));
+    jex.dwSize = sizeof(jex);
+    jex.dwFlags = JOY_RETURNALL;
+
+    MMRESULT res = joyGetPosEx(JOYSTICKID1, &jex);
+    if (res != JOYERR_NOERROR) res = joyGetPosEx(JOYSTICKID2, &jex);
+
+    if (res == JOYERR_NOERROR) {
+        s_pad.connected = 1;
+        strncpy(s_pad.name, "PS4 / USB GAMEPAD", sizeof(s_pad.name) - 1);
+
+        int lx = (int)jex.dwXpos - 32768;
+        int ly = (int)jex.dwYpos - 32768;
+        if (lx < -8000) s_pad.left = 1;
+        if (lx >  8000) s_pad.right = 1;
+        if (ly < -8000) s_pad.up = 1;
+        if (ly >  8000) s_pad.down = 1;
+
+        if (jex.dwPOV != 65535) {
+            if (jex.dwPOV >= 31500 || jex.dwPOV <= 4500) s_pad.up = 1;
+            if (jex.dwPOV >= 4500  && jex.dwPOV <= 13500) s_pad.right = 1;
+            if (jex.dwPOV >= 13500 && jex.dwPOV <= 22500) s_pad.down = 1;
+            if (jex.dwPOV >= 22500 && jex.dwPOV <= 31500) s_pad.left = 1;
+        }
+
+        DWORD b = jex.dwButtons;
+        if (b & 0x0002) s_pad.btn_fire = 1;   /* Cross / X */
+        if (b & 0x0001) s_pad.btn_beam = 1;   /* Square */
+        if (b & 0x0004) s_pad.btn_morph = 1;  /* Circle */
+        if (b & 0x0008) s_pad.btn_weapsw = 1; /* Triangle */
+        if (b & 0x0010) s_pad.btn_lb = 1;     /* L1 */
+        if (b & 0x0020) s_pad.btn_rb = 1;     /* R1 */
+        if (b & 0x0080) s_pad.btn_beam = 1;   /* R2 */
+        if (b & 0x0200) s_pad.btn_start = 1;  /* Options / Start */
+
+        int rx = (int)jex.dwZpos - 32768;
+        int ry = (int)jex.dwRpos - 32768;
+        if (abs(rx) > 6000 || abs(ry) > 6000) {
+            s_pad.stick_rx = (float)rx / 32768.0f;
+            s_pad.stick_ry = (float)ry / 32768.0f;
+        }
+        s_pad_connected = 1;
+        return;
+    }
+
+    s_pad_connected = 0;
+}
+
+/* --- Destructible Mystery Blocks [?] (Turrican 2 Item-Kisten zum Zerschiessen) --- */
+#define MAX_BLOCKS 24
+typedef struct {
+    int active;
+    int hp;
+    int max_hp;
+    int hit_flash;
+    int plat_idx;
+    int world_x;
+    int world_y;
+    int bounce_y;
+    int destroyed;
+    int crystal_active;
+    int crystal_x;
+    int crystal_y;
+    int crystal_vy;
+} DestructibleBox;
 
 #define GAME_SEED 1234u              /* fixer Seed: deterministische Läufe */
 #define LOAD_DURATION 120            /* ~2.4 Sekunden Loading-Screen */
@@ -113,6 +238,32 @@ static int         s_gui_frame = 0; /* GUI-Frame-Zaehler: animiert Tabs, deren
 static Soundgodizer s_god;
 static int          s_god_mode = 0;
 static int16_t      s_god_buf[WIN_AUDIO_BUF_SAMPLES * 2]; /* Stereo-Ausgabe */
+
+static DestructibleBox s_boxes[MAX_BLOCKS];
+static int s_box_count = 0;
+
+static void init_level_boxes(void) {
+    int pi;
+    s_box_count = 0;
+    for (pi = 0; pi < s_game.platform_count && s_box_count < MAX_BLOCKS; pi++) {
+        if (pi % 3 == 1) {
+            DestructibleBox *b = &s_boxes[s_box_count++];
+            b->active = 1;
+            b->hp = 4;
+            b->max_hp = 4;
+            b->hit_flash = 0;
+            b->plat_idx = pi;
+            b->world_x = (int)(s_game.platforms[pi].x >> 16) + (int)(s_game.platforms[pi].w >> 17);
+            b->world_y = (int)(s_game.platforms[pi].y >> 16) + 1;
+            b->bounce_y = 0;
+            b->destroyed = 0;
+            b->crystal_active = 0;
+            b->crystal_x = 0;
+            b->crystal_y = 0;
+            b->crystal_vy = 0;
+        }
+    }
+}
 
 /* --- Jukebox: zufaelliger Level-Song (TFMX + MOD) pro Wave --- */
 #define PLAYLIST_MAX 512
@@ -662,8 +813,57 @@ static void toggle_fullscreen(HWND hwnd) {
 static void apply_demoscene_postprocess(void) {
     if (s_filter_mode == 0) return;
 
-    /* 1. CRT Scanlines (Sony Trinitron / Amiga 1084S Zeilengitter) */
-    if (s_filter_mode == 1 || s_filter_mode == 3) {
+    /* 1. Bilineare Weichzeichnung (falls aktiv oder Filter 1/4/5) */
+    if (s_bilinear || s_filter_mode == 1 || s_filter_mode == 4) {
+        for (int y = 0; y < WIN_H; y++) {
+            uint32_t *row = &s_pixels[y * WIN_W];
+            for (int x = 1; x < WIN_W - 1; x += 2) {
+                uint32_t p0 = row[x];
+                uint32_t p1 = row[x + 1];
+                uint32_t r = (((p0 >> 16) & 0xFF) + ((p1 >> 16) & 0xFF)) >> 1;
+                uint32_t g = (((p0 >> 8) & 0xFF)  + ((p1 >> 8) & 0xFF)) >> 1;
+                uint32_t b = ((p0 & 0xFF)         + (p1 & 0xFF)) >> 1;
+                row[x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    /* 2. RGB Phosphor Triad Mask (Sony Trinitron / 1084S Aperture Grille) */
+    if (s_phosphor_mask && (s_filter_mode == 2 || s_filter_mode == 4 || s_filter_mode == 5)) {
+        for (int y = 0; y < WIN_H; y++) {
+            uint32_t *row = &s_pixels[y * WIN_W];
+            for (int x = 0; x < WIN_W; x++) {
+                uint32_t p = row[x];
+                uint32_t r = (p >> 16) & 0xFF;
+                uint32_t g = (p >> 8) & 0xFF;
+                uint32_t b = p & 0xFF;
+                int triad = x % 3;
+                if (triad == 0) {
+                    r = (r * 280) >> 8; if (r > 255) r = 255;
+                    g = (g * 220) >> 8;
+                    b = (b * 220) >> 8;
+                } else if (triad == 1) {
+                    r = (r * 220) >> 8;
+                    g = (g * 280) >> 8; if (g > 255) g = 255;
+                    b = (b * 220) >> 8;
+                } else {
+                    r = (r * 220) >> 8;
+                    g = (g * 220) >> 8;
+                    b = (b * 280) >> 8; if (b > 255) b = 255;
+                }
+                row[x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    /* 3. CRT Scanlines mit Helligkeits-Beam-Blooming */
+    if (s_filter_mode >= 2) {
+        int dark_mult = 200;
+        if (s_scanline_strength == 0) dark_mult = 224;      /* 25% */
+        else if (s_scanline_strength == 1) dark_mult = 192; /* 50% */
+        else if (s_scanline_strength == 2) dark_mult = 160; /* 75% */
+        else dark_mult = 120;                               /* 100% */
+
         for (int y = 1; y < WIN_H; y += 2) {
             uint32_t *row = &s_pixels[y * WIN_W];
             for (int x = 0; x < WIN_W; x++) {
@@ -671,22 +871,24 @@ static void apply_demoscene_postprocess(void) {
                 uint32_t r = (p >> 16) & 0xFF;
                 uint32_t g = (p >> 8) & 0xFF;
                 uint32_t b = p & 0xFF;
-                /* 26% Zeilen-Dunkelstufe */
-                r = (r * 188) >> 8;
-                g = (g * 188) >> 8;
-                b = (b * 188) >> 8;
+                uint32_t lum = (r * 77 + g * 150 + b * 29) >> 8;
+                int mult = dark_mult + (int)(lum >> 3);
+                if (mult > 255) mult = 255;
+                r = (r * mult) >> 8;
+                g = (g * mult) >> 8;
+                b = (b * mult) >> 8;
                 row[x] = (r << 16) | (g << 8) | b;
             }
         }
     }
 
-    /* 2. Phosphor Bloom & Glow (Highlight-Lichter strahlen in Nachbarpixel) */
-    if (s_filter_mode >= 2) {
+    /* 4. Phosphor Bloom & Glow */
+    if (s_bloom_mode > 0 && (s_filter_mode == 3 || s_filter_mode == 4 || s_filter_mode == 5)) {
         static uint8_t s_glow_r[320 * 180];
         static uint8_t s_glow_g[320 * 180];
         static uint8_t s_glow_b[320 * 180];
 
-        /* Schritt A: Downsampling und Schwellwert */
+        int threshold = (s_bloom_mode == 1) ? 160 : 130;
         for (int gy = 0; gy < 180; gy++) {
             int sy = gy * 4;
             uint32_t *srow = &s_pixels[sy * WIN_W];
@@ -694,14 +896,13 @@ static void apply_demoscene_postprocess(void) {
             uint8_t *gg = &s_glow_g[gy * 320];
             uint8_t *gb = &s_glow_b[gy * 320];
             for (int gx = 0; gx < 320; gx++) {
-                int sx = gx * 4;
-                uint32_t c = srow[sx];
+                uint32_t c = srow[gx * 4];
                 uint32_t r = (c >> 16) & 0xFF;
                 uint32_t g = (c >> 8) & 0xFF;
                 uint32_t b = c & 0xFF;
                 uint32_t lum = (r * 77 + g * 150 + b * 29) >> 8;
-                if (lum > 140) {
-                    uint32_t f = lum - 140;
+                if ((int)lum > threshold) {
+                    uint32_t f = lum - threshold;
                     gr[gx] = (uint8_t)((r * f) >> 8);
                     gg[gx] = (uint8_t)((g * f) >> 8);
                     gb[gx] = (uint8_t)((b * f) >> 8);
@@ -711,7 +912,6 @@ static void apply_demoscene_postprocess(void) {
             }
         }
 
-        /* Schritt B: Schneller Box-Glow Blur */
         for (int gy = 0; gy < 180; gy++) {
             uint8_t *gr = &s_glow_r[gy * 320];
             uint8_t *gg = &s_glow_g[gy * 320];
@@ -723,7 +923,7 @@ static void apply_demoscene_postprocess(void) {
             }
         }
 
-        /* Schritt C: Additives Rueckmischen in Framebuffer */
+        int boost = (s_bloom_mode == 1) ? 2 : (s_bloom_mode == 2 ? 3 : 5);
         for (int y = 0; y < WIN_H; y++) {
             int gy = y >> 2;
             uint32_t *row = &s_pixels[y * WIN_W];
@@ -733,9 +933,9 @@ static void apply_demoscene_postprocess(void) {
             for (int x = 0; x < WIN_W; x++) {
                 int gx = x >> 2;
                 uint32_t p = row[x];
-                uint32_t r = ((p >> 16) & 0xFF) + ((uint32_t)gr[gx] * 3 >> 2);
-                uint32_t g = ((p >> 8) & 0xFF)  + ((uint32_t)gg[gx] * 3 >> 2);
-                uint32_t b = (p & 0xFF)         + ((uint32_t)gb[gx] * 3 >> 2);
+                uint32_t r = ((p >> 16) & 0xFF) + ((uint32_t)gr[gx] * boost >> 2);
+                uint32_t g = ((p >> 8) & 0xFF)  + ((uint32_t)gg[gx] * boost >> 2);
+                uint32_t b = (p & 0xFF)         + ((uint32_t)gb[gx] * boost >> 2);
                 if (r > 255) r = 255;
                 if (g > 255) g = 255;
                 if (b > 255) b = 255;
@@ -744,20 +944,35 @@ static void apply_demoscene_postprocess(void) {
         }
     }
 
-    /* 3. Subtile Chromatic Aberration bei Mode 3 */
-    if (s_filter_mode == 3) {
+    /* 5. CRT Barrel Curvature & Vignette bei Filter 5 */
+    if (s_filter_mode == 5) {
+        for (int y = 0; y < WIN_H; y++) {
+            float ny = ((float)y - 360.0f) / 360.0f;
+            uint32_t *row = &s_pixels[y * WIN_W];
+            for (int x = 0; x < WIN_W; x++) {
+                float nx = ((float)x - 640.0f) / 640.0f;
+                float r2 = nx * nx + ny * ny;
+                if (r2 > 0.4f) {
+                    float vig = 1.0f - (r2 - 0.4f) * 0.5f;
+                    if (vig < 0.2f) vig = 0.2f;
+                    uint32_t p = row[x];
+                    uint32_t r = (uint32_t)(((p >> 16) & 0xFF) * vig);
+                    uint32_t g = (uint32_t)(((p >> 8) & 0xFF) * vig);
+                    uint32_t b = (uint32_t)((p & 0xFF) * vig);
+                    row[x] = (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+    }
+
+    /* 6. Optionale Amiga-Farbmodi */
+    if (s_color_mode == 3) {
         for (int y = 0; y < WIN_H; y++) {
             uint32_t *row = &s_pixels[y * WIN_W];
-            for (int x = 2; x < WIN_W - 2; x += 3) {
-                uint32_t pr = row[x - 1];
-                uint32_t pb = row[x + 1];
-                uint32_t c  = row[x];
-                uint32_t r = ((pr >> 16) & 0xFF);
-                uint32_t g = ((c >> 8) & 0xFF);
-                uint32_t b = (pb & 0xFF);
-                row[x] = (((((c >> 16) & 0xFF) * 3 + r) >> 2) << 16) |
-                         (g << 8) |
-                         (((c & 0xFF) * 3 + b) >> 2);
+            for (int x = 0; x < WIN_W; x++) {
+                uint32_t p = row[x];
+                uint32_t lum = (((p >> 16) & 0xFF) * 77 + ((p >> 8) & 0xFF) * 150 + (p & 0xFF) * 29) >> 8;
+                row[x] = (((lum * 50) >> 8) << 16) | (lum << 8) | ((lum * 60) >> 8);
             }
         }
     }
@@ -1333,6 +1548,7 @@ static void start_game(int mode) {
     } else {
         core_setup_platforms(&s_game);
     }
+    init_level_boxes();
     s_active_mode = mode;
     s_pad_start_prev = 0;
     s_mod_active = 0;
@@ -1353,31 +1569,64 @@ static void menu_activate(void) {
         case 0: start_game(MODE_CAMPAIGN); break;
         case 1: start_game(MODE_ENDLESS);  break;
         case 2: s_gui_state = GUI_STATE_MANUAL; s_manual_page = 0; break;
-        case 3: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
-        case 4: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
-        case 5: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
+        case 3: s_current_tab = TAB_GRAPHICS; s_gui_state = GUI_STATE_STUDIO; break;
+        case 4: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
+        case 5: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
+        case 6: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
         default: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
     }
 }
 
 /* --- XInput: Gamepad 0 im Hauptmenue navigieren (Edge-Getriggerung) --- */
 static void pad_menu_poll(void) {
-    XINPUT_STATE xs;
-    static int prev_up, prev_down, prev_a;
-    int up, down, a;
-    if (s_gui_state != GUI_STATE_MENU) return;
-    if (XInputGetState(0, &xs) != ERROR_SUCCESS) { s_pad_connected = 0; return; }
-    s_pad_connected = 1;
-    up   = ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_LEFT_SHOULDER)) != 0) || xs.Gamepad.sThumbLY > 4000;
-    down = ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_RIGHT_SHOULDER)) != 0) || xs.Gamepad.sThumbLY < -4000;
-    a    = (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
-    if (up && !prev_up)
-        s_menu_index = (s_menu_index + MENU_ITEM_COUNT - 1) % MENU_ITEM_COUNT;
-    if (down && !prev_down)
-        s_menu_index = (s_menu_index + 1) % MENU_ITEM_COUNT;
-    if (a && !prev_a)
-        menu_activate();
-    prev_up = up; prev_down = down; prev_a = a;
+    static int prev_up, prev_down, prev_left, prev_right, prev_a, prev_b, prev_start;
+    poll_gamepad();
+    if (!s_pad.connected) return;
+
+    if (s_gui_state == GUI_STATE_MENU) {
+        if (s_pad.up && !prev_up)
+            s_menu_index = (s_menu_index + MENU_ITEM_COUNT - 1) % MENU_ITEM_COUNT;
+        if (s_pad.down && !prev_down)
+            s_menu_index = (s_menu_index + 1) % MENU_ITEM_COUNT;
+        if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start))
+            menu_activate();
+    } else if (s_gui_state == GUI_STATE_MANUAL) {
+        if ((s_pad.left && !prev_left) || (s_pad.btn_lb)) {
+            if (s_manual_page > 0) s_manual_page--;
+        }
+        if ((s_pad.right && !prev_right) || (s_pad.btn_rb)) {
+            if (s_manual_page < 4) s_manual_page++;
+        }
+        if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
+            s_gui_state = GUI_STATE_MENU;
+        }
+    } else if (s_gui_state == GUI_STATE_CREDITS) {
+        if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start) || (s_pad.btn_fire && !prev_a)) {
+            s_gui_state = GUI_STATE_MENU;
+            music_play_embedded(0, 0);
+        }
+    } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
+        if (s_pad.up && !prev_up) s_gfx_setting_cursor = (s_gfx_setting_cursor + 6) % 7;
+        if (s_pad.down && !prev_down) s_gfx_setting_cursor = (s_gfx_setting_cursor + 1) % 7;
+        int dir = 0;
+        if (s_pad.left && !prev_left) dir = -1;
+        if (s_pad.right && !prev_right) dir = 1;
+        if (dir != 0) {
+            if (s_gfx_setting_cursor == 0) s_filter_mode = (s_filter_mode + 6 + dir) % 6;
+            else if (s_gfx_setting_cursor == 1) s_scanline_strength = (s_scanline_strength + 4 + dir) % 4;
+            else if (s_gfx_setting_cursor == 2) s_phosphor_mask = !s_phosphor_mask;
+            else if (s_gfx_setting_cursor == 3) s_bloom_mode = (s_bloom_mode + 4 + dir) % 4;
+            else if (s_gfx_setting_cursor == 4) s_bilinear = !s_bilinear;
+            else if (s_gfx_setting_cursor == 6) s_color_mode = (s_color_mode + 4 + dir) % 4;
+        }
+        if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
+            s_gui_state = GUI_STATE_MENU;
+        }
+    }
+    prev_up = s_pad.up; prev_down = s_pad.down;
+    prev_left = s_pad.left; prev_right = s_pad.right;
+    prev_a = s_pad.btn_fire; prev_b = s_pad.btn_morph;
+    prev_start = s_pad.btn_start;
 }
 
 /* --- GUI_STATE_MANUAL: Ausfuehrliches 5-Seiten Piloten-Handbuch (Amiga-Stil) --- */
@@ -1523,14 +1772,14 @@ static void render_top_bar(void) {
     draw_rect_outline(0, 0, WIN_W, 36, 0x004080);
 
     /* Tabs */
-    const char *tabs[4] = { "[F1] ZURUECK / NEUES SPIEL", "[F2] TFMX JUKEBOX", "[F3] STRUDEL STUDIO", "[F4] AMIGA INTRO" };
-    for (int t = 0; t < 4; t++) {
-        int x = 10 + t * 200;
+    const char *tabs[5] = { "[F1] SPIEL", "[F2] JUKEBOX", "[F3] STRUDEL", "[F4] CRACKTRO", "[F9] GRAFIK" };
+    for (int t = 0; t < 5; t++) {
+        int x = 10 + t * 155;
         int active = (t == 0) ? (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER)
-                              : (s_current_tab == (GuiTab)t);
-        draw_rect(x, 4, 190, 28, active ? 0x004080 : 0x001830);
-        draw_rect_outline(x, 4, 190, 28, active ? 0x00FFFF : 0x003060);
-        draw_string(x + 16, 14, tabs[t], active ? 0x00FFFF : 0xA0C0E0, 1);
+                               : (s_current_tab == (GuiTab)t);
+        draw_rect(x, 4, 148, 28, active ? 0x004080 : 0x001830);
+        draw_rect_outline(x, 4, 148, 28, active ? 0x00FFFF : 0x003060);
+        draw_string(x + 12, 14, tabs[t], active ? 0x00FFFF : 0xA0C0E0, 1);
     }
 
     /* Sound Status */
@@ -2003,27 +2252,24 @@ static void credits_init(void) {
 }
 
 static void pad_credits_poll(void) {
-    XINPUT_STATE xs;
-    if (XInputGetState(0, &xs) != ERROR_SUCCESS) return;
-    if (xs.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START)) {
+    poll_gamepad();
+    if (!s_pad.connected) return;
+    if (s_pad.btn_fire || s_pad.btn_morph || s_pad.btn_start) {
         s_gui_state = GUI_STATE_MENU;
         music_play_embedded(0, 0);
         return;
     }
-    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_RIGHT_SHOULDER)) || xs.Gamepad.sThumbLY < -4000) {
-        s_credit_scroll_y += 6;
-    }
-    if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_LEFT_SHOULDER)) || xs.Gamepad.sThumbLY > 4000) {
+    if (s_pad.down || s_pad.btn_rb) s_credit_scroll_y += 6;
+    if (s_pad.up   || s_pad.btn_lb) {
         s_credit_scroll_y -= 5;
         if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
     }
     static int prev_y = 0;
-    int y_btn = (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
-    if (y_btn && !prev_y) {
+    if (s_pad.btn_weapsw && !prev_y) {
         s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
         music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
     }
-    prev_y = y_btn;
+    prev_y = s_pad.btn_weapsw;
 }
 
 static void render_state_credits(void) {
@@ -2731,22 +2977,126 @@ static void render_tab_game(void) {
                 draw_rect(pl_sx + pl_sw - 7 - br, pl_sy + pl_sh + br, 3, 2, steel_brace);
             }
 
-            /* Plattform-Slab (2.5D extrudiert mit Face-Shading) */
+            /* Plattform-Slab mit Turrican 2 Level 1 Terrain-Schichten */
             draw_voxel(pl_sx, pl_sy, pl_sw, pl_sh, 4, slab_col);
             draw_rect(pl_sx + 2, pl_sy + pl_sh - 4, pl_sw - 4, 3, underside);
 
-            /* Leuchtender Neon-Kantenstreifen & Amiga Bevel-Glow */
-            draw_rect(pl_sx + 2, pl_sy - 1, pl_sw - 4, 2, neon);
-            set_pixel(pl_sx + 1, pl_sy - 1, 0xFFFFFF);
-            set_pixel(pl_sx + pl_sw - 2, pl_sy - 1, 0xFFFFFF);
+            /* Oberkante: Authentischer Sand/Gras-Rand nach Turrican 2 Tile 16x16 */
+            draw_rect(pl_sx + 2, pl_sy - 2, pl_sw - 4, 2, neon);
+            draw_rect(pl_sx + 4, pl_sy, pl_sw - 8, 1, 0xFFFFA0);
 
-            /* Turrican 2 Mystery [?] Item-Bloecke auf ausgewaehlten Plattformen */
+            /* Gelb-Schwarze Hazard-Streifen an den Aussenkanten */
+            for (int hz = 0; hz < 8; hz += 2) {
+                draw_rect(pl_sx + hz, pl_sy + 2, 2, 4, 0xFFCC00);
+                draw_rect(pl_sx + pl_sw - 10 + hz, pl_sy + 2, 2, 4, 0xFFCC00);
+            }
+
+            /* Metallnieten alle 16 Pixel entlang der Plattform */
+            for (int nv = pl_sx + 16; nv < pl_sx + pl_sw - 16; nv += 16) {
+                set_pixel(nv, pl_sy + 3, 0xFFFFFF);
+                set_pixel(nv + 1, pl_sy + 4, 0x203040);
+            }
+
+            /* Turrican 2 Mystery [?] Item-Bloecke (Zerschiessbar!) */
             if (pi % 3 == 1) {
-                int bx = pl_sx + pl_sw / 2 - 9;
-                int by = pl_sy - 22;
-                draw_voxel(bx, by, 18, 18, 3, 0xD09010);
-                draw_rect_outline(bx, by, 18, 18, 0xFFE040);
-                draw_string(bx + 5, by + 4, "?", 0xFFFFFF, 1);
+                int bx = pl_sx + pl_sw / 2 - 10;
+                int by = pl_sy - 24;
+                DestructibleBox *dbox = NULL;
+                for (int dbi = 0; dbi < s_box_count; dbi++) {
+                    if (s_boxes[dbi].plat_idx == pi) { dbox = &s_boxes[dbi]; break; }
+                }
+
+                if (dbox && !dbox->destroyed) {
+                    int dy = by - dbox->bounce_y;
+                    if (dbox->bounce_y > 0) dbox->bounce_y--;
+
+                    if (dbox->hit_flash > 0) {
+                        draw_voxel(bx, dy, 20, 20, 4, 0xFFFFFF);
+                        dbox->hit_flash--;
+                    } else {
+                        draw_voxel(bx, dy, 20, 20, 4, 0xD49A24);
+                        draw_rect_outline(bx, dy, 20, 20, 0xFFE040);
+                        set_pixel(bx + 2, dy + 2, 0xFFFFFF);
+                        set_pixel(bx + 17, dy + 2, 0xFFFFFF);
+                        set_pixel(bx + 2, dy + 17, 0x402000);
+                        set_pixel(bx + 17, dy + 17, 0x402000);
+                        uint32_t qcol = ((s_gui_frame / 6) % 2 == 0) ? 0xFFFFFF : 0x00FFFF;
+                        draw_string(bx + 6, dy + 4, "?", qcol, 1);
+                    }
+
+                    /* Projektil-Kollision mit Kiste */
+                    for (int pri = 0; pri < MAX_PROJECTILES; pri++) {
+                        Projectile *proj = &s_game.projectiles[pri];
+                        if (!proj->active) continue;
+                        int proj_sx = (int)(((int64_t)proj->x * 20) >> 16) - cam_x;
+                        int proj_sy = ground_y - 20 - (int)(((int64_t)proj->y * 16) >> 16);
+                        if (proj_sx >= bx && proj_sx <= bx + 20 && proj_sy >= dy && proj_sy <= dy + 20) {
+                            proj->active = 0;
+                            dbox->hp -= (s_game.weapon == WEAPON_LASER) ? 2 : 1;
+                            dbox->hit_flash = 4;
+                            sound_sfx_hit(&s_audio, 0);
+                            if (dbox->hp <= 0) {
+                                dbox->destroyed = 1;
+                                dbox->active = 0;
+                                dbox->crystal_active = 1;
+                                dbox->crystal_x = bx + 6;
+                                dbox->crystal_y = dy - 10;
+                                dbox->crystal_vy = 4;
+                                s_game.score += 500;
+                                sound_sfx_crystal(&s_audio);
+                            }
+                            break;
+                        }
+                    }
+
+                    /* Spieler Kopfstoss von unten gegen Kiste (Turrican / Super Mario Headbutt) */
+                    {
+                        int p_sc_x = WIN_W / 2;
+                        int p_sc_y = ground_y - 20 - (int)(((int64_t)s_game.py * 16) >> 16);
+                        int p_head = p_sc_y - 24;
+                        if (s_game.pvy > 0 && p_sc_x >= bx - 8 && p_sc_x <= bx + 28 &&
+                            p_head <= dy + 22 && p_head >= dy - 6) {
+                            dbox->bounce_y = 6;
+                            dbox->hp--;
+                            dbox->hit_flash = 3;
+                            s_game.pvy = -s_game.pvy / 2;
+                            sound_sfx_hit(&s_audio, 0);
+                            if (dbox->hp <= 0) {
+                                dbox->destroyed = 1;
+                                dbox->active = 0;
+                                dbox->crystal_active = 1;
+                                dbox->crystal_x = bx + 6;
+                                dbox->crystal_y = dy - 10;
+                                dbox->crystal_vy = 4;
+                                s_game.score += 500;
+                                sound_sfx_crystal(&s_audio);
+                            }
+                        }
+                    }
+                } else if (dbox && dbox->crystal_active) {
+                    dbox->crystal_y -= dbox->crystal_vy;
+                    dbox->crystal_vy--;
+                    if (dbox->crystal_y > pl_sy - 16) {
+                        dbox->crystal_y = pl_sy - 16;
+                        dbox->crystal_vy = 0;
+                    }
+                    int cx = dbox->crystal_x;
+                    int cy = dbox->crystal_y;
+                    draw_rect(cx + 3, cy, 4, 2, 0x00FFFF);
+                    draw_rect(cx + 1, cy + 2, 8, 3, 0x80FFFF);
+                    draw_rect(cx + 2, cy + 5, 6, 2, 0x00C0FF);
+                    draw_rect(cx + 4, cy + 7, 2, 2, 0x0060C0);
+
+                    int p_screen_x = WIN_W / 2;
+                    int foot_y = ground_y - 20 - (int)(((int64_t)s_game.py * 16) >> 16);
+                    if (abs(p_screen_x - cx) < 24 && abs(foot_y - cy) < 28) {
+                        dbox->crystal_active = 0;
+                        s_game.score += 1000;
+                        if (s_game.shield < 3) s_game.shield++;
+                        sound_sfx_crystal(&s_audio);
+                        snprintf(s_status_msg, sizeof(s_status_msg), "TURRICAN DIAMANT! +1000 SCORE");
+                    }
+                }
             }
 
             /* Schwebende Amiga-Diamanten auf den hoechsten Plattformen */
@@ -2957,8 +3307,7 @@ static void render_tab_game(void) {
         snprintf(buf, sizeof(buf), "POWER LV %u/5", s_game.weapon_level);
         draw_string(WIN_W - 218, 108, buf, 0x90B0D0, 1);
 
-        snprintf(buf, sizeof(buf), "TRUHE: %s", s_livecode.chest_opened ? "GEOEFFNET" : "GESCHLOSSEN");
-        draw_string(WIN_W - 268, 124, buf, s_livecode.chest_opened ? 0x60FF90 : 0x405868, 1);
+        /* TRUHE-Anzeige entfernt */
         snprintf(buf, sizeof(buf), "MUSIK [M]: %-14.14s", s_current_track_name);
         draw_string(WIN_W - 268, 138, buf, 0x00FFFF, 1);
     }
@@ -3227,6 +3576,92 @@ static void render_tab_strudel(void) {
     draw_string(50, 530, "  - Pausen:          ~ oder -", 0xD0E0FF, 1);
 }
 
+/* --- TAB 5: GRAFIK-STUDIO & RETROARCH SHADER MENUE --- */
+static void render_tab_graphics(void) {
+    draw_rect(0, 36, WIN_W, WIN_H - 60, 0x00060E);
+
+    /* Header Banner */
+    draw_rect(100, 48, WIN_W - 200, 42, 0x001020);
+    draw_rect_outline(100, 48, WIN_W - 200, 42, 0x0080C0);
+    draw_string(140, 58, ">>> STRUDELFORCE GRAFIK-STUDIO & RETROARCH SHADER ENGINE <<<", 0x00E0FF, 1);
+    draw_string(140, 72, "Echtzeit-Shader: Bilinear, Aperture Grille, Scanlines, Phosphor-Glow & 16:9 Vollbild", 0xFFE040, 1);
+
+    int lx = 100;
+    int ly = 108;
+    int lw = 520;
+    int lh = WIN_H - 180;
+    draw_rect(lx, ly, lw, lh, 0x000A14);
+    draw_rect_outline(lx, ly, lw, lh, 0x003060);
+
+    const char *profile_names[6] = {
+        "0: AUS (Reine scharfe Pixel)",
+        "1: BILINEAR SMOOTH (Weichzeichner)",
+        "2: SONY TRINITRON (Aperture Grille)",
+        "3: COMMODORE 1084S (Phosphor-Glow)",
+        "4: RETROARCH CRT-EASYMODE (Bilinear+CRT)",
+        "5: ARCADE CRT VIGNETTE (Woelbung+Aberration)"
+    };
+    const char *scan_names[4] = { "LEICHT (25%)", "MITTEL (50%)", "STARK (75%)", "INTENSIV (100%)" };
+    const char *bloom_names[4] = { "AUS", "ZART (25%)", "NEON (50%)", "MAXIMUM (100%)" };
+    const char *color_names[4] = { "AMIGA OCS (32 Farben)", "AMIGA AGA (256 Farben)", "CYBERPUNK NEON", "GRUENPHOSPHOR CRT" };
+
+    struct { const char *label; char val[64]; } items[7] = {
+        { "1. SHADER-PROFIL", "" },
+        { "2. SCANLINE-STAERKE", "" },
+        { "3. RGB PHOSPHOR-MASKE", "" },
+        { "4. NEON BLOOM & GLOW", "" },
+        { "5. BILINEARE GLAETTUNG", "" },
+        { "6. BILDSCHIRM-MODUS", "" },
+        { "7. AMIGA FARBMODUS", "" }
+    };
+    snprintf(items[0].val, sizeof(items[0].val), "< %s >", profile_names[s_filter_mode % 6]);
+    snprintf(items[1].val, sizeof(items[1].val), "< %s >", scan_names[s_scanline_strength % 4]);
+    snprintf(items[2].val, sizeof(items[2].val), "< %s >", s_phosphor_mask ? "AKTIV (Trinitron Triad)" : "DEAKTIVIERT");
+    snprintf(items[3].val, sizeof(items[3].val), "< %s >", bloom_names[s_bloom_mode % 4]);
+    snprintf(items[4].val, sizeof(items[4].val), "< %s >", s_bilinear ? "AKTIV (Bilinear)" : "AUS (Nearest)");
+    snprintf(items[5].val, sizeof(items[5].val), "< %s >", s_is_fullscreen ? "VOLLBILD (16:9 Letterbox)" : "FENSTER (1280x720)");
+    snprintf(items[6].val, sizeof(items[6].val), "< %s >", color_names[s_color_mode % 4]);
+
+    for (int i = 0; i < 7; i++) {
+        int y = ly + 25 + i * 46;
+        int sel = (i == s_gfx_setting_cursor);
+        if (sel) {
+            draw_rect(lx + 10, y - 6, lw - 20, 38, 0x002040);
+            draw_rect_outline(lx + 10, y - 6, lw - 20, 38, 0x00FFFF);
+            draw_char(lx + 18, y + 4, '>', 0x00FFFF, 2);
+        }
+        draw_string(lx + 40, y + 4, items[i].label, sel ? 0x00FFFF : 0x80B0D0, 1);
+        draw_string(lx + 230, y + 4, items[i].val, sel ? 0xFFFF40 : 0xE0E0E0, 1);
+    }
+
+    /* Rechtes Panel: Live Shader Preview Fenster */
+    int rx = lx + lw + 20;
+    int rw = WIN_W - rx - 100;
+    int rh = lh;
+    draw_rect(rx, ly, rw, rh, 0x000408);
+    draw_rect_outline(rx, ly, rw, rh, 0x006090);
+    draw_string(rx + 20, ly + 14, "LIVE SHADER VORSCHAU:", 0x00E0FF, 1);
+
+    int py0 = ly + rh / 2;
+    draw_voxel(rx + 20, py0, rw - 40, 24, 4, 0x8A4A20);
+    draw_rect(rx + 22, py0 - 2, rw - 44, 3, 0xEECC00);
+    draw_turrican_sprite(rx + 80, py0 - 4, (s_gui_frame / 4) % 13 + 1, 1);
+    draw_voxel(rx + rw - 110, py0 - 18, 30, 20, 3, 0xD49A24);
+    draw_rect_outline(rx + rw - 110, py0 - 18, 30, 20, 0xFFE040);
+    draw_string(rx + rw - 100, py0 - 14, "?", 0xFFFFFF, 2);
+
+    draw_rect(rx + 115, py0 - 28, rw - 240, 4, 0x00E0FF);
+    draw_rect(rx + 115, py0 - 27, rw - 240, 2, 0xFFFFFF);
+
+    draw_string(rx + 20, py0 + 40, "Pixel-Struktur reagiert sofort auf Shader!", 0xFFE040, 1);
+    draw_string(rx + 20, py0 + 60, "Scanlines, Phosphormaske & Bloom live aktiv.", 0x80D0FF, 1);
+
+    /* Footer Navigation */
+    draw_rect(0, WIN_H - 45, WIN_W, 45, 0x000A14);
+    draw_rect_outline(0, WIN_H - 45, WIN_W, 45, 0x003060);
+    draw_string(80, WIN_H - 30, "[ RAUF / RUNTER ] EINSTELLUNG     [ LINKS / RECHTS ] WERT AENDERN     [ F11 ] VOLLBILD     [ ESC ] ZURUECK", 0x00FFFF, 1);
+}
+
 /* --- TAB 4: Amiga Copper Cracktro Intro View (Demoszene 3D Vektor-Logo) --- */
 static void render_tab_intro(void) {
     draw_rect(0, 0, WIN_W, WIN_H, 0x000010);
@@ -3435,9 +3870,10 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 return 0;
             }
             /* F2-F4: Studio-Tools (im Spiel = Pause, im Menue = direkter Start) */
-            if (wParam == VK_F2 || wParam == VK_F3 || wParam == VK_F4) {
+            if (wParam == VK_F2 || wParam == VK_F3 || wParam == VK_F4 || wParam == VK_F9 || (wParam == 'G' && s_gui_state == GUI_STATE_MENU)) {
                 GuiTab t = (wParam == VK_F2) ? TAB_EXPLORER :
-                           (wParam == VK_F3) ? TAB_STRUDEL : TAB_INTRO;
+                           (wParam == VK_F3) ? TAB_STRUDEL :
+                           (wParam == VK_F4) ? TAB_INTRO : TAB_GRAPHICS;
                 if (s_gui_state != GUI_STATE_LOADING) {
                     s_current_tab = t;
                     s_gui_state = GUI_STATE_STUDIO;
@@ -3451,7 +3887,29 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 return 0;
             }
 
-            /* Tastatur-Kuerzel fuer Studio-Tabs */
+                        /* --- Grafik-Studio Tastensteuerung --- */
+            if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
+                if (wParam == VK_UP) {
+                    s_gfx_setting_cursor = (s_gfx_setting_cursor + 6) % 7;
+                    return 0;
+                }
+                if (wParam == VK_DOWN) {
+                    s_gfx_setting_cursor = (s_gfx_setting_cursor + 1) % 7;
+                    return 0;
+                }
+                if (wParam == VK_LEFT || wParam == VK_RIGHT) {
+                    int dir = (wParam == VK_RIGHT) ? 1 : -1;
+                    if (s_gfx_setting_cursor == 0) s_filter_mode = (s_filter_mode + 6 + dir) % 6;
+                    else if (s_gfx_setting_cursor == 1) s_scanline_strength = (s_scanline_strength + 4 + dir) % 4;
+                    else if (s_gfx_setting_cursor == 2) s_phosphor_mask = !s_phosphor_mask;
+                    else if (s_gfx_setting_cursor == 3) s_bloom_mode = (s_bloom_mode + 4 + dir) % 4;
+                    else if (s_gfx_setting_cursor == 4) s_bilinear = !s_bilinear;
+                    else if (s_gfx_setting_cursor == 5) toggle_fullscreen(hWnd);
+                    else if (s_gfx_setting_cursor == 6) s_color_mode = (s_color_mode + 4 + dir) % 4;
+                    return 0;
+                }
+            }
+/* Tastatur-Kuerzel fuer Studio-Tabs */
             if (s_gui_state == GUI_STATE_STUDIO) {
                 if (s_current_tab == TAB_INTRO) {
                     if (wParam == VK_RETURN || wParam == VK_SPACE || wParam == VK_ESCAPE) {
@@ -4488,67 +4946,55 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     if (GetAsyncKeyState('C') & 0x8000) mask |= INPUT_WEAPSW;
                     if (GetAsyncKeyState('T') & 0x8000) livecode_open_chest(&s_livecode);
 
-                    /* --- Controller (XInput, Gamepad 0) ---
-                     * Stick/D-Pad = bewegen, A = Feuer, X = Beam, B = Morph,
-                     * RS = Waffe, START = Hauptmenue (Edge) */
-                    {
-                        XINPUT_STATE xs;
-                        if (XInputGetState(0, &xs) == ERROR_SUCCESS) {
-                            s_pad_connected = 1;
-                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0  || xs.Gamepad.sThumbLX < -4000) mask |= INPUT_LEFT;
-                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 || xs.Gamepad.sThumbLX >  4000) mask |= INPUT_RIGHT;
-                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0    || xs.Gamepad.sThumbLY >  4000) mask |= INPUT_UP;
-                            if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_B)) != 0 ||
-                                xs.Gamepad.sThumbLY < -4000)                                                 mask |= INPUT_DOWN;
-                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) != 0)                mask |= INPUT_FIRE;
-                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) != 0)                mask |= INPUT_SECOND;
-                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0)   mask |= INPUT_WEAPSW;
-                            {
-                                static int s_pad_y_prev = 0;
-                                int y_now = ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0);
-                                if (y_now && !s_pad_y_prev) {
-                                    if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) {
-                                        music_subsong_next();
-                                    } else {
-                                        music_play_next();
-                                    }
+                    /* --- Controller (PS4 / DirectInput & Xbox / XInput via poll_gamepad) ---
+                     * Stick/D-Pad = bewegen, Cross/A = Feuer, Square/X/R2 = Beam, Circle/B = Morph,
+                     * Triangle/Y/R1/RS = Waffe, OPTIONS/START = Hauptmenue (Edge) */
+                    poll_gamepad();
+                    if (s_pad.connected) {
+                        if (s_pad.left)  mask |= INPUT_LEFT;
+                        if (s_pad.right) mask |= INPUT_RIGHT;
+                        if (s_pad.up)    mask |= INPUT_UP;
+                        if (s_pad.down || s_pad.btn_morph) mask |= INPUT_DOWN;
+                        if (s_pad.btn_fire) mask |= INPUT_FIRE;
+                        if (s_pad.btn_beam) mask |= INPUT_SECOND;
+                        if (s_pad.btn_rb || s_pad.btn_weapsw) mask |= INPUT_WEAPSW;
+                        {
+                            static int s_pad_y_prev = 0;
+                            int y_now = s_pad.btn_weapsw;
+                            if (y_now && !s_pad_y_prev) {
+                                if (s_pad.btn_rb) {
+                                    music_subsong_next();
+                                } else {
+                                    music_play_next();
                                 }
-                                s_pad_y_prev = y_now;
                             }
-                            {
-                                int start_now = ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_START) != 0);
-                                if (start_now && !s_pad_start_prev) s_gui_state = GUI_STATE_MENU;
-                                s_pad_start_prev = start_now;
-                            }
-                        } else {
-                            s_pad_connected = 0;
-                            s_pad_start_prev = 0;
+                            s_pad_y_prev = y_now;
                         }
+                        {
+                            int start_now = s_pad.btn_start;
+                            if (start_now && !s_pad_start_prev) s_gui_state = GUI_STATE_MENU;
+                            s_pad_start_prev = start_now;
+                        }
+                    } else {
+                        s_pad_start_prev = 0;
                     }
 
                     /* Turrican 2 Steuerbarer Drehlaser (Blitzstrahl):
-                     * Bei gehaltenem Beam (ALT / Pad X) bleibt der Spieler stehen.
+                     * Bei gehaltenem Beam (ALT / Pad X / Square / R2) bleibt der Spieler stehen.
                      * Links/Rechts dreht den Strahl (CCW / CW), Oben/Unten lenkt vertikal,
                      * Rechter Analogstick erlaubt direkte 360-Grad Praezisionspeilung!
                      * Wenn keine Richtung gedrueckt wird: Strahl bleibt stabil ausgerichtet! */
                     static float s_steered_beam_angle = 0.0f;
                     if (mask & INPUT_SECOND) {
                         int pad_aimed = 0;
-                        if (s_pad_connected) {
-                            XINPUT_STATE xs_aim;
-                            if (XInputGetState(0, &xs_aim) == ERROR_SUCCESS) {
-                                int rx = (int)xs_aim.Gamepad.sThumbRX;
-                                int ry = (int)xs_aim.Gamepad.sThumbRY;
-                                if (rx * rx + ry * ry < 6000 * 6000) {
-                                    rx = (int)xs_aim.Gamepad.sThumbLX;
-                                    ry = (int)xs_aim.Gamepad.sThumbLY;
-                                }
-                                if (rx * rx + ry * ry > 6000 * 6000) {
-                                    float rad = atan2f(-(float)ry, (float)rx);
-                                    if (rad < 0.0f) rad += 6.283185307f;
-                                    s_steered_beam_angle = rad * (256.0f / 6.283185307f);
-                                    pad_aimed = 1;
-                                }
+                        if (s_pad.connected) {
+                            float rx = s_pad.stick_rx;
+                            float ry = s_pad.stick_ry;
+                            if (rx * rx + ry * ry > 0.04f) {
+                                float rad = atan2f(-ry, rx);
+                                if (rad < 0.0f) rad += 6.283185307f;
+                                s_steered_beam_angle = rad * (256.0f / 6.283185307f);
+                                pad_aimed = 1;
                             }
                         }
                         /* Im Drehlaser-Modus bleibt der Krieger fixiert stehen (Turrican 2) */
@@ -4795,6 +5241,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         render_tab_explorer();
                     } else if (s_current_tab == TAB_STRUDEL) {
                         render_tab_strudel();
+                    } else if (s_current_tab == TAB_GRAPHICS) {
+                        render_tab_graphics();
                     } else {
                         render_tab_intro();
                     }
