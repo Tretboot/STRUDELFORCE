@@ -57,3 +57,4 @@ def pack_assets():
 if __name__ == "__main__":
     print("=" * 60 + "\nSTRUDELFORCE ASSET PACKER\n" + "=" * 60)
     print(f"{pack_assets()} Assets gepackt\n" + "=" * 60)
+

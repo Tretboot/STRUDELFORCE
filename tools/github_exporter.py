@@ -84,3 +84,4 @@ def create_export_zip(output_path):
 if __name__ == "__main__":
     out = os.path.join(ROOT_DIR, "strudelforce_export.zip")
     create_export_zip(out)
+

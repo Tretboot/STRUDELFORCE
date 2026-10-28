@@ -68,3 +68,4 @@ def build():
 if __name__ == "__main__":
     print("=" * 60 + "\nSTRUDELFORCE LOCALIZATION BUILDER\n" + "=" * 60)
     sys.exit(build())
+

@@ -12,6 +12,7 @@
 *.a
 *.lib
 assets.dat
+user_pattern.strudel
 tmp_obj/
 nul
 s_startup.tmp
