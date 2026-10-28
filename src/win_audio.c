@@ -11,8 +11,8 @@
  *     - Overflow (Spiel schneller) -> aelteste Samples werden verworfen
  *     - win_audio_write blockiert nie mehr (kein Spiel-Loop-Stau)
  *
- * 16574 Hz 16-Bit Mono PCM, 8 WaveOut-Buffers a 331 Samples (~160ms Lookahead),
- * Ring ~8s. Null externe Abhaengigkeiten, null malloc.
+ * 16574 Hz 16-Bit STEREO PCM (Soundgodizer-tauglich), 8 WaveOut-Buffers a
+ * 331 Frames (~160ms Lookahead), Ring ~8s. Null externe Abhaengigkeiten, null malloc.
  *
  * Lizenz: MIT (Clean Room)
  */
@@ -25,18 +25,20 @@
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 
-/* --- Ring-Puffer (statisch, kein malloc) -------------------------------- */
-#define RING_SAMPLES (WIN_AUDIO_RATE * 8)   /* ~8 s @16574 Hz, ~265 KB */
+/* --- Ring-Puffer (statisch, kein malloc) --------------------------------
+ * v3 (2026-10-27): Ring speichert STEREO-Frames (L,R verflochten), damit
+ * der Soundgodizer (Bass/Drive/Haas-Wide) nahtlos einspeisen kann.         */
+#define RING_FRAMES (WIN_AUDIO_RATE * 8)    /* ~8 s @16574 Hz, ~530 KB */
 
-static int16_t   s_ring[RING_SAMPLES];
-static volatile long s_ring_head;           /* Leseposition (Audio-Thread) */
+static int16_t   s_ring[RING_FRAMES * 2];
+static volatile long s_ring_head;           /* Leseposition (Audio-Thread)  */
 static volatile long s_ring_tail;           /* Schreibposition (Spiel-Thread) */
-static int16_t   s_hold;                    /* letztes Sample (Underrun-Hold) */
+static int16_t   s_hold[2];                 /* letztes Frame (Underrun-Hold) */
 
 /* --- WaveOut-Zustand ----------------------------------------------------- */
 static HWAVEOUT  s_hWave = NULL;
 static WAVEHDR   s_headers[WIN_AUDIO_BUFFERS];
-static int16_t   s_buffers[WIN_AUDIO_BUFFERS][WIN_AUDIO_BUF_SAMPLES];
+static int16_t   s_buffers[WIN_AUDIO_BUFFERS][WIN_AUDIO_BUF_SAMPLES * 2];
 static int       s_active = 0;
 static HANDLE    s_thread = NULL;
 static volatile int s_thread_run = 0;
@@ -44,32 +46,49 @@ static volatile int s_thread_run = 0;
 static void ring_reset(void) {
     s_ring_head = 0;
     s_ring_tail = 0;
-    s_hold = 0;
+    s_hold[0] = 0;
+    s_hold[1] = 0;
 }
 
-/* Produzent (Spiel-Thread): blockiert nie. Overflow verwirft aelteste Samples.
+/* Produzent (Spiel-Thread): blockiert nie. Overflow verwirft aelteste Frames.
  * Schreibt immer in den Ring (auch ohne offenes Geraet - selftest-kompatibel). */
-void win_audio_write(const int16_t *samples, int count) {
+void win_audio_write_frames(const int16_t *frames, int count) {
     long tail;
     long head;
     int i;
 
-    if (!samples || count <= 0) return;
+    if (!frames || count <= 0) return;
     tail = s_ring_tail;
     head = s_ring_head;
     for (i = 0; i < count; i++) {
-        if (tail - head >= RING_SAMPLES) {
-            s_ring_head = tail - RING_SAMPLES + 1; /* aeltestes Sample verwerfen */
+        if (tail - head >= RING_FRAMES) {
+            s_ring_head = tail - RING_FRAMES + 1; /* aeltestes Frame verwerfen */
             head = s_ring_head;
         }
-        s_ring[tail % RING_SAMPLES] = samples[i];
-        s_hold = samples[i];
+        s_ring[(tail % RING_FRAMES) * 2]     = frames[i * 2];
+        s_ring[(tail % RING_FRAMES) * 2 + 1] = frames[i * 2 + 1];
+        s_hold[0] = frames[i * 2];
+        s_hold[1] = frames[i * 2 + 1];
         tail++;
     }
     s_ring_tail = tail;
 }
 
-/* Konsument (Audio-Thread): liest n Samples; bei Underrun: letztes Sample halten. */
+/* Mono-Quellpfad (z.B. Terminal/ohne Soundgodizer): dupliziert L=R. */
+void win_audio_write(const int16_t *samples, int count) {
+    int i;
+    int16_t pair[WIN_AUDIO_BUF_SAMPLES * 2];
+
+    if (!samples || count <= 0) return;
+    if (count > WIN_AUDIO_BUF_SAMPLES) count = WIN_AUDIO_BUF_SAMPLES;
+    for (i = 0; i < count; i++) {
+        pair[i * 2]     = samples[i];
+        pair[i * 2 + 1] = samples[i];
+    }
+    win_audio_write_frames(pair, count);
+}
+
+/* Konsument (Audio-Thread): liest n Frames; bei Underrun: letztes Frame halten. */
 static void ring_read(int16_t *out, int n) {
     long head = s_ring_head;
     long tail = s_ring_tail;
@@ -77,10 +96,12 @@ static void ring_read(int16_t *out, int n) {
 
     for (i = 0; i < n; i++) {
         if (head < tail) {
-            out[i] = s_ring[head % RING_SAMPLES];
+            out[i * 2]     = s_ring[(head % RING_FRAMES) * 2];
+            out[i * 2 + 1] = s_ring[(head % RING_FRAMES) * 2 + 1];
             head++;
         } else {
-            out[i] = s_hold; /* Underrun: halten (kein Stille-Knackser) */
+            out[i * 2]     = s_hold[0]; /* Underrun: halten (kein Stille-Knackser) */
+            out[i * 2 + 1] = s_hold[1];
         }
     }
     s_ring_head = head;
@@ -99,7 +120,7 @@ static DWORD WINAPI s_audio_thread(LPVOID param) {
             if ((hdr->dwFlags & WHDR_DONE) && (hdr->dwFlags & WHDR_PREPARED)) {
                 waveOutUnprepareHeader(s_hWave, hdr, sizeof(WAVEHDR));
                 ring_read(s_buffers[cur], WIN_AUDIO_BUF_SAMPLES);
-                hdr->dwBufferLength = (DWORD)(WIN_AUDIO_BUF_SAMPLES * (int)sizeof(int16_t));
+                hdr->dwBufferLength = (DWORD)(WIN_AUDIO_BUF_SAMPLES * 2 * (int)sizeof(int16_t));
                 waveOutPrepareHeader(s_hWave, hdr, sizeof(WAVEHDR));
                 waveOutWrite(s_hWave, hdr, sizeof(WAVEHDR));
             }
@@ -119,11 +140,11 @@ int win_audio_open(int sample_rate) {
 
     memset(&wfx, 0, sizeof(wfx));
     wfx.wFormatTag = WAVE_FORMAT_PCM;
-    wfx.nChannels = 1;
+    wfx.nChannels = 2;
     wfx.nSamplesPerSec = sample_rate > 0 ? (DWORD)sample_rate : (DWORD)WIN_AUDIO_RATE;
     wfx.wBitsPerSample = 16;
-    wfx.nBlockAlign = 2;
-    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * 2;
+    wfx.nBlockAlign = 4;
+    wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * 4;
 
     res = waveOutOpen(&s_hWave, WAVE_MAPPER, &wfx, 0, 0, CALLBACK_NULL);
     if (res != MMSYSERR_NOERROR) {
@@ -136,7 +157,7 @@ int win_audio_open(int sample_rate) {
     for (i = 0; i < WIN_AUDIO_BUFFERS; i++) {
         memset(s_buffers[i], 0, sizeof(s_buffers[i]));
         s_headers[i].lpData = (LPSTR)s_buffers[i];
-        s_headers[i].dwBufferLength = (DWORD)(WIN_AUDIO_BUF_SAMPLES * (int)sizeof(int16_t));
+        s_headers[i].dwBufferLength = (DWORD)(WIN_AUDIO_BUF_SAMPLES * 2 * (int)sizeof(int16_t));
         s_headers[i].dwFlags = 0;
         waveOutPrepareHeader(s_hWave, &s_headers[i], sizeof(WAVEHDR));
         waveOutWrite(s_hWave, &s_headers[i], sizeof(WAVEHDR));
@@ -189,56 +210,76 @@ int win_audio_is_active(void) {
 }
 
 /* --- Selftest (nur Ring-Logik, kein Geraet) ------------------------------
- * Verifiziert: Wrap-around, Overflow (aelteste werden verworfen) und
- * Underrun-Hold. Laeuft auch headless (ohne Soundkarte). 0 = OK.            */
+ * Verifiziert: Wrap-around, Overflow (aelteste werden verworfen),
+ * Underrun-Hold und den Mono-Wrapper. Laeuft auch headless. 0 = OK.       */
 int win_audio_selftest(void) {
-    static int16_t got[RING_SAMPLES];
-    long n = RING_SAMPLES + 1000;
+    static int16_t got[RING_FRAMES * 2];
+    long n = RING_FRAMES + 1000;
     int i;
     int fails = 0;
 
     ring_reset();
 
-    /* 1) Wrap + Overflow: n Muster-Samples schreiben (1 pro Aufruf).
-     *    Erwartet: genau die letzten RING_SAMPLES Samples sind lesbar. */
+    /* 1) Wrap + Overflow: n Muster-Frames schreiben (1 pro Aufruf).
+     *    Erwartet: genau die letzten RING_FRAMES Frames sind lesbar. */
     for (i = 0; i < (int)n; i++) {
         int16_t v = (int16_t)(((long)i * 7) % 200 - 100);
-        int16_t tmp[1];
-        tmp[0] = v;
-        win_audio_write(tmp, 1);
+        int16_t frame[2];
+        frame[0] = v;
+        frame[1] = (int16_t)(v * 2);
+        win_audio_write_frames(frame, 1);
     }
-    ring_read(got, RING_SAMPLES);
-    for (i = 0; i < RING_SAMPLES; i++) {
-        int16_t want = (int16_t)(((long)(n - RING_SAMPLES + i) * 7) % 200 - 100);
-        if (got[i] != want) {
+    ring_read(got, RING_FRAMES);
+    for (i = 0; i < (int)RING_FRAMES; i++) {
+        long k = n - RING_FRAMES + i;
+        int16_t wantL = (int16_t)((k * 7) % 200 - 100);
+        int16_t wantR = (int16_t)(wantL * 2);
+        if (got[i * 2] != wantL || got[i * 2 + 1] != wantR) {
             fails++;
             if (fails > 100) return fails;
         }
     }
 
-    /* 2) Underrun: mehr lesen als im Ring -> Rest muss s_hold sein
-     *    (letztes geschriebenes Sample = Muster-Wert bei i = n-1). */
+    /* 2) Underrun: mehr lesen als im Ring -> Rest muss das letztes Frame sein. */
     {
-        int16_t hold_expected = (int16_t)(((long)(n - 1) * 7) % 200 - 100);
-        int k;
-        for (k = 0; k < 4096; k++) {
-            int16_t tmp[1];
-            ring_read(tmp, 1);
-            if (tmp[0] != hold_expected) {
+        long k = n - 1;
+        int16_t holdL = (int16_t)((k * 7) % 200 - 100);
+        int16_t holdR = (int16_t)(holdL * 2);
+        int kk;
+        for (kk = 0; kk < 4096; kk++) {
+            int16_t f[2];
+            ring_read(f, 1);
+            if (f[0] != holdL || f[1] != holdR) {
                 fails++;
                 if (fails > 200) return fails;
             }
         }
     }
 
-    /* 3) Weiterbetrieb nach Underun: 100 neue Samples, dann lesen. */
+    /* 3) Weiterbetrieb nach Underrun: 100 neue Frames, dann lesen. */
     {
-        int16_t burst[100];
-        for (i = 0; i < 100; i++) burst[i] = (int16_t)(50 - i);
-        win_audio_write(burst, 100);
+        int16_t burst[100 * 2];
+        for (i = 0; i < 100; i++) {
+            burst[i * 2]     = (int16_t)(50 - i);
+            burst[i * 2 + 1] = (int16_t)(60 - i);
+        }
+        win_audio_write_frames(burst, 100);
         ring_read(got, 100);
         for (i = 0; i < 100; i++) {
-            if (got[i] != (int16_t)(50 - i)) {
+            if (got[i * 2] != (int16_t)(50 - i) || got[i * 2 + 1] != (int16_t)(60 - i)) {
+                fails++;
+            }
+        }
+    }
+
+    /* 4) Mono-Wrapper: L=R-Duplizierung. */
+    {
+        int16_t mono[4];
+        mono[0] = 1000; mono[1] = -2000; mono[2] = 3000; mono[3] = -4000;
+        win_audio_write(mono, 4);
+        ring_read(got, 4);
+        for (i = 0; i < 4; i++) {
+            if (got[i * 2] != mono[i] || got[i * 2 + 1] != mono[i]) {
                 fails++;
             }
         }
@@ -251,6 +292,7 @@ int win_audio_selftest(void) {
 /* Non-Windows Stub (identische API) */
 int  win_audio_open(int sample_rate) { (void)sample_rate; return 0; }
 void win_audio_write(const int16_t *samples, int count) { (void)samples; (void)count; }
+void win_audio_write_frames(const int16_t *frames, int n) { (void)frames; (void)n; }
 void win_audio_close(void) {}
 int  win_audio_is_active(void) { return 0; }
 int  win_audio_selftest(void) { return 0; }

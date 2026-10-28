@@ -47,7 +47,7 @@ help:
 	@echo "make pc_game       - Raylib 2.5D Voxel-Frontend (braucht RAYLIB_DIR)"
 	@echo "make amiga_lint / amiga_bin / amiga_adf / vamos_test"
 
-GUI_SRCS  = src/gui_main.c src/core_sim.c src/game_audio.c src/tfmx_player.c src/livecode_ui.c src/win_audio.c
+GUI_SRCS  = src/gui_main.c src/core_sim.c src/game_audio.c src/tfmx_player.c src/mod_player.c src/livecode_ui.c src/win_audio.c src/soundgodizer.c
 GAME_SRCS = src/game_main.c src/core_sim.c src/game_audio.c src/tfmx_player.c src/amiga_intro.c src/livecode_ui.c src/win_audio.c
 
 gui: $(GUI_SRCS)

@@ -63,9 +63,20 @@ LASER_LENGTH = [24, 36, 48, 60, 72]
 MAX_PROJECTILES = 64
 MAX_ENEMIES = 32
 MAX_PARTICLES = 128
+MAX_PICKUPS = 8
+
+START_LIVES = 3
+MAX_LIVES = 9
+RESPAWN_INVULN_TICKS = 100
 
 WEAPON_SPREAD, WEAPON_LASER, WEAPON_BOUNCE = 0, 1, 2
-STATE_WAVE_INTRO, STATE_PLAYING, STATE_GAMEOVER = 0, 1, 2
+STATE_WAVE_INTRO, STATE_PLAYING, STATE_GAMEOVER, STATE_LEVEL_CLEAR, STATE_VICTORY = 0, 1, 2, 3, 4
+
+# Spielmodes (muss 1:1 zu core_sim.h bleiben!)
+MODE_ENDLESS, MODE_CAMPAIGN = 0, 1
+CAMPAIGN_LEVELS = 5
+CAMPAIGN_WAVES_PER_LEVEL = 3
+LEVEL_CLEAR_TICKS = 150
 PROJ_PELLET, PROJ_BOUNCE, PROJ_ENEMY = 0, 1, 2
 ENEMY_WALKER, ENEMY_SHOOTER, ENEMY_TANK = 0, 1, 2
 
@@ -103,6 +114,8 @@ class GameState:
         self.on_ground = True
         self.facing = 1
         self.morphing = 0
+        self.lives = START_LIVES
+        self.respawn_timer = 0
         self.hp = 100
         self.max_hp = 100
         self.shield = 50
@@ -120,9 +133,12 @@ class GameState:
         self.wave = 0
         self.state = STATE_WAVE_INTRO
         self.state_timer = WAVE_INTRO_TICKS
+        self.mode = MODE_ENDLESS
+        self.campaign_level = 1
         self.projectiles = [None] * MAX_PROJECTILES
         self.enemies = [None] * MAX_ENEMIES
         self.particles = [None] * MAX_PARTICLES
+        self.pickups = [None] * MAX_PICKUPS
         self.proj_head = 0
         self.enemy_head = 0
         self.part_head = 0
@@ -154,6 +170,10 @@ class Particle:
     __slots__ = ('x', 'y', 'vx', 'vy', 'active', 'color', 'life')
 
 
+class Pickup:
+    __slots__ = ('x', 'y', 'active')
+
+
 def proj_spawn(s, x, y, vx, vy, kind, level, damage, life):
     p = s.projectiles[s.proj_head]
     if p is None:
@@ -174,12 +194,13 @@ def enemy_spawn(s, kind, x):
     e.x, e.y, e.vx = x, 0, 0
     e.active, e.kind = 1, kind
     e.hit_timer, e.shoot_timer = 0, 40
+    # Balancing (2026-10-27): Grunts/Shooter = 1 Treffer, Tank (Mini-Boss) = 15
     if kind == ENEMY_WALKER:
-        e.hp, e.score_val, e.xp_val = 3, 100, 10
+        e.hp, e.score_val, e.xp_val = 1, 100, 10
     elif kind == ENEMY_SHOOTER:
-        e.hp, e.score_val, e.xp_val = 5, 250, 20
+        e.hp, e.score_val, e.xp_val = 1, 250, 20
     else:
-        e.hp, e.score_val, e.xp_val = 12, 500, 40
+        e.hp, e.score_val, e.xp_val = 15, 500, 40
 
 
 def part_burst(s, x, y, color, n):
@@ -196,6 +217,34 @@ def part_burst(s, x, y, color, n):
         pt.life = 15 + (s.rng() & 15)
 
 
+def wave_pickup_spawn(s):
+    # 2 Extraleben pro Welle an den Welt-Raendern (deterministisch, kein RNG)
+    for i in range(MAX_PICKUPS):
+        s.pickups[i] = None
+    p0 = Pickup()
+    p0.x, p0.y, p0.active = fix16_from_int(3), 0, 1
+    s.pickups[0] = p0
+    p1 = Pickup()
+    p1.x, p1.y, p1.active = s.world_w - fix16_from_int(3), 0, 1
+    s.pickups[1] = p1
+
+
+def pickup_update(s):
+    for p in s.pickups:
+        if p is None or not p.active:
+            continue
+        dx = s.px - p.x
+        adx = -dx if dx < 0 else dx
+        dy = s.py - p.y
+        ady = -dy if dy < 0 else dy
+        if adx < 2 * 65536 and ady < 3 * 65536:
+            p.active = 0
+            if s.lives < MAX_LIVES:
+                s.lives += 1
+            s.score += 250
+            part_burst(s, p.x, p.y + 65536, 6, 8)
+
+
 def wave_spawn(s):
     n = 3 + 2 * s.wave
     for i in range(n):
@@ -206,10 +255,27 @@ def wave_spawn(s):
             kind = ENEMY_TANK
         enemy_spawn(s, kind,
                     fix16_from_int(1) if i % 2 == 0 else s.world_w - fix16_from_int(1))
+    wave_pickup_spawn(s)
+
+
+def player_respawn(s):
+    s.px = fix16_from_int(WORLD_W_UNITS // 2)
+    s.py = 0
+    s.pvx = 0
+    s.pvy = 0
+    s.on_ground = True
+    s.hp = s.max_hp
+    s.shield = 100
+    s.respawn_timer = RESPAWN_INVULN_TICKS
+    for p in s.projectiles:
+        if p is not None and p.active and p.kind == PROJ_ENEMY:
+            p.active = 0
 
 
 def player_hurt(s, dmg):
     if s.morphing:
+        return
+    if s.respawn_timer > 0:
         return
     if s.shield > 0:
         if s.shield >= dmg:
@@ -219,7 +285,11 @@ def player_hurt(s, dmg):
         s.shield = 0
     s.hp = max(0, s.hp - dmg)
     if s.hp == 0:
-        s.state = STATE_GAMEOVER
+        if s.lives > 1:
+            s.lives -= 1
+            player_respawn(s)
+        else:
+            s.state = STATE_GAMEOVER
 
 
 def player_fire(s):
@@ -330,26 +400,27 @@ def proj_update(s):
             continue
         p.x += p.vx
         p.y += p.vy
+        # Wandabprall: beide Achsen erst vollstaendig klammern, dann Bounce
+        # EINMAL pro Tick (Bugfix 2026-10-27: Eckentreffer-Endlossplit)
+        wall = 0
         if p.x <= 0:
             p.x = 0
             p.vx = -p.vx
-            if p.kind == PROJ_BOUNCE:
-                bounce_hit_wall(s, p)
+            wall = 1
         elif p.x >= s.world_w:
             p.x = s.world_w
             p.vx = -p.vx
-            if p.kind == PROJ_BOUNCE:
-                bounce_hit_wall(s, p)
+            wall = 1
         if p.y <= 0:
             p.y = 0
             p.vy = -p.vy
-            if p.kind == PROJ_BOUNCE:
-                bounce_hit_wall(s, p)
+            wall = wall | 2
         elif p.y >= s.world_h:
             p.y = s.world_h
             p.vy = -p.vy
-            if p.kind == PROJ_BOUNCE:
-                bounce_hit_wall(s, p)
+            wall = wall | 2
+        if wall and p.kind == PROJ_BOUNCE:
+            bounce_hit_wall(s, p)
         if not p.active:
             continue
         p.life -= 1
@@ -464,9 +535,11 @@ INPUT_WEAPSW = 0x0040
 
 
 def core_tick(s, input_mask):
-    if s.state == STATE_GAMEOVER:
+    if s.state in (STATE_GAMEOVER, STATE_VICTORY):
         return
     s.tick += 1
+    if s.respawn_timer > 0:
+        s.respawn_timer -= 1
 
     if s.state == STATE_WAVE_INTRO:
         s.state_timer -= 1
@@ -477,6 +550,20 @@ def core_tick(s, input_mask):
     elif s.state == STATE_PLAYING:
         any_active = any(e is not None and e.active for e in s.enemies)
         if not any_active:
+            if s.mode == MODE_CAMPAIGN and (s.wave % CAMPAIGN_WAVES_PER_LEVEL) == 0:
+                s.state = (STATE_VICTORY if s.wave >= CAMPAIGN_LEVELS * CAMPAIGN_WAVES_PER_LEVEL
+                           else STATE_LEVEL_CLEAR)
+                s.state_timer = LEVEL_CLEAR_TICKS
+                if s.state == STATE_LEVEL_CLEAR:
+                    s.score += 1000 * s.campaign_level
+            else:
+                s.state = STATE_WAVE_INTRO
+                s.state_timer = WAVE_INTRO_TICKS
+    elif s.state == STATE_LEVEL_CLEAR:
+        s.state_timer -= 1
+        if s.state_timer == 0:
+            if s.campaign_level < CAMPAIGN_LEVELS:
+                s.campaign_level += 1
             s.state = STATE_WAVE_INTRO
             s.state_timer = WAVE_INTRO_TICKS
 
@@ -557,6 +644,7 @@ def core_tick(s, input_mask):
 
     proj_update(s)
     enemy_update(s)
+    pickup_update(s)
     part_update(s)
     xp_update(s)
 
@@ -592,6 +680,7 @@ def main():
     import sys
     seed = 1234
     ticks = 2500
+    campaign = False
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -601,27 +690,62 @@ def main():
         elif args[i] == "--ticks" and i + 1 < len(args):
             ticks = int(args[i + 1])
             i += 2
+        elif args[i] == "--campaign":
+            campaign = True
+            i += 1
         else:
             i += 1
 
+    def run(state, n):
+        for t in range(n):
+            core_tick(state, bot_input(state, t))
+
     s = GameState(seed)
-    for t in range(ticks):
-        core_tick(s, bot_input(s, t))
+    if campaign:
+        # Kampagne: Bot spielt alle 5 Level (15 Wellen) bis SIEG (oder Zeitgrenze)
+        s.mode = MODE_CAMPAIGN
+        t = 0
+        while s.state not in (STATE_VICTORY, STATE_GAMEOVER) and t < 120000:
+            core_tick(s, bot_input(s, t))
+            t += 1
+        ticks = t
+    else:
+        run(s, ticks)
 
     print("=== STRUDELFORCE Core Sim Self-Test (Python-Oracle) ===")
-    print(f"seed={seed} ticks={ticks}")
+    print(f"seed={seed} ticks={ticks} mode={'KAMPAGNE' if campaign else 'ENDLESS'}")
     print(f"tick={s.tick} state={s.state} wave={s.wave}")
+    if campaign:
+        print(f"campaign_level={s.campaign_level}/{CAMPAIGN_LEVELS}")
     print(f"score={s.score} kills={s.enemies_killed} bounces={s.bounces_total}")
-    print(f"hp={s.hp}/{s.max_hp} shield={s.shield} level={s.level} xp={s.xp}")
+    print(f"hp={s.hp}/{s.max_hp} shield={s.shield} lives={s.lives} level={s.level} xp={s.xp}")
     print(f"weapon={s.weapon} weapon_level={s.weapon_level} shots={s.shots_fired}")
     # Determinismus-Check: zweiter Run mit gleichem Seed
     s2 = GameState(seed)
-    for t in range(ticks):
-        core_tick(s2, bot_input(s2, t))
+    if campaign:
+        s2.mode = MODE_CAMPAIGN
+        t = 0
+        while s2.state not in (STATE_VICTORY, STATE_GAMEOVER) and t < 120000:
+            core_tick(s2, bot_input(s2, t))
+            t += 1
+    else:
+        run(s2, ticks)
     det = (s.score == s2.score and s.enemies_killed == s2.enemies_killed
            and s.bounces_total == s2.bounces_total and s.hp == s2.hp
-           and s.rng_state == s2.rng_state)
+           and s.rng_state == s2.rng_state and s.state == s2.state
+           and s.campaign_level == s2.campaign_level)
     print(f"determinism_check={'OK' if det else 'FEHLER'}")
+    if campaign:
+        # Level-Fortschritt: campaign_level muss (wave-1)//3 + 1 sein (bis zum Sieg)
+        expected = min((s.wave - 1) // CAMPAIGN_WAVES_PER_LEVEL + 1, CAMPAIGN_LEVELS) if s.wave else 1
+        camp_ok = (s.state == STATE_VICTORY
+                   and s.wave == CAMPAIGN_LEVELS * CAMPAIGN_WAVES_PER_LEVEL
+                   and s.campaign_level == CAMPAIGN_LEVELS
+                   and expected == s.campaign_level
+                   and s.score >= 1000 * (1 + 2 + 3 + 4))  # Level-Boni 1..4 (kein Bonus auf Sieg)
+        print(f"campaign_check={'OK' if camp_ok else 'FEHLER'}")
+        if not camp_ok:
+            return 1
     # Invarianten
     inv_ok = True
     for p in s.projectiles:

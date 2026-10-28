@@ -160,6 +160,16 @@ static void render(const GameState *s, const LiveCodeUI *lc, const TfmxPlayer *t
         }
     }
 
+    /* Extraleben-Pickups (J = Hidden Extra Life) */
+    for (i = 0; i < MAX_PICKUPS; i++) {
+        const Pickup *pk = &s->pickups[i];
+        int r, c;
+        if (!pk->active) continue;
+        r = yrow(pk->y + FIX(1)); c = fix16_to_int(pk->x);
+        if (r >= WORLD_TOP_ROW && r <= WORLD_BOT_ROW && c >= 0 && c < GRID_W)
+            grid[r * GRID_W + c] = 'J';
+    }
+
     /* Spieler */
     {
         int r = yrow(s->py + FIX(1));
@@ -176,9 +186,9 @@ static void render(const GameState *s, const LiveCodeUI *lc, const TfmxPlayer *t
         make_bar(bar1, hp10, 10);
         make_bar(bar2, (int)(s->shield / 10), 10);
         snprintf(line, sizeof(line),
-                 " HP[%s] %u/%u  SH[%s] %u  LV %u  XP %u/%u  WAVE %u",
+                 " HP[%s] %u/%u  SH[%s] %u  LV %u  XP %u/%u  WAVE %u  LIVES %u",
                  bar1, s->hp, s->max_hp, bar2, s->shield,
-                 s->level, s->xp, 50u * (uint32_t)s->level, s->wave);
+                 s->level, s->xp, 50u * (uint32_t)s->level, s->wave, s->lives);
         strncpy(&grid[0], line, GRID_W);
     }
     /* HUD Zeile GRID_H-2 */
@@ -327,6 +337,7 @@ int main(int argc, char **argv) {
     int show_intro = 1;
     int intro_only = 0;
     int play_sound = 1;
+    int campaign = 0;
     int i;
 
     for (i = 1; i < argc; i++) {
@@ -349,6 +360,8 @@ int main(int argc, char **argv) {
             play_sound = 0;
         } else if (!strcmp(argv[i], "--sound")) {
             play_sound = 1;
+        } else if (!strcmp(argv[i], "--campaign")) {
+            campaign = 1;  /* Kampagne: 5 Level x 3 Wellen, Sieg nach Level 5 */
         }
     }
 
@@ -362,6 +375,7 @@ int main(int argc, char **argv) {
     }
 
     core_init(&state, seed);
+    if (campaign) state.mode = MODE_CAMPAIGN;
 
     if (demo) {
         GameAudio audio;

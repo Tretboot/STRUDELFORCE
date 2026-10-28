@@ -28,10 +28,25 @@ strudelforce.adf
 *.adf
 
 # --- Lizenzierte / lokale Assets (NICHT committen) ---
+# MOD/ = lizenzierte MOD-Tracks (Wing Commander, Lost Patrol, ...) —
+# die spielbaren Embedded-Tracks liegen bereits in src/embedded_music.h
 TFMX Professional/
+MOD/
 releases/
 archive/
+Kickstart/
 STRUDELFORCE_Merged_*.zip
+
+# --- Headless GUI-Frame-Dumps (Testausgabe von strudelforce_v0.1.exe --dump) ---
+vd*.ppm
+vd*.bmp
+dump_*.ppm
+dump_*.bmp
+flowdump_*.ppm
+flowdump_*.bmp
+
+# --- Lokale Build-/Handoff-Logs ---
+*.log
 
 # --- Handoff-Artefakte ---
 MANIFEST.json

@@ -31,6 +31,8 @@ unverändert in `archive/branches/`:
   4. **Meilenstein 4 / Iteration 5:** Anbindung der ESC-Live-Coding-Konsole (`livecode_ui.h/.c`) mit nahtlosem Pattern-Swap am Zyklus-Rand, Great-Bath-Truhen-Tribute und Bassline-Override (`bass_override_active`, `bass_override_note`).
 
 ### Root-Tools im Workspace:
+- `MOD/`: 45 ProTracker-MODs (41 = 31-Sample, vom `mod_player` spielbar; 3 × Lost_Patrol = **nicht** Standard-Format, Player lehnt ab) — Jukebox-Root + Explorer-Ziel.
+- `archive/kiwi_return_2026-10-28/`: KIWI-Return-Paket (LORE/BIOMES/Doku → nach `docs/` cherry-picked: `LORE.md`, `LORE_EXTENDED.md`, `BIOMES.md`, `ITEMS_LEVELUP.md`, `MUSIC_SYSTEM.md`, `tfmx_analysis.json`, `kiwi_level_config_reference.h`). **Keine** KIWI-C-Quellen mergen (Stubs kollidieren mit dem verifizierten Kern; KIWI `mod_player.c` hat kein Oracle).
 - `kiwi_toolkit.py` & `kiwi_toolkit_multifolder.py`: Zero-GCC Syntax-Linter, Iteration-5 Rescue-Routinen, Atomic-Sync-Packer.
 - `KIWI_SURVIVOR_PROMPT.md`: Historische Überlebens-Regeln aus der Cloud-Sandbox.
 - `game_audio_update.c`: Referenz-Snippet für den reaktiven Bass-Override in `game_audio.c`.
@@ -79,9 +81,10 @@ Jede Codeänderung und Erweiterung im Projekt muss ausnahmslos diesen drei Geset
 
 | Modul | Header / Interfaces | Implementierung | Verantwortung |
 |---|---|---|---|
-| Gameplay-Simulation (Smith-Kern) | `core_sim.h` | `core_sim.c` | 16.16 Fixed-Point Physik, Waffen, Kollision, Spawner, Ringbuffer — für `game_main.c`/`gui_main.c` |
+| Gameplay-Simulation (Smith-Kern) | `core_sim.h` | `core_sim.c` | 16.16 Fixed-Point Physik, Waffen, Kollision, Spawner, Ringbuffer, **3 Leben + Respawn + Extraleben-Pickups** (an den Welt-Rändern, deterministisch) — für `game_main.c`/`gui_main.c`. **v0.1: `MODE_ENDLESS` (Default, bit-identisch zu v0.0) / `MODE_CAMPAIGN` (5×3 Wellen, `STATE_LEVEL_CLEAR` + Level-Bonus, `STATE_VICTORY` nach Level 5), `core_campaign_biome()` (0..4) + `--campaign` im Terminal-Demo; Oracle-Spiegelung in `verify_core_sim.py` (inkl. `--campaign`-Test)** — Balance (2026-10-27): Grunt/Shooter = 1 Treffer, Tank (Mini-Boss) = 15 HP; inkl. Bounce-Ecke-Bugfix (Clamp beider Achsen vor dem Split, sonst Endlossplits) |
 | Gameplay-Simulation (sf-Kern) | `sf_interfaces.h` | `core_sim_sf.c` | Schwarm-Variante (SIN8/COS8-Fix, 6-Waffen, Biome-Parameter) — für `main_pc.c`/`amiga_hw.c` (M68K)/`test_phase1.c` |
 | Audio-Engine (Smith) | `game_audio.h` | `game_audio.c` | 8-Voice Mixer, 16-Bit WAV Export, reaktive Matrix, `ext_render`-Hook (v3) |
+| Soundgodizer (PC) | `soundgodizer.h` | `soundgodizer.c` | Optionale Post-Kette nur für Windows/GUI (F5): Bass-Boost, Warm-LP (Analog-Paula-Wärme), tanh-Soft-Drive, Haas-Wide (128-Sample-Delay). PC-only, nie in M68K-Builds verlinken |
 | Audio-Engine (Full) | `cyber_paula.h` | `cyber_paula.c` | TFMX Macros, Strudel Sequencer, Amiga Paula DMA Feed |
 | TFMX-Player v2 | `tfmx_player.h` | `tfmx_player.c` | TFMX 1.5/Pro/7V, mdat./smpl./TFHD/TFMXPAK, C89, Mirror-Oracle `tools/tfmx_oracle.py` |
 | MOD-Player | `mod_player.h` | `mod_player.c` | ProTracker MOD 4/6/8 Kanäle, C89, Mirror-Oracle `tools/mod_oracle.py` |
@@ -94,7 +97,7 @@ Jede Codeänderung und Erweiterung im Projekt muss ausnahmslos diesen drei Geset
 | Biome Generator | `sf_interfaces.h` | `biomes.c` | Biome-Parameter, Truhen-Platzierung, Chunk-RNG |
 | Amiga Hardware | `sf_interfaces.h` | `amiga_hw.c` | OCS 6-Plane Bitplanes, Copper-List, $BFE001 Filter |
 | Frontend (Terminal) | `core_sim.h`, `game_audio.h` | `game_main.c` | 50Hz ANSI/ASCII Terminal-Spiel, Demo-Bot, WAV-Dumper |
-| Frontend (GUI) | `core_sim.h`, `game_audio.h` | `gui_main.c` | Win32/GDI 2.5D-Voxel-GUI, TFMX-Explorer, Strudel-Studio |
+| Frontend (GUI) | `core_sim.h`, `game_audio.h` | `gui_main.c` | Win32/GDI 2.5D-Voxel-GUI, Haupt-EXE **`strudelforce_v0.1.exe`** (VERSION 0.1 in Menü + Titel), mit **GUI-State-Maschine** (Hauptmenue Turrican-2-Style: 2-Ton-Titel + VERSION-Zeile + **Controller-Verbindungsanzeige** → Loading-Screen → Spiel → Game-Over/**Sieg**-Overlay; F2-F4 = Studio/Pause, **ESC = Hauptmenue**, F1/ENTER = Start, Lives-HUD mit Schiff-Icons); **Modus-Auswahl: KAMPAGNE (5 Level × 3 Wellen, feste Biome-Reihenfolge, Level-Boni, SIEG-Screen) vs. ENDLOS ROGUELIKE (bit-identisch zu v0.0)**; **Steuerung (v0.1): WASD/Pfeiltasten = bewegen, Leertaste = Sprung, STRG = Feuer, ALT = Halt-Strahl, C = Waffe, S = Morph, T = Truhe**; **Controller (XInput): Stick/D-Pad = bewegen, A = Feuer, X = Beam, B = Morph, RS = Waffe, Start = Menü, D-Pad/A = Menue-Navigation**; TFMX-Explorer mit **freier Pfadeingabe** (typen + ENTER = Ordner springen oder .tfx/.mod direkt laden, auch absolute Pfade), Strudel-Studio; **F5** = Soundgodizer (aus/BASS/WARM/HQ-OVERDRIVE+Wide), **`--dump [frames] [basis]`** = Headless-Frame-Dump des kompletten Flows (PPM, Konvertierung: `tools/ppm2bmp.py`); **Intro = Embedded Apidya Meadow** (TFMX + Original-.sam-Samples, in EXE, läuft im Menü/Loading/Game-Over); Jukebox scannt `TFMX Professional/` + `MOD/` pro Wave zufällig, Fallback = Embedded-Tracks (`src/embedded_music.h`) |
 | Frontend (PC Raylib) | `sf_interfaces.h` | `main_pc.c` | 1280x720 Raylib-Renderer (optionales Target `pc_game`) |
 | Amiga-Entry (M68K) | `sf_interfaces.h`, `tfmx_player.h`, `amiga_music.h` | M68K-Sektion von `amiga_hw.c` | **Einziger** 68k `main()`: 50Hz-VBlank-Loop, OCS-Render, TFMX-Paula-Streaming (Voice 0, 16574 Hz, 8-Bit), Track-Switch `M`, Exit `Q`/ESC. Musik via INCBIN (`amiga_music.c`), CIA-A-Tastatur, kein stdio |
 
@@ -111,7 +114,7 @@ Jede Codeänderung und Erweiterung im Projekt muss ausnahmslos diesen drei Geset
 2. **Compiler-Unabhängigkeit:** C-Quellen müssen sowohl unter GCC/Clang (Linux/macOS/Amiga) als auch unter MSVC (Windows) sauber und fehlerfrei kompilieren.
 3. **Trace-First Testen:** Bei Audio- und Parser-Änderungen immer zuerst die Python-Oracles (`verify_headless.py`, `verify_core_sim.py`, `verify_audio_matrix.py`, `verify_livecode.py`) und `tools/selftest.py` ausführen; C-Änderungen an TFMX/MOD zusätzlich per `make c_vs_oracle` bit-genau gegen die Python-Referenzplayer prüfen.
 4. **Dual-Core-Regel (post-Merge):** `core_sim.c` (Smith) und `core_sim_sf.c` (Schwarm) + deren Live-Code-Varianten nie in einem Binary kombinieren; bei neuen Targets die Kern-Zuordnung aus Makefile/`build_msvc.bat` übernehmen (s. `MERGE_NOTES.md` §2).
-5. **Generatoren nicht handeditieren:** `Makefile`, `src/tfmx_player.h`, `src/mod_player.h`, `src/sf_mixer.h`, `src/sid_header.h`, `src/level_data.h`, `.vscode/tasks.json` und die v3-Strudel-Tracks werden von `tools/gen_sources.py` bzw. `tools/level_tool.py` erzeugt — Änderungen in den Generatoren vornehmen und regenerieren.
+5. **Generatoren nicht handeditieren:** `Makefile`, `src/tfmx_player.h`, `src/mod_player.h`, `src/sf_mixer.h`, `src/sid_header.h`, `src/level_data.h`, `.vscode/tasks.json`, `src/embedded_music.h` und die v3-Strudel-Tracks werden von `tools/gen_sources.py`, `tools/level_tool.py` bzw. `tools/gen_embedded_music.py` erzeugt — Änderungen in den Generatoren vornehmen und regenerieren.
 6. **Kiwi-Handoffs:** Nur ZIPs zählen. `python tools/kiwi_handoff.py pack . <out.zip>` (Manifest+Verify+Pack in einem Schritt), Empfänger prüft mit `verify`. Persistenz-Regeln: `docs/KIWI_PERSISTENCE_GUIDE.md`. C-Syntax ohne Compiler: `tools/c_parse_check.py` (pycparser; bekannte False Positives in `MERGE_NOTES.md` §5).
 7. **M68K-Build ist stdio-/libc-frei (Dual-Toolchain-Regel):** Die Amiga-Quellen
    (`AMIGA_SRCS` + `src/amiga_music.c`) müssen mit **beiden** 68k-Toolchains

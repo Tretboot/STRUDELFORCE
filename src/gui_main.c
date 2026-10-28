@@ -20,28 +20,68 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <xinput.h>   /* Controller-Support (XInput, Gamepad 0) */
 
 #include "core_sim.h"
 #include "game_audio.h"
 #include "livecode_ui.h"
 #include "tfmx_player.h"
+#include "mod_player.h"
 #include "amiga_intro.h"
 #include "win_audio.h"
+#include "soundgodizer.h"
 #include "retro_font.h"
+#include "embedded_music.h"
+
+#define GAME_VERSION "0.1"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "xinput.lib")
 
 #define WIN_W 1280
 #define WIN_H 720
 
 typedef enum {
-    TAB_GAME = 0,
+    TAB_GAME = 0,   /* nur noch als Referenz (GUI_STATE_GAME ersetzt den Tab) */
     TAB_EXPLORER,
     TAB_STRUDEL,
     TAB_INTRO
 } GuiTab;
+
+/* ================= GUI State Machine =================
+ * MENU -> LOADING -> GAME -> (GAMEOVER -> LOADING -> GAME | MENU)
+ * STUDIO = F1-F4-Tools (Jukebox/Strudel/Intro), pausiert das Spiel.
+ * CREDITS = scrollender Abspann. ESC fuehrt immer zurueck zum MENU. */
+typedef enum {
+    GUI_STATE_MENU = 0,
+    GUI_STATE_LOADING,
+    GUI_STATE_GAME,
+    GUI_STATE_GAMEOVER,
+    GUI_STATE_STUDIO,
+    GUI_STATE_CREDITS
+} GuiState;
+
+static GuiState s_gui_state = GUI_STATE_MENU;
+static int s_menu_index = 0;        /* aktiver Hauptmenue-Punkt */
+static int s_active_mode = MODE_ENDLESS; /* letzter gewaehlter Modus (F1/ENTER-Neustart) */
+static int s_pad_connected = 0;      /* XInput Gamepad 0 verbunden (Footer-Anzeige) */
+static int s_pad_start_prev = 0;     /* XInput Start-Button (Edge-Erkennung) */
+static int s_loading_ticks = 0;     /* Loading-Screen-Fortschritt (50Hz-Ticks) */
+
+#define MENU_ITEM_COUNT 6
+static const char *menu_labels[MENU_ITEM_COUNT] = {
+    "KAMPAGNE (5 LEVELS)",
+    "ENDLOS ROGUELIKE",
+    "TFMX JUKEBOX",
+    "STRUDEL STUDIO",
+    "AMIGA INTRO",
+    "CREDITS"
+};
+
+#define GAME_SEED 1234u              /* fixer Seed: deterministische Läufe */
+#define LOAD_DURATION 120            /* ~2.4 Sekunden Loading-Screen */
 
 /* Framebuffer */
 static uint32_t s_pixels[WIN_W * WIN_H];
@@ -54,6 +94,24 @@ static LiveCodeUI  s_livecode;
 static TfmxPlayer  s_tfmx;
 static int         s_tfmx_active = 0;
 static GuiTab      s_current_tab = TAB_GAME;
+static int         s_gui_frame = 0; /* GUI-Frame-Zaehler: animiert Tabs, deren
+                                        Quelle (s_game.tick) nur im Game-Tab laeuft */
+
+/* --- Soundgodizer (F5: aus -> BASS -> WARM -> OVERDRIVE) --- */
+static Soundgodizer s_god;
+static int          s_god_mode = 0;
+static int16_t      s_god_buf[WIN_AUDIO_BUF_SAMPLES * 2]; /* Stereo-Ausgabe */
+
+/* --- Jukebox: zufaelliger Level-Song (TFMX + MOD) pro Wave --- */
+#define PLAYLIST_MAX 512
+typedef struct { char path[260]; char name[64]; int is_mod; } PlaylistEntry;
+static PlaylistEntry s_playlist[PLAYLIST_MAX];
+static int           s_playlist_count = 0;
+static uint32_t      s_music_rng = 0x5EED5EEDu; /* eigener LCG (Core-RNG bleibt unberuehrt) */
+static uint16_t      s_last_wave = 0;
+static ModPlayer     s_mod;        /* Game-Tab MOD-Player */
+static uint8_t       s_mod_buf[128 * 1024];
+static int           s_mod_active = 0;
 
 /* Explorer State */
 #define MAX_EXPLORER_ITEMS 256
@@ -68,11 +126,17 @@ static int          s_num_explorer_items = 0;
 static int          s_explorer_selected = 0;
 static int          s_explorer_scroll = 0;
 static char         s_current_dir[260] = "TFMX Professional";
+static char         s_exp_path_buf[260];   /* freier Pfadeingabe-Buffer (Explorer, TASTE+EINGABE) */
+static int          s_exp_path_cur = 0;
 
 /* Explorer TFMX Player */
 static TfmxPlayer   s_exp_tfmx;
 static int          s_exp_playing = 0;
 static int          s_exp_subsong = 0;
+/* Explorer MOD Player */
+static ModPlayer    s_exp_mod;
+static uint8_t      s_exp_mod_buf[128 * 1024];
+static int          s_exp_mod_playing = 0;
 
 /* Strudel Studio State */
 static char s_strudel_input[512] = "<c3 eb3 g3 f3> [g3 c4 eb4 g4]*2 <ab2 bb2 c3 d3>";
@@ -263,7 +327,7 @@ static void explorer_scan_directory(const char *dir_path) {
         do {
             if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
                 const char *ext = strrchr(fd.cFileName, '.');
-                if (ext && (_stricmp(ext, ".tfx") == 0 || _stricmp(ext, ".strudel") == 0)) {
+                if (ext && (_stricmp(ext, ".tfx") == 0 || _stricmp(ext, ".strudel") == 0 || _stricmp(ext, ".mod") == 0)) {
                     if (s_num_explorer_items < MAX_EXPLORER_ITEMS) {
                         strncpy(s_explorer_items[s_num_explorer_items].name, fd.cFileName, 63);
                         snprintf(s_explorer_items[s_num_explorer_items].path, 259, "%s\\%s", dir_path, fd.cFileName);
@@ -277,6 +341,199 @@ static void explorer_scan_directory(const char *dir_path) {
     }
 }
 
+/* --- Jukebox: Playlist (rekursiv) + Level-Song-Switching + Soundgodizer --- */
+
+static void playlist_scan_rec(const char *dir, int depth) {
+    WIN32_FIND_DATAA fd;
+    char pattern[300];
+    HANDLE hFind;
+
+    if (depth > 3 || s_playlist_count >= PLAYLIST_MAX) return;
+    snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+    hFind = FindFirstFileA(pattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            char sub[300];
+            if (depth < 3) {
+                snprintf(sub, sizeof(sub), "%s\\%s", dir, fd.cFileName);
+                playlist_scan_rec(sub, depth + 1);
+            }
+        } else if (s_playlist_count < PLAYLIST_MAX) {
+            const char *ext = strrchr(fd.cFileName, '.');
+            if (ext) {
+                int is_mod = (_stricmp(ext, ".mod") == 0);
+                int is_tfx = (_stricmp(ext, ".tfx") == 0);
+                if (is_mod || is_tfx) {
+                    strncpy(s_playlist[s_playlist_count].name, fd.cFileName, 63);
+                    s_playlist[s_playlist_count].name[63] = '\0';
+                    snprintf(s_playlist[s_playlist_count].path, 259, "%s\\%s", dir, fd.cFileName);
+                    s_playlist[s_playlist_count].is_mod = is_mod;
+                    s_playlist_count++;
+                }
+            }
+        }
+    } while (FindNextFileA(hFind, &fd));
+    FindClose(hFind);
+}
+
+/* Lade Track idx und starte ihn (exakt ein Player aktiv). */
+static void music_load_index(int idx) {
+    PlaylistEntry *e;
+    char msg[180];
+
+    if (idx < 0 || idx >= s_playlist_count) return;
+    e = &s_playlist[idx];
+
+    if (e->is_mod) {
+        FILE *f = fopen(e->path, "rb");
+        long size = 0;
+        s_tfmx_active = 0;
+        s_mod_active = 0;
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            size = ftell(f);
+            if (size > (long)sizeof(s_mod_buf)) size = (long)sizeof(s_mod_buf);
+            fseek(f, 0, SEEK_SET);
+            (void)fread(s_mod_buf, 1, (size_t)size, f);
+            fclose(f);
+        }
+        if (size > 1084 && mod_player_load_mem(&s_mod, s_mod_buf, (uint32_t)size)) {
+            mod_player_start(&s_mod, GAME_AUDIO_RATE);
+            s_mod_active = 1;
+        }
+        snprintf(msg, sizeof(msg), "WAVE %u: [MOD] %s", (unsigned)s_last_wave, e->name);
+    } else {
+        s_mod_active = 0;
+        s_tfmx_active = 0;
+        if (tfmx_player_load(&s_tfmx, e->path, NULL)) {
+            tfmx_player_start(&s_tfmx, 0);
+            s_tfmx_active = 1;
+        }
+        snprintf(msg, sizeof(msg), "WAVE %u: [TFMX] %s", (unsigned)s_last_wave, e->name);
+    }
+    snprintf(s_status_msg, sizeof(s_status_msg), "%s", msg);
+}
+
+/* In-EXE-Tracks (ohne Disk) — Intro + Jukebox-Fallback (src/embedded_music.h, generiert). */
+static void music_play_embedded(int kind) {
+    s_mod_active = 0;
+    s_tfmx_active = 0;
+    if (kind == 0) {
+        /* Intro: Apidya Meadow — TFMX Professional mit den ORIGINALEN Amiga-Samples (.sam) */
+        if (tfmx_player_load_mem(&s_tfmx, EMB_TFMX_APIDYA_MEADOW, EMB_TFMX_APIDYA_MEADOW_LEN,
+                                 (const int8_t *)EMB_SAM_APIDYA_MEADOW, EMB_SAM_APIDYA_MEADOW_LEN)) {
+            tfmx_player_start(&s_tfmx, 0);
+            s_tfmx_active = 1;
+            snprintf(s_status_msg, sizeof(s_status_msg), "INTRO: %s (in EXE, Original-Samples)", EMB_TFMX_APIDYA_MEADOW_NAME);
+        }
+    } else if (kind == 1) {
+        if (mod_player_load_mem(&s_mod, EMB_MOD_WC_REGULARCOMBAT, EMB_MOD_WC_REGULARCOMBAT_LEN)) {
+            mod_player_start(&s_mod, GAME_AUDIO_RATE);
+            s_mod_active = 1;
+            snprintf(s_status_msg, sizeof(s_status_msg), "MUSIK: %s (in EXE)", EMB_MOD_WC_REGULARCOMBAT_NAME);
+        }
+    } else if (kind == 2) {
+        if (mod_player_load_mem(&s_mod, EMB_MOD_WC_OVERALLVICTORY, EMB_MOD_WC_OVERALLVICTORY_LEN)) {
+            mod_player_start(&s_mod, GAME_AUDIO_RATE);
+            s_mod_active = 1;
+            snprintf(s_status_msg, sizeof(s_status_msg), "MUSIK: %s (in EXE)", EMB_MOD_WC_OVERALLVICTORY_NAME);
+        }
+    }
+}
+
+/* Deterministischer Zufalls-Song aus der Library (eigener LCG, kein Core-RNG). */
+static void music_play_next(void) {
+    uint32_t seed;
+    int idx;
+
+    if (s_playlist_count <= 0) {
+        /* Fallback (leere Library): in-EXE-Tracks, deterministisch pro Wave rotierend */
+        music_play_embedded((int)(s_last_wave % 3));
+        return;
+    }
+    seed = 0x5EED5EEDu + (uint32_t)s_last_wave * 2654435761u;
+    s_music_rng = seed * 1664525u + 1013904223u;
+    s_music_rng = s_music_rng * 1664525u + 1013904223u; /* eine Runde waermen */
+    idx = (int)(s_music_rng % (uint32_t)s_playlist_count);
+    music_load_index(idx);
+}
+
+/* Soundgodizer-Presets (F5 schaltet durch: AUS -> BASS -> WARM -> OVERDRIVE) */
+static void god_toggle(void) {
+    char msg[128];
+
+    s_god_mode = (s_god_mode + 1) % 4;
+    switch (s_god_mode) {
+        case 0: god_set_params(&s_god, 0, 0, 0, 0);   s_god.enabled = 0; break;
+        case 1: god_set_params(&s_god, 60, 0, 0, 0);   s_god.enabled = 1; break;
+        case 2: god_set_params(&s_god, 40, 55, 0, 0);  s_god.enabled = 1; break;
+        default: god_set_params(&s_god, 50, 15, 45, 55); s_god.enabled = 1; break;
+    }
+    god_reset_state(&s_god);
+    snprintf(msg, sizeof(msg), "SOUNDGODIZER: %s [F5 schaltet durch]",
+             s_god_mode == 0 ? "AUS" :
+             s_god_mode == 1 ? "BASS-BOOST" :
+             s_god_mode == 2 ? "WARM (Analog-LP)" : "HQ OVERDRIVE + WIDE");
+    snprintf(s_status_msg, sizeof(s_status_msg), "%s", msg);
+}
+
+static const char *god_mode_name(void) {
+    if (s_god_mode == 1) return "BASS";
+    if (s_god_mode == 2) return "WARM";
+    if (s_god_mode == 3) return "ODRIVE";
+    return "AUS";
+}
+
+/* --- Game-Flow (Menue -> Loading -> Spiel) --- */
+
+static void start_game(int mode) {
+    core_init(&s_game, GAME_SEED);
+    s_game.mode = (uint8_t)mode;         /* MODE_ENDLESS (Default) oder MODE_CAMPAIGN */
+    s_game.campaign_level = 1;
+    s_active_mode = mode;
+    s_pad_start_prev = 0;
+    s_mod_active = 0;
+    s_tfmx_active = 0;
+    s_last_wave = s_game.wave;          /* = 0, Song wechselt bei Wave 1 */
+    music_play_next();                  /* zufaelliger Track aus der Library */
+    s_loading_ticks = 0;
+    s_gui_state = GUI_STATE_LOADING;
+}
+
+static void menu_activate(void) {
+    switch (s_menu_index) {
+        case 0: start_game(MODE_CAMPAIGN); break;
+        case 1: start_game(MODE_ENDLESS);  break;
+        case 2: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
+        case 3: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
+        case 4: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
+        default: s_gui_state = GUI_STATE_CREDITS; break;
+    }
+}
+
+/* --- XInput: Gamepad 0 im Hauptmenue navigieren (Edge-Getriggerung) --- */
+static void pad_menu_poll(void) {
+    XINPUT_STATE xs;
+    static int prev_up, prev_down, prev_a;
+    int up, down, a;
+    if (s_gui_state != GUI_STATE_MENU) return;
+    if (XInputGetState(0, &xs) != ERROR_SUCCESS) { s_pad_connected = 0; return; }
+    s_pad_connected = 1;
+    up   = ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_LEFT_SHOULDER)) != 0) || xs.Gamepad.sThumbLY > 4000;
+    down = ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_RIGHT_SHOULDER)) != 0) || xs.Gamepad.sThumbLY < -4000;
+    a    = (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
+    if (up && !prev_up)
+        s_menu_index = (s_menu_index + MENU_ITEM_COUNT - 1) % MENU_ITEM_COUNT;
+    if (down && !prev_down)
+        s_menu_index = (s_menu_index + 1) % MENU_ITEM_COUNT;
+    if (a && !prev_a)
+        menu_activate();
+    prev_up = up; prev_down = down; prev_a = a;
+}
+
 /* --- Render-Routinen fuer Tabs --- */
 
 static void render_top_bar(void) {
@@ -284,17 +541,23 @@ static void render_top_bar(void) {
     draw_rect_outline(0, 0, WIN_W, 36, 0x004080);
 
     /* Tabs */
-    const char *tabs[4] = { "[F1] 2.5D VOXEL SPIEL", "[F2] TFMX JUKEBOX", "[F3] STRUDEL STUDIO", "[F4] AMIGA INTRO" };
+    const char *tabs[4] = { "[F1] ZURUECK / NEUES SPIEL", "[F2] TFMX JUKEBOX", "[F3] STRUDEL STUDIO", "[F4] AMIGA INTRO" };
     for (int t = 0; t < 4; t++) {
         int x = 10 + t * 200;
-        int active = (s_current_tab == (GuiTab)t);
+        int active = (t == 0) ? (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER)
+                              : (s_current_tab == (GuiTab)t);
         draw_rect(x, 4, 190, 28, active ? 0x004080 : 0x001830);
         draw_rect_outline(x, 4, 190, 28, active ? 0x00FFFF : 0x003060);
         draw_string(x + 16, 14, tabs[t], active ? 0x00FFFF : 0xA0C0E0, 1);
     }
 
     /* Sound Status */
-    draw_string(WIN_W - 380, 14, "AUDIO: 16574 Hz PAL | 8-VOICE PAULA DMA", 0x40FF80, 1);
+    {
+        char aud[160];
+        snprintf(aud, sizeof(aud), "AUDIO: 16574 Hz STEREO | 8-VOICE PAULA | SOUNDGODIZER: %s [F5]",
+                 god_mode_name());
+        draw_string(WIN_W - 560, 14, aud, s_god_mode ? 0xFF40FF : 0x40FF80, 1);
+    }
 }
 
 static void render_status_bar(void) {
@@ -303,34 +566,326 @@ static void render_status_bar(void) {
     draw_string(12, WIN_H - 16, s_status_msg, 0x80D0FF, 1);
 }
 
-/* --- TAB 1: 2.5D Voxel Game View --- */
-static void render_tab_game(void) {
-    int ground_y = 620;
+/* --- Turrican-2-Style UI: 2-Ton-Schrift mit Schlagschatten --- */
 
-    /* Layer 3: Copper Horizon Bänder (65 Bänder mit Sinus-Modulation) */
-    for (int i = 0; i < 65; i++) {
-        int y1 = 36 + i * 8;
-        float factor = 0.5f + 0.5f * sinf((float)i * 0.1f + (float)s_game.tick * 0.04f);
-        uint32_t col = ((uint32_t)(10 + 20 * factor) << 16) |
-                       ((uint32_t)(20 + 60 * factor) << 8)  |
-                       ((uint32_t)(60 + 120 * factor));
-        draw_rect(0, y1, WIN_W, 8, col);
+/* Glyph in zwei Farben: Zeilen 0..3 = obere Farbe, 4..7 = untere Farbe. */
+static void draw_char_2tone(int x, int y, char ch, uint32_t top_c, uint32_t bot_c, int scale) {
+    if ((unsigned char)ch >= 128) ch = '?';
+    const uint8_t *glyph = RETRO_FONT[(unsigned char)ch];
+    for (int row = 0; row < 8; row++) {
+        uint8_t bits = glyph[row];
+        uint32_t c = (row < 4) ? top_c : bot_c;
+        for (int col = 0; col < 8; col++) {
+            if (bits & (0x80 >> col)) {
+                for (int dy = 0; dy < scale; dy++)
+                    for (int dx = 0; dx < scale; dx++)
+                        set_pixel(x + col * scale + dx, y + row * scale + dy, c);
+            }
+        }
+    }
+}
+
+/* Grosser Titel: pro Zeichen Sinus-Wanken, dunkelroter Schlagschatten,
+ * zweifarbige Fuellung (Orange ueber Rot) — Retro-Turrican-Look. */
+static void draw_title(int cx, int cy, const char *text, int scale) {
+    int n = (int)strlen(text);
+    int x0 = cx - (n * 8 * scale) / 2;
+    int i;
+    for (i = 0; i < n; i++) {
+        float oy = sinf((float)i * 0.45f + (float)s_gui_frame * 0.07f) * 6.0f;
+        int x = x0 + i * 8 * scale;
+        int y = cy + (int)oy;
+        draw_char(x + 2, y + 2, text[i], 0xFF2800, scale);              /* Schatten */
+        draw_char_2tone(x, y, text[i], 0xFFFF7020, 0xFFD02010, scale);  /* 2-Ton  */
+    }
+}
+
+/* --- GUI_STATE_MENU: Hauptmenue (Turrican-2-Style) --- */
+static void render_state_menu(void) {
+    int i;
+    clear_screen(0x000000);
+
+    /* Dezent schwebende Copper-Baender (Amiga-Vertikalverlauf) */
+    for (i = 0; i < 100; i++) {
+        int y1 = 60 + i * 7;
+        if (y1 >= WIN_H - 70) break;
+        uint32_t c = ((uint32_t)(8 + (i & 1) * 6) << 16) |
+                     ((uint32_t)(2 + (i & 3)) << 8) |
+                     (uint32_t)(10 + ((i >> 1) & 3) * 4);
+        draw_rect(0, y1, WIN_W, 2, c);
     }
 
-    /* Layer 2: Ruinen-Säulen (1/4 Parallax) */
-    int x_off = (s_game.px >> 16) * 4;
-    for (int i = 0; i < 16; i++) {
-        int px = (i * 120 - x_off) % WIN_W;
-        if (px < 0) px += WIN_W;
-        /* Voxel Säule */
-        for (int sy = ground_y - 200; sy < ground_y; sy += 16) {
-            draw_voxel(px, sy, 24, 14, 4, 0x4A5868);
+    /* Titel mit Schlagschatten + 2 Tonen */
+    draw_title(WIN_W / 2, 90, "STRUDELFORCE", 4);
+    {
+        char sub2[128];
+        const char *sub = "A TURRICAN TRIBUTE FOR THE AMIGA 500";
+        draw_string(WIN_W / 2 - (int)strlen(sub) * 4, 175, sub, 0xFF905030, 1);
+        snprintf(sub2, sizeof(sub2), "VERSION " GAME_VERSION "  -  CYBER PAULA ENGINE   |   CONTROLLER: %s",
+                 s_pad_connected ? "VERBUNDEN" : "KEINER ANGESCHLOSSEN");
+        draw_string(WIN_W / 2 - (int)strlen(sub2) * 4, 190, sub2, 0xFF707070, 1);
+    }
+
+    /* Menue-Liste (Auswahl: Orange-Rot-Block, groessere Schrift, Pfeil) */
+    for (i = 0; i < MENU_ITEM_COUNT; i++) {
+        int y = 268 + i * 40;
+        int sel = (i == s_menu_index);
+        int lx = WIN_W / 2 - 170;
+        if (sel) {
+            int k;
+            draw_rect(lx - 20, y - 8, 380, 36, 0xFF2A0800);
+            draw_rect_outline(lx - 20, y - 8, 380, 36, 0xFFFF8020);
+            draw_char(lx - 26, y, '>', 0xFFFFA040, 2);
+            draw_char_2tone(lx + 8, y, menu_labels[i][0], 0xFFFFC0A0, 0xFFFF9060, 2);
+            for (k = 1; menu_labels[i][k]; k++)
+                draw_char(lx + 8 + k * 16, y, menu_labels[i][k], 0xFFFFFF, 2);
+        } else {
+            draw_string(lx + 8, y + 4, menu_labels[i], 0xFF8A4A30, 1);
         }
     }
 
-    /* Bodenlinie mit Voxel-Platten */
-    for (int bx = 0; bx < WIN_W; bx += 20) {
-        draw_voxel(bx, ground_y, 18, 12, 3, 0x304050);
+    /* Blinkender Eingabe-Hinweis */
+    if ((s_gui_frame / 25) % 2 == 0) {
+        const char *hint = "[ UP/DOWN ] WAHLEN   [ ENTER ] AUSFUEHREN";
+        draw_string(WIN_W / 2 - (int)strlen(hint) * 4, 505, hint, 0xFFFF8020, 1);
+    }
+
+    /* Steuerung & Footer */
+    draw_rect(0, WIN_H - 70, WIN_W, 46, 0x000A0402);
+    draw_string(40, WIN_H - 62, "WASD/PUFEILE BEWEGEN  LEER SPRUNG  STRG FEUER  ALT BEAM  C WAFFE  S MORPH  ESC MENUE", 0xFF707070, 1);
+    draw_string(40, WIN_H - 44, "CONTROLLER: STICK/D-PAD  A=FEUER  X=BEAM  B=MORPH  RS=WAFFE  START=MENUE  |  F2-F5 STUDIO", 0xFF707070, 1);
+    draw_string(40, WIN_H - 26, "(C) 2026 FRANK MITZKATIS & AI CODING AGENTS  -  CREDITS FUER DIE VOLLE LISTE", 0xFF505050, 1);
+
+    render_status_bar();
+}
+
+/* --- GUI_STATE_LOADING: Amiga-Style Boot-/Loading-Screen (Alien-Breed-Anlehnung) --- */
+static void render_state_loading(void) {
+    int i;
+    int p = s_loading_ticks;
+    if (p > LOAD_DURATION) p = LOAD_DURATION;
+    clear_screen(0x000000);
+
+    draw_title(WIN_W / 2, 120, "STRUDELFORCE", 4);
+    {
+        const char *d1 = "DISK 1 : STRUDELFORCE.ADF  (880K FFS, SINGLE DISC)";
+        draw_string(WIN_W / 2 - (int)strlen(d1) * 4, 220, d1, 0xFFE0C060, 1);
+    }
+
+    /* Progress-Bar (Orange/Rot, Amiga-Block-Look mit Lauf-Blenden) */
+    {
+        int bx = 340, by = 300, bw = 600, bh = 26;
+        int pct = (p * 100) / LOAD_DURATION;
+        int fill = (bw * p) / LOAD_DURATION;
+        draw_rect(bx - 4, by - 4, bw + 8, bh + 8, 0xFF5A1800);
+        draw_rect(bx, by, bw, bh, 0xFF1A0600);
+        if (fill > 0) {
+            draw_rect(bx, by, fill, bh, 0xFFB03000);
+            for (i = 0; i < 10; i++) {
+                int stripe = ((i * 64 + s_gui_frame * 4) % (bw + 40)) - 20;
+                if (stripe < fill) draw_rect(bx + stripe, by, 10, bh, 0xFFFF7020);
+            }
+        }
+        draw_rect_outline(bx, by, bw, bh, 0xFFFF9040);
+        {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%3d%%", pct);
+            draw_string(bx + bw - 56, by + 7, buf, 0xFFFFFF, 2);
+        }
+    }
+
+    /* Ladetext (Alien-Breed-Style Boot-Phasen) */
+    {
+        const char *step;
+        if (p < 25)        step = "PRUEFE CHIP-RAM BANKEN ........ OK";
+        else if (p < 50)   step = "INITIALISIERE PAULA DMA ....... OK";
+        else if (p < 75)   step = "BILDE 2.5D VOXEL-SPRITETABELN . OK";
+        else if (p < 100)  step = "MIXE CYBER-PAULA MATRIX ....... OK";
+        else if (p < 115)  step = "LAEDE WELTCHUNKS (SEED 1234) ..";
+        else               step = "BEREIT!";
+        draw_string(340, 350, step, 0xFF80E0FF, 1);
+    }
+
+    if ((s_gui_frame / 20) % 2 == 0) {
+        const char *ins = "PRESS FIRE TO CONTINUE";
+        draw_string(WIN_W / 2 - (int)strlen(ins) * 4, 560, ins, 0xFFFFC040, 1);
+    }
+
+    render_status_bar();
+}
+
+/* --- GUI_STATE_CREDITS: scrollender Abspann --- */
+static void render_state_credits(void) {
+    static const char *lines[] = {
+        "PROGRAMM, DESIGN & PRODUKTION",
+        "    Frank Mitzkatis",
+        "",
+        "AI CODING AGENTS",
+        "    Qwen 3.8 27B     (Fruehe Entwicklung)",
+        "    Cline 3.4 122B   (Implementierung & Test)",
+        "    Claude 5.5 Opus  (Architektur & Review)",
+        "    Gemini 4 Argon   (Experiment & Analyse)",
+        "    Gemini 3.8 Flash (Schnelle Iterationen)",
+        "",
+        "SPECIAL THANKS",
+        "    Chris Huelbeck - fuer den besten Soundtrack",
+        "    unserer Kindheit. Danke!",
+        "",
+        "    Turrican 2 / Alien Breed / Bitmap Brothers",
+        "    Amiga-Community 1985-1993",
+        "",
+        "STRUDELFORCE 2026 - MADE ON THE AMIGA 500 (50HZ PAL)",
+        "",
+        "DRUECKE ESC ODER ENTER ZURUECK ZUM MENUE"
+    };
+    int n = (int)(sizeof(lines) / sizeof(lines[0]));
+    int line_h = 22;
+    int total = WIN_H + n * line_h + 100;
+    int off = s_gui_frame / 2;                 /* 0.5 px pro Frame */
+    int y0 = (total - off) % total - n * line_h - 100;
+    int i;
+
+    clear_screen(0x000000);
+    for (i = 0; i < n; i++) {
+        int ly = y0 + 160 + i * line_h;
+        if (ly < 90 || ly > WIN_H - 30) continue;
+        if (lines[i][0] == '\0') continue;
+        if (lines[i][0] == ' ') {
+            draw_string(240, ly, lines[i], 0xFFE09060, 1);      /* Namen: warm orange */
+        } else {
+            draw_title(WIN_W / 2, ly, lines[i], 1);             /* Rubriken: 2-Ton   */
+        }
+    }
+    render_status_bar();
+}
+
+/* Kampagne-Biome-Paletten (vollstaendige Definition vor render_tab_game) */
+typedef struct {
+    const char *name;
+    uint32_t sky_r, sky_g, sky_b;  /* Copper-Himmel-Basis (r, g, b) */
+    uint32_t pillar;               /* Ruinen-Saeulen-Voxel */
+    uint32_t ground;               /* Bodenplatten-Voxel */
+} BiomePalette;
+static const BiomePalette biome_palettes[5];
+
+/* --- KAMPAGNE: Level-Clear-Intermezzo (2 Sekunden, ueber dem Spielbild) --- */
+static void render_level_clear_overlay(void) {
+    char buf[96];
+    draw_rect(0, 220, WIN_W, 140, 0xC0000810);
+    draw_title(WIN_W / 2, 240, "LEVEL GEKLAERT!", 3);
+    snprintf(buf, sizeof(buf), "LEVEL %u ABGESCHLOSSEN   + %d BONUS-PUNKTE",
+             (unsigned)s_game.campaign_level, 1000 * (int)s_game.campaign_level);
+    draw_string(WIN_W / 2 - (int)strlen(buf) * 8, 320, buf, 0xFFE0C060, 2);
+    if (s_game.campaign_level < CAMPAIGN_LEVELS) {
+        snprintf(buf, sizeof(buf), "NAECHSTES LEVEL: %s", biome_palettes[s_game.campaign_level].name);
+        draw_string(WIN_W / 2 - (int)strlen(buf) * 8, 348, buf, 0xFF60D0FF, 2);
+    }
+}
+
+/* --- KAMPAGNE: Sieg-Screen (nach Level 5, wie Game-Over aufgebaut) --- */
+static void render_victory_overlay(void) {
+    int y;
+    for (y = 0; y < WIN_H; y++) {
+        uint32_t *row = &s_pixels[y * WIN_W];
+        int x;
+        for (x = 0; x < WIN_W; x++) row[x] = rgb_mod(row[x], 0.22f);
+    }
+    draw_title(WIN_W / 2, 150, "SIEG!", 5);
+    {
+        const char *a = "KAMPAGNE ABGESCHLOSSEN - DER STRUDELFORCE-KERN IST GEKLAERT";
+        draw_string(WIN_W / 2 - (int)strlen(a) * 4, 240, a, 0xFF60FF60, 2);
+    }
+    {
+        char buf[80];
+        snprintf(buf, sizeof(buf), "SCORE %u   |   KILLS %u   |   LEVEL 5/5",
+                 s_game.score, s_game.enemies_killed);
+        draw_string(WIN_W / 2 - (int)strlen(buf) * 8, 300, buf, 0xFFE0C060, 2);
+    }
+    if ((s_gui_frame / 20) % 2 == 0) {
+        const char *b = "[ ENTER ] NOCHMAL   [ ESC ] HAUPTMENUE";
+        draw_string(WIN_W / 2 - (int)strlen(b) * 8, 380, b, 0xFFFF8020, 2);
+    }
+}
+
+/* --- GUI_STATE_GAMEOVER: Overlay ueber dem letzten Spielbild --- */
+static void render_game_over_overlay(void) {
+    int y;
+    /* Dimmen des letzten Frames (Halbtransparent-Optik ohne Alpha) */
+    for (y = 0; y < WIN_H; y++) {
+        uint32_t *row = &s_pixels[y * WIN_W];
+        int x;
+        for (x = 0; x < WIN_W; x++) row[x] = rgb_mod(row[x], 0.22f);
+    }
+    draw_title(WIN_W / 2, 160, "GAME OVER", 5);
+    {
+        char buf[80];
+        snprintf(buf, sizeof(buf), "SCORE %u   |   WAVE %u   |   KILLS %u",
+                 s_game.score, s_game.wave, s_game.enemies_killed);
+        draw_string(WIN_W / 2 - (int)strlen(buf) * 8, 270, buf, 0xFFE0C060, 2);
+    }
+    if ((s_gui_frame / 20) % 2 == 0) {
+        const char *a = "[ ENTER ] NOCHMAL";
+        const char *b = "[ ESC ]   HAUPTMENUE";
+        draw_string(WIN_W / 2 - (int)strlen(a) * 8, 360, a, 0xFFFF8020, 2);
+        draw_string(WIN_W / 2 - (int)strlen(b) * 8, 410, b, 0xFF909090, 2);
+    }
+}
+
+/* --- TAB 1: 2.5D Voxel Game View ---
+ * Parallax-Regel (12x Welt-Zoom, s_game.px = Weltposition in fix16):
+ *   Layer 3 (Himmel):  statisch,  1/16  -> keine Bewegung (Copper-Verlauf)
+ *   Layer 2 (Saeulen): 1/4 Parallax  -> Scroll = Welt * 3   (12/4)
+ *   Layer 1 (Gameplay): 1:1           -> Entities = Welt * 12 (Anker x=80)
+ *   Layer 0 (Vgr-Rohre): 1.5x         -> Scroll = Welt * 18 (12*1.5)
+ * Vorher waren die Faktoren (4 / 0 / 18) untereinander inkonsistent ->
+ * das sah aus wie "schwimmende" uebereinanderliegende Ebenen. */
+
+/* Kampagne-Biome-Paletten (Gesetz 2: reine Farbpaletten, keine Texturen).
+ * Index = core_campaign_biome(): 0..4 (Endless: immer 0 = v0.0-Look).
+ * Himmelsformel: Kanal = Basis + Multiplikator*Basis*(0.5+0.5*sin) — fuer
+ * Biome 0 exakt die historische Formel (10+20f / 20+60f / 60+120f). */
+static const BiomePalette biome_palettes[5] = {
+    { "CHROME TEMPEST",  10, 20,  60, 0x4A5868, 0x304050 }, /* blau   (v0.0) */
+    { "THE GREAT BATH",   5, 40,  80, 0x2E6870, 0x205058 }, /* teal   (Unterwasser) */
+    { "MECHANICAL HIVE", 60, 20,   5, 0x6E4A28, 0x503820 }, /* rost   (Industrie) */
+    { "VOID REACH",      30,  5,  60, 0x403058, 0x382850 }, /* violet (Die Leere) */
+    { "CORE FURNACE",    80, 15,   5, 0x703818, 0x582810 }  /* glut   (Endlevel) */
+};
+
+static void render_tab_game(void) {
+    int ground_y = 620;
+    const BiomePalette *bp = &biome_palettes[core_campaign_biome(&s_game)];
+
+    /* Basis-Fluellung unter der Top-Bar (keine schwarzen Luecken mehr) */
+    draw_rect(0, 36, WIN_W, WIN_H - 36, 0x000A18);
+
+    /* Layer 3: Copper Horizon Bänder (80 Bänder = bis y=676, ueber den Boden) */
+    for (int i = 0; i < 80; i++) {
+        int y1 = 36 + i * 8;
+        float factor = 0.5f + 0.5f * sinf((float)i * 0.1f + (float)s_game.tick * 0.04f);
+        uint32_t col = ((uint32_t)(bp->sky_r + 2.0f * (float)bp->sky_r * factor) << 16) |
+                       ((uint32_t)(bp->sky_g + 3.0f * (float)bp->sky_g * factor) << 8)  |
+                       (uint32_t)(bp->sky_b + 2.0f * (float)bp->sky_b * factor);
+        draw_rect(0, y1, WIN_W, 8, col);
+    }
+
+    /* Layer 2: Ruinen-Säulen (1/4 Parallax = 3x bei 12x Welt-Zoom) */
+    int x_off = (s_game.px >> 16) * 3;
+    for (int i = 0; i < 16; i++) {
+        int px = (i * 120 - x_off) % WIN_W;
+        if (px < 0) px += WIN_W;
+        /* Voxel Säule (Biome-Palette) */
+        for (int sy = ground_y - 200; sy < ground_y; sy += 16) {
+            draw_voxel(px, sy, 24, 14, 4, bp->pillar);
+        }
+    }
+
+    /* Bodenlinie mit Voxel-Platten (scrollt 1:1 mit der Welt = 12x) */
+    int g_off = (s_game.px >> 16) * 12;
+    for (int i = 0; i < 68; i++) {
+        int bx = (i * 20 - g_off) % WIN_W;
+        if (bx < 0) bx += WIN_W;
+        draw_voxel(bx, ground_y, 18, 12, 3, bp->ground);
     }
 
     /* Layer 1: Gameplay Entities */
@@ -341,6 +896,9 @@ static void render_tab_game(void) {
     if (p_screen_x < 40) p_screen_x = 40;
     if (p_screen_x > WIN_W - 80) p_screen_x = WIN_W - 80;
 
+    /* Respawn-Gnadenfrist: Spieler blinkt (Unverwundbar-Optik) */
+    int player_visible = (s_game.respawn_timer == 0) || ((s_game.respawn_timer / 5) % 2 == 0);
+    if (player_visible) {
     /* Antriebsflamme (links, hinterm Rumpf) */
     for (int f = 0; f < 3; f++) {
         int fl_x = p_screen_x - 14 - f * 8;
@@ -363,6 +921,18 @@ static void render_tab_game(void) {
 
     /* Blaster unter Rumpf-Mitte (dunkel, nicht grell-weiß) */
     draw_voxel(p_screen_x + 18, p_screen_y + 14, 18, 6, 2, 0x283848);
+    } /* Ende player_visible */
+
+    /* 3.5 Extraleben-Pickups (an den Welt-Raendern, Bob-Animation) */
+    for (int i = 0; i < MAX_PICKUPS; i++) {
+        const Pickup *pk = &s_game.pickups[i];
+        if (!pk->active) continue;
+        int kx = 80 + (pk->x >> 16) * 12;
+        int ky = ground_y - 40 - (pk->y >> 16) * 16;
+        int bob = (int)(sinf((float)s_gui_frame * 0.15f + (float)i) * 4.0f);
+        draw_voxel(kx, ky - 16 + bob, 12, 12, 4, 0x00E050);
+        set_pixel(kx + 5, ky - 12 + bob, 0xFFFFFF);
+    }
 
     /* 2. Gegner (Grunts & Flyers) */
     for (int i = 0; i < MAX_ENEMIES; i++) {
@@ -415,14 +985,14 @@ static void render_tab_game(void) {
         set_pixel(px + 1, py, 0xFF8000);
     }
 
-    /* Layer 0: Vordergrund-Rohre (1.5x Scroll) */
+    /* Layer 0: Vordergrund-Rohre (1.5x Scroll = 18x, volle Sichthohe) */
     int fg_off = (s_game.px >> 16) * 18;
     for (int i = 0; i < 4; i++) {
         int px = (i * 420 - fg_off) % WIN_W;
         if (px < 0) px += WIN_W;
-        draw_rect(px, 36, 16, ground_y, 0x182028);
-        draw_rect(px + 3, 36, 10, ground_y, 0x2A3848);
-        draw_rect(px + 6, 36, 3, ground_y, 0x6080A0);
+        draw_rect(px, 36, 16, WIN_H - 24 - 36, 0x182028);
+        draw_rect(px + 3, 36, 10, WIN_H - 24 - 36, 0x2A3848);
+        draw_rect(px + 6, 36, 3, WIN_H - 24 - 36, 0x6080A0);
     }
 
     /* Low-HP Interlace Jitter (<25% HP) */
@@ -435,9 +1005,22 @@ static void render_tab_game(void) {
         }
     }
 
+    /* Wave-/Level-Intro-Banner (mitte, ueber dem Gameplay) */
+    if (s_game.state == STATE_WAVE_INTRO) {
+        char banner[64];
+        if (s_game.mode == MODE_CAMPAIGN && s_game.wave % CAMPAIGN_WAVES_PER_LEVEL == 0) {
+            int nl = (int)(s_game.wave / CAMPAIGN_WAVES_PER_LEVEL) + 1;
+            snprintf(banner, sizeof(banner), "LEVEL %d: %s", nl, biome_palettes[nl - 1].name);
+            draw_title(WIN_W / 2, 250, banner, 2);
+        } else {
+            snprintf(banner, sizeof(banner), "WAVE %u", (unsigned)s_game.wave + 1);
+            draw_title(WIN_W / 2, 250, banner, 2);
+        }
+    }
+
     /* HUD Box (Amiga Style) */
-    draw_rect(20, 50, 480, 80, 0x80001020);
-    draw_rect_outline(20, 50, 480, 80, 0x0080FF);
+    draw_rect(20, 50, 480, 114, 0x80001020);
+    draw_rect_outline(20, 50, 480, 114, 0x0080FF);
 
     /* HP Bar */
     char buf[128];
@@ -465,10 +1048,30 @@ static void render_tab_game(void) {
              livecode_biome_name(s_livecode.biome), s_livecode.chest_opened ? "GEOEFFNET" : "GESCHLOSSEN");
     draw_string(32, 114, buf, 0xA0FFB0, 1);
 
+    /* Leben (kleine Schiffs-Icons, wie in Turrican 2) */
+    {
+        int li;
+        draw_string(32, 132, "LIVES:", 0xFF60FF60, 1);
+        for (li = 0; li < (int)s_game.lives; li++) {
+            draw_voxel(100 + li * 22, 130, 16, 7, 2, 0x3858B8);
+        }
+        draw_string(300, 132, "EXTRA-LEBEN AN DEN WELT-RAENDERN!", 0xFF406040, 1);
+    }
+
+    /* Modus-/Level-Zeile (Kampagne: Level + Biome, Endlos: Welle) */
+    if (s_game.mode == MODE_CAMPAIGN) {
+        snprintf(buf, sizeof(buf), "KAMPAGNE: LEVEL %u/%d  -  %s",
+                 (unsigned)s_game.campaign_level, CAMPAIGN_LEVELS, bp->name);
+        draw_string(32, 150, buf, 0xFFFFFF, 1);
+    } else {
+        snprintf(buf, sizeof(buf), "ENDLOS ROGUELIKE: WAVE %u", (unsigned)s_game.wave);
+        draw_string(32, 150, buf, 0xFFFFFF, 1);
+    }
+
     /* Steuerungshinweis */
-    draw_string(WIN_W - 460, 60, "[WASD/Pfeile] Bewegen | [Z] Feuer | [X] Beam", 0xC0D0E0, 1);
-    draw_string(WIN_W - 460, 78, "[C] Waffe wechseln | [T] Schatztruhe", 0xC0D0E0, 1);
-    draw_string(WIN_W - 460, 98, "[F2] TFMX Jukebox  | [F3] Strudel Live-Code", 0x00FFFF, 1);
+    draw_string(WIN_W - 460, 60, "[WASD/Pfeile] Bewegen | [Leertaste] Sprung", 0xC0D0E0, 1);
+    draw_string(WIN_W - 460, 78, "[Strg] Feuer | [Alt] Beam | [C] Waffe | [T] Truhe", 0xC0D0E0, 1);
+    draw_string(WIN_W - 460, 98, "[S] Morph | [F2] Jukebox | [ESC] Hauptmenue | Pad: A/X/RS", 0x00FFFF, 1);
 }
 
 /* --- TAB 2: TFMX Explorer & 8-Voice Jukebox View --- */
@@ -484,8 +1087,17 @@ static void render_tab_explorer(void) {
     draw_string(32, 62, title_buf, 0x00FFFF, 1);
     draw_rect(20, 78, 460, 1, 0x004080);
 
-    int y = 90;
-    int items_per_page = 26;
+    /* Freie Pfadeingabe: typen + EINGABE (auch absolute Pfaede z.B. D:\MUSIC) */
+    {
+        char pathline[280];
+        snprintf(pathline, sizeof(pathline), "PFAD: %s", s_exp_path_buf);
+        draw_string(30, 82, pathline, 0xFF80FF80, 1);
+        if ((s_gui_frame / 15) % 2 == 0)
+            set_pixel(30 + (int)strlen(pathline) * 8 + 2, 86, 0x00FF80); /* Blink-Cursor */
+    }
+
+    int y = 108;
+    int items_per_page = 24;
     for (int i = s_explorer_scroll; i < s_num_explorer_items && i < s_explorer_scroll + items_per_page; i++) {
         const ExplorerItem *item = &s_explorer_items[i];
         int selected = (i == s_explorer_selected);
@@ -518,6 +1130,16 @@ static void render_tab_explorer(void) {
                  s_exp_playing ? ">> SPIELT <<" : "[ANGEHALTEN]",
                  s_exp_subsong, s_exp_tfmx.num_subsongs, s_exp_tfmx.step_tempo, s_exp_tfmx.num_steps);
         draw_string(rx + 20, 115, buf, 0xA0E0FF, 1);
+    } else if (s_exp_mod.loaded) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "TITEL: %s  [MOD-PLAYER]", s_exp_mod.title[0] ? s_exp_mod.title : "ProTracker Module");
+        draw_string(rx + 20, 95, buf, 0x00FF80, 1);
+        snprintf(buf, sizeof(buf), "STATUS: %s | CHANNEL: %d | BPM: %u | SONGLEN: %u",
+                 s_exp_mod_playing ? ">> SPIELT <<" : "[ANGEHALTEN]",
+                 s_exp_mod.nch, s_exp_mod.bpm, s_exp_mod.songlen);
+        draw_string(rx + 20, 115, buf, 0xA0E0FF, 1);
+    }
+    if (s_exp_tfmx.loaded || s_exp_mod.loaded) {
 
         /* Buttons */
         draw_button(rx + 20, 140, 110, 30, s_exp_playing ? "|| PAUSE" : "> PLAY", 0, s_exp_playing);
@@ -636,10 +1258,10 @@ static void render_tab_strudel(void) {
 static void render_tab_intro(void) {
     draw_rect(0, 36, WIN_W, WIN_H - 60, 0x000018);
 
-    /* 3 Bouncing Copperbars */
-    float y1 = 360.0f + 160.0f * sinf((float)s_game.tick * 0.05f);
-    float y2 = 360.0f + 180.0f * sinf((float)s_game.tick * 0.07f + 1.8f);
-    float y3 = 360.0f + 140.0f * sinf((float)s_game.tick * 0.09f + 3.2f);
+    /* 3 Bouncing Copperbars (GUI-Frame-Quelle: laeuft in ALLEN Tabs, nicht nur im Game) */
+    float y1 = 360.0f + 160.0f * sinf((float)s_gui_frame * 0.05f);
+    float y2 = 360.0f + 180.0f * sinf((float)s_gui_frame * 0.07f + 1.8f);
+    float y3 = 360.0f + 140.0f * sinf((float)s_gui_frame * 0.09f + 3.2f);
 
     for (int y = 36; y < WIN_H - 24; y++) {
         float r = 0, g = 0, b = 15;
@@ -680,13 +1302,30 @@ static void render_tab_intro(void) {
     /* Sinus-tanzender Scroller */
     const char *scroller = "+++ STRUDELFORCE 2026 +++ AMIGA 500 RETRO POWER +++ 16.16 FIXED POINT PHYSICS +++ LIVE-CODE MINI-NOTATION +++ CHRIS HUELSBECK TFMX SOUNDTRACK +++ DRUECKE F1 FUER DAS SPIEL +++";
     int slen = (int)strlen(scroller);
-    int offset = s_game.tick / 2;
+    int offset = s_gui_frame / 2;
 
     for (int col = 0; col < 120; col++) {
         char ch = scroller[(col + offset) % slen];
-        float sy = 480.0f + 25.0f * sinf((float)col * 0.15f + (float)s_game.tick * 0.08f);
+        float sy = 480.0f + 25.0f * sinf((float)col * 0.15f + (float)s_gui_frame * 0.08f);
         draw_char(40 + col * 10, (int)sy, ch, 0xFFFF00, 2);
     }
+}
+
+/* --- Frame-Dump (Headless-Visual-Test): strudelforce_gui.exe --dump [frames] [basis] ---
+ * Rendert frames ohne Audio-Geraet und speichert alle 10 Ticks ein PPM-Bild.
+ * Letztes Drittel: Intro-Tab (Anim-Check), ab 2/3 Low-HP (Interlace-Check). */
+static void dump_ppm(const char *fn) {
+    FILE *f = fopen(fn, "wb");
+    int i;
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", WIN_W, WIN_H);
+    for (i = 0; i < WIN_W * WIN_H; i++) {
+        uint32_t c = s_pixels[i];
+        fputc((int)((c >> 16) & 0xFF), f);
+        fputc((int)((c >> 8) & 0xFF), f);
+        fputc((int)(c & 0xFF), f);
+    }
+    fclose(f);
 }
 
 /* --- Win32 Message Callback --- */
@@ -694,10 +1333,54 @@ static void render_tab_intro(void) {
 static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_KEYDOWN:
-            if (wParam == VK_F1) { s_current_tab = TAB_GAME; return 0; }
-            if (wParam == VK_F2) { s_current_tab = TAB_EXPLORER; return 0; }
-            if (wParam == VK_F3) { s_current_tab = TAB_STRUDEL; return 0; }
-            if (wParam == VK_F4) { s_current_tab = TAB_INTRO; return 0; }
+            /* --- Globale F-Keys & ESC (State-Maschine) --- */
+            if (wParam == VK_F5) { god_toggle(); return 0; }
+
+            /* F1: Hauptmenue/Game-Over -> neues Spiel; sonst -> zurueck zum Spiel */
+            if (wParam == VK_F1) {
+                if (s_gui_state == GUI_STATE_MENU || s_gui_state == GUI_STATE_GAMEOVER)
+                    start_game(s_active_mode);
+                else if (s_gui_state != GUI_STATE_LOADING)
+                    s_gui_state = GUI_STATE_GAME;
+                return 0;
+            }
+            /* F2-F4: Studio-Tools (im Spiel = Pause, im Menue = direkter Start) */
+            if (wParam == VK_F2 || wParam == VK_F3 || wParam == VK_F4) {
+                GuiTab t = (wParam == VK_F2) ? TAB_EXPLORER :
+                           (wParam == VK_F3) ? TAB_STRUDEL : TAB_INTRO;
+                if (s_gui_state != GUI_STATE_LOADING) {
+                    s_current_tab = t;
+                    s_gui_state = GUI_STATE_STUDIO;
+                }
+                return 0;
+            }
+            /* ESC: aus jedem aktiven Zustand zurueck zum Hauptmenue */
+            if (wParam == VK_ESCAPE) {
+                if (s_gui_state != GUI_STATE_MENU && s_gui_state != GUI_STATE_LOADING)
+                    s_gui_state = GUI_STATE_MENU;
+                return 0;
+            }
+
+            /* --- Hauptmenue-Navigation --- */
+            if (s_gui_state == GUI_STATE_MENU) {
+                if (wParam == VK_UP)   s_menu_index = (s_menu_index + MENU_ITEM_COUNT - 1) % MENU_ITEM_COUNT;
+                else if (wParam == VK_DOWN) s_menu_index = (s_menu_index + 1) % MENU_ITEM_COUNT;
+                else if (wParam == VK_RETURN) menu_activate();
+                return 0;
+            }
+            /* --- Credits: beenden --- */
+            if (s_gui_state == GUI_STATE_CREDITS) {
+                if (wParam == VK_RETURN || wParam == VK_ESCAPE) s_gui_state = GUI_STATE_MENU;
+                return 0;
+            }
+            /* --- Game Over: ENTER = Neustart, ESC = Menue (s.o.) --- */
+            if (s_gui_state == GUI_STATE_GAMEOVER) {
+                if (wParam == VK_RETURN) start_game(s_active_mode);
+                return 0;
+            }
+
+            /* --- Studio-Tab (Jukebox / Strudel / Intro) --- */
+            if (s_gui_state != GUI_STATE_STUDIO) return 0;
 
             if (s_current_tab == TAB_STRUDEL) {
                 if (wParam == VK_RETURN) {
@@ -722,10 +1405,57 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 } else if (wParam == VK_DOWN) {
                     if (s_explorer_selected < s_num_explorer_items - 1) {
                         s_explorer_selected++;
-                        if (s_explorer_selected >= s_explorer_scroll + 26) s_explorer_scroll++;
+                        if (s_explorer_selected >= s_explorer_scroll + 24) s_explorer_scroll++;
                     }
+                } else if (wParam == VK_BACK) {
+                    if (s_exp_path_cur > 0) s_exp_path_buf[--s_exp_path_cur] = '\0';
                 } else if (wParam == VK_RETURN) {
-                    if (s_explorer_selected >= 0 && s_explorer_selected < s_num_explorer_items) {
+                    if (s_exp_path_buf[0] != '\0') {
+                        /* Freier Pfad: Ordner wechseln oder Datei direkt laden (.tfx/.mod) */
+                        DWORD attr = GetFileAttributesA(s_exp_path_buf);
+                        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)) {
+                            strncpy(s_current_dir, s_exp_path_buf, sizeof(s_current_dir) - 1);
+                            s_current_dir[sizeof(s_current_dir) - 1] = '\0';
+                            explorer_scan_directory(s_current_dir);
+                            snprintf(s_status_msg, sizeof(s_status_msg), "PFAD: %s", s_current_dir);
+                        } else {
+                            const char *ext = strrchr(s_exp_path_buf, '.');
+                            if (ext && _stricmp(ext, ".tfx") == 0) {
+                                s_exp_mod_playing = 0;
+                                if (tfmx_player_load(&s_exp_tfmx, s_exp_path_buf, NULL)) {
+                                    s_exp_subsong = 0;
+                                    tfmx_player_start(&s_exp_tfmx, 0);
+                                    s_exp_playing = 1;
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", s_exp_path_buf);
+                                } else {
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX-Load fehlgeschlagen: %s", s_exp_path_buf);
+                                }
+                            } else if (ext && _stricmp(ext, ".mod") == 0) {
+                                FILE *f = fopen(s_exp_path_buf, "rb");
+                                long sz = 0;
+                                s_exp_playing = 0;
+                                if (f) {
+                                    fseek(f, 0, SEEK_END);
+                                    sz = ftell(f);
+                                    if (sz > (long)sizeof(s_exp_mod_buf)) sz = (long)sizeof(s_exp_mod_buf);
+                                    fseek(f, 0, SEEK_SET);
+                                    (void)fread(s_exp_mod_buf, 1, (size_t)sz, f);
+                                    fclose(f);
+                                }
+                                if (sz > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)sz)) {
+                                    mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                    s_exp_mod_playing = 1;
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", s_exp_path_buf);
+                                } else {
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "MOD-Load fehlgeschlagen: %s", s_exp_path_buf);
+                                }
+                            } else {
+                                snprintf(s_status_msg, sizeof(s_status_msg), "Nur Ordner oder .tfx/.mod moeglich: %s", s_exp_path_buf);
+                            }
+                        }
+                        s_exp_path_buf[0] = '\0';
+                        s_exp_path_cur = 0;
+                    } else if (s_explorer_selected >= 0 && s_explorer_selected < s_num_explorer_items) {
                         ExplorerItem *it = &s_explorer_items[s_explorer_selected];
                         if (it->is_dir) {
                             if (strcmp(it->name, "..") == 0) {
@@ -737,12 +1467,34 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                             }
                             explorer_scan_directory(s_current_dir);
                         } else {
-                            /* TFMX Datei laden */
-                            if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
-                                s_exp_subsong = 0;
-                                tfmx_player_start(&s_exp_tfmx, 0);
-                                s_exp_playing = 1;
-                                snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                            /* TFMX oder MOD Datei laden */
+                            const char *ext = strrchr(it->name, '.');
+                            if (ext && _stricmp(ext, ".mod") == 0) {
+                                FILE *f = fopen(it->path, "rb");
+                                long size = 0;
+                                s_exp_playing = 0;
+                                s_exp_mod_playing = 0;
+                                if (f) {
+                                    fseek(f, 0, SEEK_END);
+                                    size = ftell(f);
+                                    if (size > (long)sizeof(s_exp_mod_buf)) size = (long)sizeof(s_exp_mod_buf);
+                                    fseek(f, 0, SEEK_SET);
+                                    (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
+                                    fclose(f);
+                                }
+                                if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
+                                    mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                    s_exp_mod_playing = 1;
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
+                                }
+                            } else {
+                                /* TFMX Datei laden */
+                                if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
+                                    s_exp_subsong = 0;
+                                    tfmx_player_start(&s_exp_tfmx, 0);
+                                    s_exp_playing = 1;
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                                }
                             }
                         }
                     }
@@ -758,34 +1510,71 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     s_strudel_input[s_strudel_cursor] = c;
                     s_strudel_cursor++;
                 }
+            } else if (s_current_tab == TAB_EXPLORER) {
+                /* Freier Pfad: beliebig tippen, EINGABE = Ordner wechseln / Datei laden */
+                char c = (char)wParam;
+                if (c >= 32 && c <= 126 && s_exp_path_cur < (int)sizeof(s_exp_path_buf) - 1) {
+                    s_exp_path_buf[s_exp_path_cur++] = c;
+                    s_exp_path_buf[s_exp_path_cur] = '\0';
+                }
             }
             break;
 
         case WM_LBUTTONDOWN: {
             int mx = LOWORD(lParam);
             int my = HIWORD(lParam);
-            /* Top Tabs */
+            /* Top Tabs (nur im Studio-State sichtbar) */
             if (my < 36) {
                 for (int t = 0; t < 4; t++) {
                     int x = 10 + t * 200;
                     if (mx >= x && mx < x + 190) {
-                        s_current_tab = (GuiTab)t;
+                        if (t == 0) {
+                            /* "Zurueck / Neues Spiel" Button (wie F1) */
+                            if (s_gui_state == GUI_STATE_GAMEOVER || s_gui_state == GUI_STATE_MENU)
+                                start_game(s_active_mode);
+                            else if (s_gui_state != GUI_STATE_LOADING)
+                                s_gui_state = GUI_STATE_GAME;
+                        } else {
+                            s_current_tab = (GuiTab)t;
+                            s_gui_state = GUI_STATE_STUDIO;
+                        }
                     }
                 }
             }
             /* Explorer Klicks */
             if (s_current_tab == TAB_EXPLORER) {
-                if (mx >= 20 && mx <= 480 && my >= 90 && my <= WIN_H - 50) {
-                    int clicked_idx = s_explorer_scroll + (my - 90) / 18;
+                if (mx >= 20 && mx <= 480 && my >= 108 && my <= WIN_H - 50) {
+                    int clicked_idx = s_explorer_scroll + (my - 108) / 18;
                     if (clicked_idx >= 0 && clicked_idx < s_num_explorer_items) {
                         s_explorer_selected = clicked_idx;
                         ExplorerItem *it = &s_explorer_items[s_explorer_selected];
                         if (!it->is_dir) {
-                            if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
-                                s_exp_subsong = 0;
-                                tfmx_player_start(&s_exp_tfmx, 0);
-                                s_exp_playing = 1;
-                                snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                            const char *ext = strrchr(it->name, '.');
+                            if (ext && _stricmp(ext, ".mod") == 0) {
+                                FILE *f = fopen(it->path, "rb");
+                                long size = 0;
+                                s_exp_playing = 0;
+                                s_exp_mod_playing = 0;
+                                if (f) {
+                                    fseek(f, 0, SEEK_END);
+                                    size = ftell(f);
+                                    if (size > (long)sizeof(s_exp_mod_buf)) size = (long)sizeof(s_exp_mod_buf);
+                                    fseek(f, 0, SEEK_SET);
+                                    (void)fread(s_exp_mod_buf, 1, (size_t)size, f);
+                                    fclose(f);
+                                }
+                                if (size > 1084 && mod_player_load_mem(&s_exp_mod, s_exp_mod_buf, (uint32_t)size)) {
+                                    mod_player_start(&s_exp_mod, GAME_AUDIO_RATE);
+                                    s_exp_mod_playing = 1;
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "MOD geladen: %s", it->name);
+                                }
+                            } else {
+                                if (tfmx_player_load(&s_exp_tfmx, it->path, NULL)) {
+                                    s_exp_subsong = 0;
+                                    tfmx_player_start(&s_exp_tfmx, 0);
+                                    s_exp_playing = 1;
+                                    snprintf(s_status_msg, sizeof(s_status_msg), "TFMX geladen: %s", it->name);
+                                }
                             }
                         }
                     }
@@ -823,11 +1612,16 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             break;
         }
 
+        case WM_CLOSE:
+            /* X-Button / Alt+F4: sauberes Beenden (frueher nicht behandelt -> Fenster tot) */
+            DestroyWindow(hWnd);
+            return 0;
+
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
     }
-    return DefWindowProcA(hWnd, msg, lParam, lParam);
+    return DefWindowProcA(hWnd, msg, wParam, lParam);
 }
 
 /* --- Hauptprogramm --- */
@@ -840,8 +1634,32 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     int running;
     DWORD last_tick;
     int s_acc_ms = 0;   /* 50Hz-Akku (Pacing mit Catch-up) */
+    int dump_mode = 0;  /* --dump [frames] [basis] : Headless-Frame-Dump */
+    int dump_frames = 150;
+    char dump_base[128] = "dump";
 
-    (void)hPrevInstance; (void)lpCmdLine;
+    (void)hPrevInstance;
+
+    /* --dump-Argumente parsen */
+    {
+        char cmd[512];
+        char *tok;
+        strncpy(cmd, lpCmdLine ? lpCmdLine : "", sizeof(cmd) - 1);
+        cmd[sizeof(cmd) - 1] = '\0';
+        tok = strtok(cmd, " \t");
+        while (tok) {
+            if (_stricmp(tok, "--dump") == 0) {
+                dump_mode = 1;
+                tok = strtok(NULL, " \t");
+                if (tok) dump_frames = atoi(tok);
+                tok = strtok(NULL, " \t");
+                if (tok) { strncpy(dump_base, tok, sizeof(dump_base) - 1); dump_base[sizeof(dump_base) - 1] = '\0'; }
+                break;
+            }
+            tok = strtok(NULL, " \t");
+        }
+    }
+    if (dump_frames < 10) dump_frames = 10;
 
     memset(&wc, 0, sizeof(wc));
     wc.cbSize = sizeof(wc);
@@ -852,7 +1670,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     RegisterClassExA(&wc);
 
     hWnd = CreateWindowExA(
-        0, "StrudelForceGUI", "STRUDELFORCE 2026 - Amiga 500 Voxel Engine & Cyber-Paula TFMX Studio",
+        0, "StrudelForceGUI", "STRUDELFORCE " GAME_VERSION " - Amiga 500 Voxel Engine & Cyber-Paula TFMX Studio",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         CW_USEDEFAULT, CW_USEDEFAULT, WIN_W, WIN_H,
         NULL, NULL, hInstance, NULL
@@ -869,20 +1687,81 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     s_bmi.bmiHeader.biCompression = BI_RGB;
 
     /* Subsysteme initialisieren */
+    god_init(&s_god);
     core_init(&s_game, 1234);
     game_audio_init(&s_audio);
     livecode_init(&s_livecode, s_strudel_input);
-    win_audio_open(GAME_AUDIO_RATE);
+    if (!dump_mode) win_audio_open(GAME_AUDIO_RATE);
     explorer_scan_directory(s_current_dir);
-
-    /* Start-Soundtrack laden (Apidya) */
-    if (tfmx_player_load(&s_tfmx, "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx", NULL)) {
-        tfmx_player_start(&s_tfmx, 0);
-        s_tfmx_active = 1;
+    {
+        /* Jukebox-Library: TFMX-Ordner + MOD-Ordner rekursiv */
+        static const char *jukebox_roots[2] = { "TFMX Professional", "MOD" };
+        int r;
+        for (r = 0; r < 2; r++) playlist_scan_rec(jukebox_roots[r], 0);
     }
+
+    /* Intro: Embedded Apidya Meadow (TFMX + Original-Amiga-Samples) — laeuft im Hauptmenue */
+    s_last_wave = s_game.wave;
+    music_play_embedded(0);
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
+
+    /* --- Headless-Frame-Dump-Modus (GUI-Flow: Menue -> Loading -> Spiel -> Game Over) --- */
+    if (dump_mode) {
+        int i;
+        int dumped = 0;
+        for (i = 0; i < dump_frames; i++) {
+            int seg = (i * 100) / dump_frames;
+            s_gui_frame++;
+            if (seg < 20) {
+                /* Hauptmenue (Punkte durchwaelzen fuer Auswahl-Animation) */
+                s_menu_index = (i / 10) % MENU_ITEM_COUNT;
+                render_state_menu();
+            } else if (seg < 40) {
+                /* Loading-Screen (am Segment-Start neues Spiel initialisieren) */
+                if (i == dump_frames * 2 / 10) {
+                    start_game(MODE_ENDLESS);
+                    s_loading_ticks = LOAD_DURATION - 10;  /* Loading laeuft im Segment aus -> Game-Frames */
+                }
+                s_loading_ticks++;
+                if (s_loading_ticks >= LOAD_DURATION) s_gui_state = GUI_STATE_GAME;
+                if (s_gui_state == GUI_STATE_LOADING) {
+                    render_state_loading();
+                } else {
+                    render_tab_game();
+                    render_status_bar();
+                }
+            } else {
+                /* Spiel: Bot-Input (rechts laufen + feuern) */
+                uint16_t mask2 = 0;
+                if (s_gui_state != GUI_STATE_GAMEOVER) {
+                    mask2 = INPUT_RIGHT;
+                    if (((i / 15) % 2) == 0) mask2 |= INPUT_FIRE;
+                }
+                core_tick(&s_game, mask2);
+                livecode_tick(&s_livecode);
+                if (s_game.state == STATE_GAMEOVER) s_gui_state = GUI_STATE_GAMEOVER;
+                if (seg == 75) s_game.hp = 20;              /* Low-HP-Interlace */
+                if (seg == 90) {                            /* Game-Over-Overlay zeigen */
+                    s_game.state = STATE_GAMEOVER;
+                    s_gui_state = GUI_STATE_GAMEOVER;
+                }
+                if (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER) {
+                    render_tab_game();
+                    if (s_gui_state == GUI_STATE_GAMEOVER) render_game_over_overlay();
+                    render_status_bar();
+                }
+            }
+            if ((i % 10) == 9 || i == dump_frames - 1) {
+                char fn[200];
+                snprintf(fn, sizeof(fn), "%s_%03d.ppm", dump_base, dumped++);
+                dump_ppm(fn);
+            }
+        }
+        DestroyWindow(hWnd);
+        return 0;
+    }
 
     hdc = GetDC(hWnd);
     running = 1;
@@ -897,6 +1776,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
+
+        /* Controller: Hauptmenue-Navigation (Edge-getriggert, einmal pro Frame) */
+        pad_menu_poll();
 
         /* 50Hz Gameplay & Audio Pacing (20ms pro Tick).
          * Catch-up: nach einer langsamen Frame (GDI-Render) laufen bis zu 4 Ticks
@@ -923,57 +1805,144 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 s_acc_ms -= 20;
                 ticks_done++;
 
-                /* Tastatureingaben fuer Spiel */
+                /* Tastatur- + Controller-Eingaben (nur im aktiven Spiel-State)
+                 * Steuerung (v0.1): WASD/Pfeile = bewegen, Leertaste = Sprung,
+                 * STRG = Feuer, ALT = Halt-Strahl, C = Waffe, T = Truhe, S = Morph */
                 mask = 0;
-                if (s_current_tab == TAB_GAME) {
+                if (s_gui_state == GUI_STATE_GAME) {
                     if (GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000)  mask |= INPUT_LEFT;
                     if (GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000) mask |= INPUT_RIGHT;
-                    if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_SPACE) & 0x8000) mask |= INPUT_UP;
+                    if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000 || GetAsyncKeyState(VK_SPACE) & 0x8000) mask |= INPUT_UP;
                     if (GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000)  mask |= INPUT_DOWN;
-                    if (GetAsyncKeyState('Z') & 0x8000) mask |= INPUT_FIRE;
-                    if (GetAsyncKeyState('X') & 0x8000) mask |= INPUT_SECOND;
+                    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mask |= INPUT_FIRE;    /* Strg: prim. Feuer */
+                    if (GetAsyncKeyState(VK_MENU) & 0x8000)    mask |= INPUT_SECOND;  /* Alt:  Halt-Strahl */
                     if (GetAsyncKeyState('C') & 0x8000) mask |= INPUT_WEAPSW;
                     if (GetAsyncKeyState('T') & 0x8000) livecode_open_chest(&s_livecode);
+
+                    /* --- Controller (XInput, Gamepad 0) ---
+                     * Stick/D-Pad = bewegen, A = Feuer, X = Beam, B = Morph,
+                     * RS = Waffe, START = Hauptmenue (Edge) */
+                    {
+                        XINPUT_STATE xs;
+                        if (XInputGetState(0, &xs) == ERROR_SUCCESS) {
+                            s_pad_connected = 1;
+                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0  || xs.Gamepad.sThumbLX < -4000) mask |= INPUT_LEFT;
+                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 || xs.Gamepad.sThumbLX >  4000) mask |= INPUT_RIGHT;
+                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0    || xs.Gamepad.sThumbLY >  4000) mask |= INPUT_UP;
+                            if ((xs.Gamepad.wButtons & (XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_B)) != 0 ||
+                                xs.Gamepad.sThumbLY < -4000)                                                 mask |= INPUT_DOWN;
+                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) != 0)                mask |= INPUT_FIRE;
+                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) != 0)                mask |= INPUT_SECOND;
+                            if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0)   mask |= INPUT_WEAPSW;
+                            {
+                                int start_now = ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_START) != 0);
+                                if (start_now && !s_pad_start_prev) s_gui_state = GUI_STATE_MENU;
+                                s_pad_start_prev = start_now;
+                            }
+                        } else {
+                            s_pad_connected = 0;
+                            s_pad_start_prev = 0;
+                        }
+                    }
 
                     core_tick(&s_game, mask);
                     livecode_tick(&s_livecode);
 
-                    if (s_tfmx_active) {
+                    /* Alle Leben verbraucht? -> Game-Over-Screen.
+                     * Kampagne vollstaendig? -> Sieg-Screen (gleiche End-State-Maschine). */
+                    if (s_game.state == STATE_GAMEOVER || s_game.state == STATE_VICTORY) {
+                        s_gui_state = GUI_STATE_GAMEOVER;
+                    }
+
+                    /* Neue Wave/Level -> zufaelliger Song aus der Library (TFMX + MOD) */
+                    if (s_game.state != STATE_GAMEOVER && s_game.wave != s_last_wave) {
+                        s_last_wave = s_game.wave;
+                        music_play_next();
+                    }
+
+                    if (s_game.state != STATE_GAMEOVER && s_mod_active) {
+                        mod_player_tick(&s_mod);
+                    } else if (s_game.state != STATE_GAMEOVER && s_tfmx_active) {
                         tfmx_player_tick(&s_tfmx, &s_audio);
                     } else {
+                        /* 8-Voice-Engine (im Game-Over/Menu-Ambient weiter laufen) */
                         s_audio.bass_override_active = 1;
                         s_audio.bass_override_note = livecode_current_note(&s_livecode);
                         game_audio_update(&s_audio, &s_game);
                     }
-                } else if (s_current_tab == TAB_EXPLORER && s_exp_playing) {
-                    tfmx_player_tick(&s_exp_tfmx, &s_audio);
+                } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_EXPLORER) {
+                    if (s_exp_playing) {
+                        tfmx_player_tick(&s_exp_tfmx, &s_audio);
+                    } else if (s_exp_mod_playing) {
+                        mod_player_tick(&s_exp_mod);
+                    }
                 } else {
+                    /* Menu-/Loading-/Game-Over: Jukebox-Track (auch Embedded-Intro) weiter laufen */
+                    int menu_music = (s_gui_state != GUI_STATE_STUDIO);
                     livecode_tick(&s_livecode);
-                    s_audio.bass_override_active = 1;
-                    s_audio.bass_override_note = livecode_current_note(&s_livecode);
-                    game_audio_update(&s_audio, &s_game);
+                    if (menu_music && s_mod_active) {
+                        mod_player_tick(&s_mod);
+                    } else if (menu_music && s_tfmx_active) {
+                        tfmx_player_tick(&s_tfmx, &s_audio);
+                    } else {
+                        /* 8-Voice-Engine (Studio-Ambient / Fallback) */
+                        s_audio.bass_override_active = 1;
+                        s_audio.bass_override_note = livecode_current_note(&s_livecode);
+                        game_audio_update(&s_audio, &s_game);
+                    }
                 }
 
-                /* 16574 Hz Audio rendern & in den Transport-Ring legen */
-                game_audio_render(&s_audio, abuf, WIN_AUDIO_BUF_SAMPLES);
-                win_audio_write(abuf, WIN_AUDIO_BUF_SAMPLES);
+                /* 16574 Hz Audio rendern & in den Transport-Ring legen
+                 * (MOD-Jukebox: im Spiel UND in Menu/Loading/Game-Over, nicht im Studio) */
+                if (s_mod_active && s_gui_state != GUI_STATE_STUDIO) {
+                    mod_player_render(&s_mod, abuf, WIN_AUDIO_BUF_SAMPLES);
+                } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_EXPLORER && s_exp_mod_playing) {
+                    mod_player_render(&s_exp_mod, abuf, WIN_AUDIO_BUF_SAMPLES);
+                } else {
+                    game_audio_render(&s_audio, abuf, WIN_AUDIO_BUF_SAMPLES);
+                }
+                /* Soundgodizer (Stereo) oder Mono-Duplizierung */
+                if (s_god.enabled) {
+                    god_process(&s_god, abuf, WIN_AUDIO_BUF_SAMPLES, s_god_buf);
+                    win_audio_write_frames(s_god_buf, WIN_AUDIO_BUF_SAMPLES);
+                } else {
+                    win_audio_write(abuf, WIN_AUDIO_BUF_SAMPLES);
+                }
             }
             if (s_acc_ms >= 20) s_acc_ms = 0; /* Rest-Backlog verwerfen */
 
             /* Frame rendern (nur wenn mindestens 1 Tick gelaufen ist) */
             if (ticks_done > 0) {
-                if (s_current_tab == TAB_GAME) {
+                s_gui_frame++;
+                if (s_gui_state == GUI_STATE_MENU) {
+                    render_state_menu();
+                } else if (s_gui_state == GUI_STATE_LOADING) {
+                    s_loading_ticks++;
+                    if (s_loading_ticks >= LOAD_DURATION) s_gui_state = GUI_STATE_GAME;
+                    render_state_loading();
+                } else if (s_gui_state == GUI_STATE_CREDITS) {
+                    render_state_credits();
+                } else if (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER) {
                     render_tab_game();
-                } else if (s_current_tab == TAB_EXPLORER) {
-                    render_tab_explorer();
-                } else if (s_current_tab == TAB_STRUDEL) {
-                    render_tab_strudel();
-                } else if (s_current_tab == TAB_INTRO) {
-                    render_tab_intro();
+                    if (s_gui_state == GUI_STATE_GAMEOVER) {
+                        if (s_game.state == STATE_VICTORY) render_victory_overlay();
+                        else render_game_over_overlay();
+                    } else if (s_game.state == STATE_LEVEL_CLEAR) {
+                        render_level_clear_overlay();
+                    }
+                    render_status_bar();
+                } else {
+                    /* STUDIO: Jukebox / Strudel / Intro (Top-Bar + Status) */
+                    if (s_current_tab == TAB_EXPLORER) {
+                        render_tab_explorer();
+                    } else if (s_current_tab == TAB_STRUDEL) {
+                        render_tab_strudel();
+                    } else {
+                        render_tab_intro();
+                    }
+                    render_top_bar();
+                    render_status_bar();
                 }
-
-                render_top_bar();
-                render_status_bar();
 
                 /* In Fenster blitten */
                 StretchDIBits(

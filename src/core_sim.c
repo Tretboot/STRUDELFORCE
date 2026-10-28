@@ -116,12 +116,24 @@ void core_init(GameState *s, uint32_t seed) {
     s->hp = 100;
     s->max_hp = 100;
     s->shield = 50;
+    s->lives = START_LIVES;
+    s->respawn_timer = 0;
     s->level = 1;
     s->weapon = WEAPON_SPREAD;
     s->weapon_level = 1;
     s->state = STATE_WAVE_INTRO;
     s->state_timer = WAVE_INTRO_TICKS;
+    s->mode = MODE_ENDLESS;
+    s->campaign_level = 1;
     s->rng_state = seed ? seed : 1u;
+}
+
+/* Kampagne-Biome: Level 1..5 -> Biome 0..4 (Endless: Basis-Biome 0).
+ * Frontends nutzen dies fuer Paletten/Copper (Gesetz 2: reine Paletten). */
+uint8_t core_campaign_biome(const GameState *s) {
+    if (s->mode == MODE_CAMPAIGN && s->campaign_level >= 1 && s->campaign_level <= CAMPAIGN_LEVELS)
+        return (uint8_t)(s->campaign_level - 1);
+    return 0;
 }
 
 /* ================= Ringbuffer-Spawner ================= */
@@ -141,12 +153,15 @@ static void enemy_spawn(GameState *s, uint8_t kind, fix16_t x) {
     e->x = x; e->y = 0; e->vx = 0;
     e->active = 1; e->kind = kind;
     e->hit_timer = 0; e->shoot_timer = 40;
+    /* Balancing-Entscheidung (2026-10-27): Grunts & Shooter sterben an JEDEM
+     * einzelnen Treffer (Turrican-Feeling); nur der Tank (Mini-Boss) braucht
+     * mehrere Treffer. Fein-Tuning folgt in einer spaeteren Session. */
     if (kind == ENEMY_WALKER) {
-        e->hp = 3; e->score_val = 100; e->xp_val = 10;
+        e->hp = 1; e->score_val = 100; e->xp_val = 10;
     } else if (kind == ENEMY_SHOOTER) {
-        e->hp = 5; e->score_val = 250; e->xp_val = 20;
+        e->hp = 1; e->score_val = 250; e->xp_val = 20;
     } else {
-        e->hp = 12; e->score_val = 500; e->xp_val = 40;
+        e->hp = 15; e->score_val = 500; e->xp_val = 40;
     }
 }
 
@@ -166,6 +181,40 @@ static void part_burst(GameState *s, fix16_t x, fix16_t y, uint8_t color, uint8_
     }
 }
 
+/* ================= Extraleben-Pickups ================= */
+
+/* 2 Extraleben pro Welle, versteckt an den Welt-Raendern (abseits der
+ * Hauptroute) — Exploration zahlt sich aus. Positionen sind deterministisch
+ * (kein RNG), damit C- und Python-Oracle bit-genau uebereinstimmen. */
+static void wave_pickup_spawn(GameState *s) {
+    int i;
+    for (i = 0; i < MAX_PICKUPS; i++) s->pickups[i].active = 0;
+    s->pickups[0].x = fix16_from_int(3);
+    s->pickups[0].y = 0;
+    s->pickups[0].active = 1;
+    s->pickups[1].x = s->world_w - fix16_from_int(3);
+    s->pickups[1].y = 0;
+    s->pickups[1].active = 1;
+}
+
+static void pickup_update(GameState *s) {
+    int i;
+    for (i = 0; i < MAX_PICKUPS; i++) {
+        Pickup *p = &s->pickups[i];
+        if (!p->active) continue;
+        {
+            fix16_t dx = s->px - p->x; if (dx < 0) dx = -dx;
+            fix16_t dy = s->py - p->y; if (dy < 0) dy = -dy;
+            if (dx < FIX(2) && dy < FIX(3)) {
+                p->active = 0;
+                if (s->lives < MAX_LIVES) s->lives++;
+                s->score += 250;
+                part_burst(s, p->x, p->y + FIX(1), 6, 8);
+            }
+        }
+    }
+}
+
 /* ================= Wellen-Management ================= */
 
 static void wave_spawn(GameState *s) {
@@ -178,12 +227,34 @@ static void wave_spawn(GameState *s) {
         enemy_spawn(s, kind, (i % 2 == 0) ? fix16_from_int(1)
                                            : s->world_w - fix16_from_int(1));
     }
+    wave_pickup_spawn(s);
 }
 
-/* ================= Schaden ================= */
+/* ================= Schaden & Leben/Respawn ================= */
+
+/* Respawn nach verlorenem Leben: Position/HP/Schild resetten, feindliche
+ * Projektile raedern (sonst toeteten sie den frischen Spawn sofort),
+ * kurze Unverwundbarkeits-Phase (GUI blinkt den Spieler). */
+static void player_respawn(GameState *s) {
+    int i;
+    s->px = fix16_from_int(WORLD_W_UNITS / 2);
+    s->py = 0;
+    s->pvx = 0;
+    s->pvy = 0;
+    s->on_ground = 1;
+    s->hp = s->max_hp;
+    s->shield = 100;
+    s->respawn_timer = RESPAWN_INVULN_TICKS;
+    for (i = 0; i < MAX_PROJECTILES; i++) {
+        if (s->projectiles[i].active && s->projectiles[i].kind == PROJ_ENEMY) {
+            s->projectiles[i].active = 0;
+        }
+    }
+}
 
 static void player_hurt(GameState *s, uint16_t dmg) {
     if (s->morphing) return; /* Morph-Rad: unverwundbar gegen Standard-Schuesse */
+    if (s->respawn_timer > 0) return; /* Respawn-Gnadenfrist: unverwundbar */
     if (s->shield > 0) {
         if (s->shield >= dmg) {
             s->shield = (uint16_t)(s->shield - dmg);
@@ -193,7 +264,14 @@ static void player_hurt(GameState *s, uint16_t dmg) {
         s->shield = 0;
     }
     s->hp = (s->hp >= dmg) ? (uint16_t)(s->hp - dmg) : 0;
-    if (s->hp == 0) s->state = STATE_GAMEOVER;
+    if (s->hp == 0) {
+        if (s->lives > 1) {
+            s->lives--;
+            player_respawn(s);
+        } else {
+            s->state = STATE_GAMEOVER;
+        }
+    }
 }
 
 /* ================= Waffen ================= */
@@ -329,20 +407,24 @@ static void proj_update(GameState *s) {
         if (!p->active) continue;
         p->x += p->vx;
         p->y += p->vy;
-        /* Wandabprall (nur Bounce-Projektile nutzen die Bounce-Logik) */
-        if (p->x <= 0) {
-            p->x = 0; p->vx = -p->vx;
-            if (p->kind == PROJ_BOUNCE) bounce_hit_wall(s, p);
-        } else if (p->x >= s->world_w) {
-            p->x = s->world_w; p->vx = -p->vx;
-            if (p->kind == PROJ_BOUNCE) bounce_hit_wall(s, p);
-        }
-        if (p->y <= 0) {
-            p->y = 0; p->vy = -p->vy;
-            if (p->kind == PROJ_BOUNCE) bounce_hit_wall(s, p);
-        } else if (p->y >= s->world_h) {
-            p->y = s->world_h; p->vy = -p->vy;
-            if (p->kind == PROJ_BOUNCE) bounce_hit_wall(s, p);
+        /* Wandabprall: BEIDE Achsen zuerst vollstaendig klammern, dann die
+         * Bounce-Reaktion EINMAL pro Tick ausloesen. (Bugfix 2026-10-27:
+         * Bei Eckentreffern wurde vorher beim X-Clamp schon gesplittet,
+         * waehrend Y noch ungeclampt war -> Split-Kopie entstand ausserhalb
+         * der Welt und das Original oszillierte in der Ecke mit Endlos-Splits.) */
+        {
+            int wall = 0;
+            if (p->x <= 0) {
+                p->x = 0; p->vx = -p->vx; wall = 1;
+            } else if (p->x >= s->world_w) {
+                p->x = s->world_w; p->vx = -p->vx; wall = 1;
+            }
+            if (p->y <= 0) {
+                p->y = 0; p->vy = -p->vy; wall |= 2;
+            } else if (p->y >= s->world_h) {
+                p->y = s->world_h; p->vy = -p->vy; wall |= 2;
+            }
+            if (wall && p->kind == PROJ_BOUNCE) bounce_hit_wall(s, p);
         }
         if (!p->active) continue;
         if (--p->life == 0) {
@@ -467,10 +549,11 @@ static void xp_update(GameState *s) {
 /* ================= 50Hz Haupt-Tick ================= */
 
 void core_tick(GameState *s, uint16_t input) {
-    if (s->state == STATE_GAMEOVER) return;
+    if (s->state == STATE_GAMEOVER || s->state == STATE_VICTORY) return;
     s->tick++;
+    if (s->respawn_timer > 0) s->respawn_timer--;
 
-    /* --- Wellen-Management --- */
+    /* --- Wellen-/Level-Management (MODE_ENDLESS: exakt das v0.0-Verhalten) --- */
     if (s->state == STATE_WAVE_INTRO) {
         if (--s->state_timer == 0) {
             s->wave++;
@@ -484,6 +567,21 @@ void core_tick(GameState *s, uint16_t input) {
             if (s->enemies[i].active) { any = 1; break; }
         }
         if (!any) {
+            if (s->mode == MODE_CAMPAIGN && (s->wave % CAMPAIGN_WAVES_PER_LEVEL) == 0) {
+                /* Level-Ende: letztes Level -> Sieg, sonst Level-Clear-Intermezzo */
+                s->state = (s->wave >= CAMPAIGN_LEVELS * CAMPAIGN_WAVES_PER_LEVEL)
+                               ? STATE_VICTORY : STATE_LEVEL_CLEAR;
+                s->state_timer = LEVEL_CLEAR_TICKS;
+                if (s->state == STATE_LEVEL_CLEAR)
+                    s->score += 1000u * (uint32_t)s->campaign_level;
+            } else {
+                s->state = STATE_WAVE_INTRO;
+                s->state_timer = WAVE_INTRO_TICKS;
+            }
+        }
+    } else if (s->state == STATE_LEVEL_CLEAR) {
+        if (--s->state_timer == 0) {
+            if (s->campaign_level < CAMPAIGN_LEVELS) s->campaign_level++;
             s->state = STATE_WAVE_INTRO;
             s->state_timer = WAVE_INTRO_TICKS;
         }
@@ -567,9 +665,10 @@ void core_tick(GameState *s, uint16_t input) {
     /* --- Schild-Regeneration --- */
     if (s->tick % SHIELD_REGEN_TICK == 0 && s->shield < 100) s->shield++;
 
-    /* --- Entities --- */
+    /* --- Entities (Reihenfolge ist deterministisch relevant: C == Oracle) --- */
     proj_update(s);
     enemy_update(s);
+    pickup_update(s);
     part_update(s);
     xp_update(s);
 }

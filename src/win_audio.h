@@ -22,7 +22,8 @@
 #define WIN_AUDIO_BUF_SAMPLES 331 /* 16574 / 50Hz = ~331 Samples pro PAL-Tick */
 
 int  win_audio_open(int sample_rate);
-void win_audio_write(const int16_t *samples, int count);
+void win_audio_write(const int16_t *samples, int count);      /* Mono-Quell (L=R dupliziert) */
+void win_audio_write_frames(const int16_t *frames, int n);    /* Stereo-Frames (L,R verflochten) */
 void win_audio_close(void);
 int  win_audio_is_active(void);
 int  win_audio_selftest(void); /* 0 = OK; Ring-Logik (Wrap/Overflow/Underrun), kein Geraet */

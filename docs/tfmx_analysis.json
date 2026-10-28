@@ -1,0 +1,161 @@
+{
+  "tfmx_files": [
+    {
+      "filename": "Turrican 2 - Load.tfx",
+      "analysis": {
+        "sig": "TFMX",
+        "songs": 45,
+        "patterns": 83,
+        "instruments": 79,
+        "offset": 1,
+        "size": 1020
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 1 - Dessert.tfx",
+      "analysis": {
+        "sig": "TFMX",
+        "songs": 45,
+        "patterns": 83,
+        "instruments": 79,
+        "offset": 1,
+        "size": 13024
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 2 - Cave.tfx",
+      "analysis": {
+        "sig": "TFMX",
+        "songs": 45,
+        "patterns": 83,
+        "instruments": 79,
+        "offset": 1,
+        "size": 13256
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 3 - Flight.tfx",
+      "analysis": {
+        "sig": "TFMX",
+        "songs": 45,
+        "patterns": 83,
+        "instruments": 79,
+        "offset": 1,
+        "size": 14328
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 4 - Factory.tfx",
+      "analysis": {
+        "sig": "TFMX",
+        "songs": 45,
+        "patterns": 83,
+        "instruments": 79,
+        "offset": 1,
+        "size": 13756
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 5 - Aliens.tfx",
+      "analysis": {
+        "sig": "TFMX",
+        "songs": 45,
+        "patterns": 83,
+        "instruments": 79,
+        "offset": 1,
+        "size": 10468
+      }
+    }
+  ],
+  "sam_files": [
+    {
+      "filename": "Turrican 2 - Load.sam",
+      "analysis": {
+        "name": "",
+        "size": 1074,
+        "length": 0,
+        "loop_start": 0,
+        "loop_length": 0,
+        "volume": 0,
+        "fine_tune": 0,
+        "data_size": 1034,
+        "has_loop": false
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 1 - Dessert.sam",
+      "analysis": {
+        "name": "\u000e\u0013\u0000\u0004\u0004\u0011\u0002\u0004\u0011\u0005\u0012\u0016\u0001\f\b",
+        "size": 40242,
+        "length": 8705,
+        "loop_start": 3087,
+        "loop_length": 1046,
+        "volume": 248,
+        "fine_tune": -5,
+        "data_size": 40202,
+        "has_loop": true
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 2 - Cave.sam",
+      "analysis": {
+        "name": "\u000e\u0013\u0000\u0004\u0004\u0011\u0002\u0004\u0011\u0005\u0012\u0016\u0001\f\b",
+        "size": 43068,
+        "length": 8705,
+        "loop_start": 3087,
+        "loop_length": 1046,
+        "volume": 248,
+        "fine_tune": -5,
+        "data_size": 43028,
+        "has_loop": true
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 3 - Flight.sam",
+      "analysis": {
+        "name": "\u000e\u0013\u0000\u0004\u0004\u0011\u0002\u0004\u0011\u0005\u0012\u0016\u0001\f\b",
+        "size": 45072,
+        "length": 8705,
+        "loop_start": 3087,
+        "loop_length": 1046,
+        "volume": 248,
+        "fine_tune": -5,
+        "data_size": 45032,
+        "has_loop": true
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 4 - Factory.sam",
+      "analysis": {
+        "name": "\u000e\u0013\u0000\u0004\u0004\u0011\u0002\u0004\u0011\u0005\u0012\u0016\u0001\f\b",
+        "size": 61746,
+        "length": 8705,
+        "loop_start": 3087,
+        "loop_length": 1046,
+        "volume": 248,
+        "fine_tune": -5,
+        "data_size": 61706,
+        "has_loop": true
+      }
+    },
+    {
+      "filename": "Turrican 2 - World 5 - Aliens.sam",
+      "analysis": {
+        "name": "\u000e\u0013\u0000\u0004\u0004\u0011\u0002\u0004\u0011\u0005\u0012\u0016\u0001\f\b",
+        "size": 48498,
+        "length": 8705,
+        "loop_start": 3087,
+        "loop_length": 1046,
+        "volume": 248,
+        "fine_tune": -5,
+        "data_size": 48458,
+        "has_loop": true
+      }
+    }
+  ],
+  "summary": {
+    "tfmx_count": 6,
+    "sam_count": 6,
+    "total_size": 305552
+  }
+}

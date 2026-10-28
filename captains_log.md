@@ -207,3 +207,90 @@
 - `main_pc.c` (Raylib) lokal nicht kompilierbar (kein Raylib) — Target `pc_game` mit `RAYLIB_DIR`.
 - `ClaudeRun/`-Ordner stand bei Abschluss noch unter Dateisperre → bei Freigabe nach `archive/` verschieben.
 - `ROADMAP_AUDIO.md` / `LOCAL_ONLY_TESTS.md` aus dem KIWI-Run blieben ungeschrieben (nur das Persistence-Guide wurde vollständig).
+
+---
+
+## Captain's Log — Iteration 5 (GUI-Flow, Lives-System, Amiga-Boot + 3 Handoff-Direktiven, 2026-10-27)
+
+**Auftrag:** GUI-State-Maschine (Turrican-2-Hauptmenue), 3-Leben-/Respawn-System, M68K-Boot-Screen, Balancing-Entscheidung — und Vorbereitung des finalen KIWI-Handoffs mit drei neuen Direktiven.
+
+### 1. Was gebaut wurde (lokal, Windows/MSVC + Python)
+- `gui_main.c`: GUI-State-Maschine (HAUPTMENUE/LOADING/SPIEL/GAMEOVER/STUDIO/CREDITS), 2-Ton-Orange/Rot-Titel mit Schlagschatten, Lives-HUD, Respawn-Blink, Pickup-Rendering; F1/ENTER=Start, ESC=Menue, F2-F4=Studio (Spiel pausiert); `--dump [frames] [basis]` rendert den kompletten Flow headless (30-Frame-Verifikation per Pixel-Checks: Menü, Loading, Spiel, Game-Over).
+- `core_sim.c/h` + `verify_core_sim.py` (bit-genau gespiegelt): `START_LIVES=3`, `MAX_LIVES=9`, Respawn mit 100-Ticks-Invulnerability, Extraleben-Pickups an deterministischen Welt-Rändern, `player_hurt()` verbraucht erst Leben, dann Game Over.
+- Balancing-Entscheidung (Test-Baseline): Grunt/Shooter = **1 Treffer** (jede Waffe), Tank (Mini-Boss) = **15 HP**; 2 Extraleben pro Welle. Fein-Tuning wartet auf das Level-Fundament (→ Direkive 1).
+- M68K-Boot-Screen in `amiga_hw.c`: 2,5 s Boot, 2-Ton-`STRUDELFORCE`-Titel, Disketten-Zeile, blinkendes `PRESS FIRE TO START`, Core bleibt eingefroren bis Skip/Ende.
+- **Bounce-Ecke-Bugfix** (C + Oracle identisch): X und Y vollständig klemmen, Bounce-Reaktion einmal pro Tick — vorher: Eckentreffer → Split vor dem Y-Clamp → Split-Kopien außerhalb der Welt + Endlossplits. Wurde sichtbar, weil der Spieler dank Lives-System nicht mehr sofort stirbt.
+- RetroArch/PUAE-Integration: `tools/retroarch_amiga.cfg` + `tools/retroarch_test.bat`; `tools/ppm2bmp.py` für Frame-Inspektion.
+- Verifikation (alles grün): 4 Smith-Oracles, `tools/selftest.py`, Phase-1-Test 43/43, MSVC alle 6 Targets, Terminal-Demo (Pickups als `J`, LIVES im HUD), GUI-Dump-Flow bestätigt.
+
+### 2. Die 3 Handoff-Direktiven (in `TODO.md` + `CLAUDE_MISSION.md` vermerkt)
+1. **LEVEL-DESIGN OVERHAUL (P0):** Das aktuelle Level-Gerüst ist **UNBRAUCHBAR** (nur rudimentäres Rechts/Links-Movement, keine echte Spielstruktur). Muss von Grund auf neu gebaut werden: Kollisionen, Plattformen, Vertikalität — erst darauf Balancing.
+2. **VOXEL-EVOLUTION (Konzept, spätere Implementierung):** Spielercharakter modular aus Voxeln (PC) bzw. Pixel-Clustern (Amiga). Startet rudimentär, sammelt Bauteile (Beine, Arme, Waffen) → wächst physisch, wird detaillierter, schaltet Funktionen frei.
+3. **DER ORIGINAL-SOUNDTRACK (Audio):** TFMX-Klassiker (Apidya, Turrican etc.) nicht nur technisch, sondern auch **inhaltlich/musikalisch** analysieren. Eigener OST für "STRUDELFORCE MASTER" schreiben; originale Amiga-Samples der Klassiker extrahieren und in den neuen Kompositionen wiederverwenden.
+
+### 3. Lessons Learned / Hinweise für KIWI
+1. `prepare_handoff.py` **überschreibt** `CLAUDE_MISSION.md` (hartkodierter Text) — Mission-Änderungen immer in das Skript (`step3_create_claude_mission`), nicht in die `.md`.
+2. Das Handoff-ZIP nimmt nur Root-`.md/.py/.txt/.c/.h/.bat` + `src/`, `tools/`, `user_music/`, `TFMX Professional/` auf — `docs/`, `archive/` und Binaries sind NICHT drin (deshalb die neue Root-`TODO.md`).
+3. Update-Reihenfolge des Smith-Kernels ist heilig (C == Python): `proj_update` → `enemy_update` → `pickup_update` → `part_update` → `xp_update`.
+4. M68K-Toolchain (`m68k-amiga-elf-gcc`) lokal nicht in PATH — ADF-Build + PUAE-Test bleibt offener Punkt (`tools/retroarch_test.bat`); der Boot-Screen-Code ist nur parse-geprüft (bekannte Checker-Limitation: identischer "before: plane"-Parse-Fehler wie im Archive-Original).
+
+---
+
+## Captain's Log — Iteration 6 (v1.1: Embedded-Intro, MOD-Jukebox, Pfad-Explorer, KIWI-Return-Integration, 2026-10-28)
+
+**Auftrag:** KIWI-Return-Paket (`STRUDELFORCE_MASTER_Handoff.zip`) auswerten + organisieren, MOD/-Ordner anbinden, freie Pfadwahl im Explorer, TFMX/MOD in die EXE packen, Samples für das Intro benutzen, Haupt-EXE mit Versionsnummer statt `_gui`.
+
+### 1. KIWI-Return-Paket (31 KB)
+- Inhalt: LORE (erweitert), BIOMES (8), ITEMS_LEVELUP, MUSIC_SYSTEM, `tfmx_analysis.json`, `level_config.h`, Agent-Registry + **C-Stubs** (`core_sim.c` 402 B, `player_voxel.c`, `dynamic_music.c`, eigene `mod_player.c`).
+- **Entscheidung:** Doku nach `docs/` cherry-picken (wertvoll für Level-Overhaul + OST-Mission), komplettes Paket + ZIP nach `archive/kiwi_return_2026-10-28/`. **Keine KIWI-C-Quellen mergen**: die Stubs kollidieren mit dem verifizierten Kern (Dual-Core-Regel), KIWI `mod_player.c` hat kein Oracle-Bit-Verhältnis.
+- KIWI's `level_config.h` (Tile-Typen FLOOR/WALL/LAVA/WATER/SPIKE/PLATFORM/LOOT…) = gute Vorlage für das P0-Level-Design.
+
+### 2. v1.1-Features (alle verifiziert)
+- **Haupt-EXE:** `strudelforce_gui.exe` → **`strudelforce_v1.1.exe`** (Build [2/7]); `GAME_VERSION "1.1"` in Menü (VERSION-Zeile) + Fenster-Titel.
+- **Embedded-Musik:** `tools/gen_embedded_music.py` → `src/embedded_music.h` (177.814 Bytes, 4 Arrays): Apidya Meadow `.tfx` (8150 B) + `.sam` (65.066 B = **Original-Amiga-Samples**), WC Regular Combat + WC Overall Victory. Zero-copy via `tfmx_player_load_mem`/`mod_player_load_mem` (static const, INCBIN-kompatibel für ADF).
+- **Intro:** Embedded Meadow läuft ab WinMain-Init (Menü/Loading/Game-Over) — dafür musste die Jukebox-Tick-Logik auf die Nicht-Studio-States erweitert werden (früher nur GAME-State tickte TFMX/MOD).
+- **Jukebox:** scannt jetzt `TFMX Professional/` + `MOD/` (41/45 MODs = 31-Sample-Format spielbar; 3 × Lost_Patrol haben kein M.K!/M!K!-Sig bei Offset 1080 → werden abgelehnt, dokumentiert). Fallback ohne Disk = 3 Embedded-Tracks rotierend pro Wave.
+- **Explorer:** freie Pfadeingabe (PFAD:-Zeile, typen + ENTER) — Ordner springen oder .tfx/.mod direkt laden; List-Layout um 18 px versetzt (24 Zeilen), Click-Mapping angepasst.
+- **Selftest:** `src/test_embedded_music.c` + Build-Target [7/7] `test_embedded_music.exe` → 3/3 Tracks mit Peak-Check.
+
+### 3. Verifikation
+- MSVC: 7/7 Targets grün. `test_embedded_music.exe`: 3/3 PASS (Meadow peak=8477, WC Combat peak=12288, WC Victory peak=16200).
+- Phase-1: 43/43. `verify_core_sim.py`: Determinismus + Invarianten OK. Terminal-Demo: DEMO_DONE.
+- GUI-Dump (30 Frames): Menü mit 2596 Orange-Titel-Pixeln + 652 Version-Text-Pixeln, Loading vollständig gerendert.
+
+### 4. Lessons Learned
+1. MOD-Header-Signatur liegt bei **Offset 1080** (31-Sample-Layout), nicht beim ProTracker-"M!"-Header — "ungültige" MODs erst per Offset-Scan prüfen (41/45 hier valide).
+2. `tfmx_player_load_mem` ist Zero-copy (referred `p->mdat`, `owned_buf` bleibt über Reloads erhalten) → static-const-Arrays (Embedded/INCBIN) sind der sichere Pfad.
+3. Jukebox-Tick war GAME-State-only — Menü-Musik braucht eigene Tick-/Render-Zweige; Soundgodizer/Dump-Flow bleiben davon unberührt.
+4. KIWI-Returns immer zuerst per ZIP-Inhaltsliste triagieren, in separatem Ordner entpacken — niemals direkt nach Workspace-Root (Stubs überschreiben verifizierten Code).
+
+## Captain's Log — Iteration 7 (v0.1: Steuerung + Controller, Kampagne vs. Endlos, Versionskorrektur, GitHub-Push-Vorbereitung, 2026-10-28)
+
+### 1. Versionskorrektur (Anweisung des Captains)
+- "1.1" war zu hoch: **Release heißt jetzt `v0.1`** ("0 vorne, danach nicht mehr als 2"). EXE: `strudelforce_v0.1.exe`, `GAME_VERSION "0.1"`, Doku angepasst (TODO/AGENTS/Build-Bat).
+
+### 2. Steuerung (GUI) — neu, wie gewünscht
+- **Bewegen:** WASD + Pfeiltasten · **Sprung:** Leertaste (wie gehabt) · **Feuer: STRG** · **Halt-Strahl: ALT** · C = Waffe, S = Morph, T = Truhe, ESC = Menü (Z/X entfallen).
+- **Controller-Support (XInput, Gamepad 0):** Stick/D-Pad = bewegen, A = Feuer, X = Beam, B = Morph, RS = Waffe, START = Hauptmenue (Edge). Hauptmenue: D-Pad/LB/RB = navigieren, A = ausführen. Verbindungsanzeige "CONTROLLER: VERBUNDEN/KEINER ANGESCHLOSSEN" in der VERSION-Zeile.
+- Haken: Klassisches `xinput.h` nutzt `xs.Gamepad.wButtons`/`sThumbLX` — nicht die Win11-`dwButtonFlags`-Nomenklatur (Build-Fehler C2039, sofort gefixt).
+
+### 3. "Erster Level kaputt" → Modus-Auswahl + Kampagnen-Fundament
+- Hauptmenü zeigt jetzt **KAMPAGNE (5 LEVELS)** und **ENDLOS ROGUELIKE** (6 Menü-Punkte).
+- Kern (deterministisch, Oracle gespiegelt): `MODE_ENDLESS` (Default, **bit-identisch** zu v0.0 — verifiziert) / `MODE_CAMPAIGN` = 5 Level × 3 Wellen, feste Biome-Reihenfolge, `STATE_LEVEL_CLEAR` (+1000·Level Bonus, 2 s Intermezzo) und `STATE_VICTORY` (Sieg-Screen) nach Level 5; `core_campaign_biome()` (0..4).
+- GUI: 5 Biome-Paletten (Copper-Himmel/Säulen/Boden pro Level — reine Paletten, Gesetz 2), Level-/Wave-Intro-Banner, HUD-Zeile "KAMPAGNE: LEVEL x/5 - <BIOME>", Level-Clear- + SIEG-Overlay.
+- Terminal: `strudelforce_game.exe --campaign --demo 20000` → DEMO_DONE **tick=5565 state=4 (VICTORY) wave=15 score=60300 kills=284** — **bit-genau identisch zum Python-Oracle** (`verify_core_sim.py --campaign`, Bot gewinnt die Kampagne in 5565 Ticks).
+- ECHTES Level-Design (Plattformen/Kollision/Vertikalität) bleibt KIWI-P0 — v0.1 legt nur das Modus-/Level-Rüstzeug.
+
+### 4. Push-Vorbereitung (GitHub)
+- `.gitignore` erweitert: `MOD/` (lizenziert, wie TFMX — Embedded-Tracks ersetzen sie), `flowdump_*`, `*.log`.
+- `.github/workflows/build.yml`: **windows** (7 Targets + Selftests + Oracle → EXE-Artefakte), **linux** (GCC C99-Kern-Check + portabler `test_embedded_music` + Oracle), **amiga-adf** (Experiment, `gcc-m68k-amigaos` + amitools, continue-on-error — braucht lokale TFMX-Library).
+- Aufräumen: alle PPM/BMP-Dumps, oops-/Demo-/Build-Logs, root-`.obj`, altes `strudelforce_v1.1.exe` entfernt.
+- **Dump-Harness-Fix (GUI `--dump`):** Loading-Segment lief nie aus (Ticks-Start zu spät) → Game-Frames wurden nie gerendert, der "Game-Part" war die eingefrorene Loading-Seite; Game-Over-Fix seg 90 renderte dafür mit 0.22-Dimming. Jetzt: `LOAD_DURATION - 10` → echte Game-Frames (verifiziert: Himmel (26,89,169), Boden (46,62,79), HUD-Rahmen, Modus-Zeile).
+
+### 5. Verifikation
+- MSVC 7/7 grün; `test_embedded_music` 3/3; Phase-1 43/43; Oracle Endless unverändert (score=35150 wave=12 bei 2500 Ticks) + Kampagne OK; Terminal-Demo Endless & Kampagne grün; GUI-Dump-Flow per Pixel-Check ok.
+
+### 6. Offene Punkte (nächste Iteration)
+- Playtest `strudelforce_v0.1.exe` (Menü → KAMPAGNE/ENDLOS → STRG/ALT-Feuer → Controller).
+- Erstpush (Remote anlegen), danach CI-Artefakte als Binaries (Windows/Linux), ADF-Experiment beobachten.
+- P0 Level-Design (KIWI), P2 Original-Soundtrack; Lite-/Full-Handoff-ZIPs bei Bedarf neu generieren (MOD/ im Full-ZIP erwägen).

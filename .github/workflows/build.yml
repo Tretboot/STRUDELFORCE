@@ -1,0 +1,96 @@
+name: Build & Verify
+
+# STRUDELFORCE CI (Release v0.1):
+#  - windows: kompletter MSVC-Build (7 Targets) + Selftests + Oracle, Artefakt = EXEs
+#  - linux:   GCC-Check des Kerns + portabler Embedded-Music-Selftest + Python-Oracle
+#  - amiga:   EXPERIMENTELLER ADF-Build (m68k-amigaos-gcc + amitools). Benötigt die
+#             lokale "TFMX Professional/"-Library (nicht im Repo, lizenzbedingt) ->
+#             scheitert in der CI erwartungsgemäß, bis die Staging-Tracks ersetzt
+#             werden (embedded_music.h). continue-on-error: true.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-msvc:
+    name: Windows (MSVC, alle 7 Targets)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (build_msvc.bat, 7 Targets)
+        run: build_msvc.bat
+        shell: cmd
+
+      - name: Selftests (Embedded-Musik, Phase-1, Terminal-Demo)
+        run: |
+          test_embedded_music.exe
+          strudelforce_test.exe
+          strudelforce_game.exe --demo 2500 --no-intro --no-sound
+          strudelforce_game.exe --campaign --demo 20000 --no-intro --no-sound
+        shell: cmd
+
+      - name: Python-Oracle (Endlos + Kampagne)
+        run: |
+          python verify_core_sim.py --seed 1234 --ticks 2500
+          python verify_core_sim.py --seed 1234 --campaign
+
+      - name: Upload Windows-Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: strudelforce-windows-v0.1
+          path: |
+            strudelforce_v0.1.exe
+            strudelforce_game.exe
+            test_embedded_music.exe
+
+  linux-gcc:
+    name: Linux (GCC: Kern-Check + portabler Selftest + Oracle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GCC-Kern-Check (C99, Wall/Wextra)
+        run: |
+          gcc -std=c99 -Wall -Wextra -c src/core_sim.c -o /tmp/core_sim.o
+          gcc -std=c99 -Wall -Wextra -c src/tfmx_player.c -o /tmp/tfmx_player.o
+          gcc -std=c99 -Wall -Wextra -c src/mod_player.c -o /tmp/mod_player.o
+
+      - name: test_embedded_music (portabel, ohne Win-Audio)
+        run: |
+          gcc -std=c99 -O2 src/test_embedded_music.c src/tfmx_player.c src/mod_player.c -lm -o test_embedded_music
+          ./test_embedded_music
+
+      - name: Python-Oracle (Endlos + Kampagne)
+        run: |
+          python3 verify_core_sim.py --seed 1234 --ticks 2500
+          python3 verify_core_sim.py --seed 1234 --campaign
+
+  amiga-adf:
+    name: Amiga ADF (Experiment: m68k-amigaos-gcc + amitools)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install m68k-amigaos-gcc + amitools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-m68k-amigaos
+          pip3 install --user amitools
+          export PATH="$HOME/.local/bin:$PATH"
+
+      - name: Build 880K ADF (braucht TFMX-Library local -> in CI oft fehlgeschlagen)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          make stage_amiga_music amiga_adf
+          ls -la strudelforce.adf
+
+      - name: Upload ADF (falls gebaut)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strudelforce-amiga-adf
+          path: strudelforce.adf
+          if-no-files-found: ignore

@@ -7,6 +7,8 @@ Fuehrt die 4 Handoff-Schritte aus:
   2. captains_log.md mit dem Uebergabe-Eintrag aktualisieren
   3. CLAUDE_MISSION.md mit der Aufgabenstellung erstellen
   4. STRUDELFORCE_Claude_Handoff.zip packen (ohne Binaries oder pycache)
+   5. --lite: STRUDELFORCE_Claude_Handoff_Lite.zip (< 1 MB fuer Cloud-Upload: keine Audio-Dumps
+      .wav/.adf/.mp3/.raw, nur EIN TFMX-Referenz-Track, Code-Kern zu 100% erhalten)
 """
 
 import os
@@ -35,7 +37,8 @@ def step1_run_c_tests():
         "-o", "strudelforce_game", "-lm"
     ]
     try:
-        res = subprocess.run(gcc_cmd, capture_output=True, text=True, timeout=30)
+        res = subprocess.run(gcc_cmd, capture_output=True, text=True, timeout=30,
+                             encoding="utf-8", errors="replace")
         report_lines.append(f"Kommando: {' '.join(gcc_cmd)}")
         report_lines.append(f"Returncode: {res.returncode}")
         report_lines.append("STDOUT:\n" + (res.stdout or "(leer)"))
@@ -55,7 +58,8 @@ def step1_run_c_tests():
     bat_path = os.path.abspath("build_msvc.bat")
     if os.path.exists(bat_path):
         try:
-            res_msvc = subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, timeout=30)
+            res_msvc = subprocess.run(["cmd", "/c", bat_path], capture_output=True, text=True, timeout=30,
+                                  encoding="utf-8", errors="replace")
             report_lines.append(f"MSVC Returncode: {res_msvc.returncode}")
             report_lines.append("STDOUT:\n" + (res_msvc.stdout or "(leer)"))
             if res_msvc.stderr:
@@ -71,7 +75,8 @@ def step1_run_c_tests():
     report_lines.append("--- 3. PHASE-1 INTEGRATIONSTEST (test_phase1.c) ---")
     if os.path.exists("strudelforce_test.exe"):
         try:
-            res_test = subprocess.run([".\\strudelforce_test.exe"], capture_output=True, text=True, timeout=15)
+            res_test = subprocess.run([".\\strudelforce_test.exe"], capture_output=True, text=True, timeout=15,
+                                      encoding="utf-8", errors="replace")
             report_lines.append(f"strudelforce_test Returncode: {res_test.returncode}")
             report_lines.append("OUTPUT:\n" + res_test.stdout)
             if res_test.stderr:
@@ -92,7 +97,8 @@ def step1_run_c_tests():
     ]
     if os.path.exists("strudelforce_game.exe"):
         try:
-            res_demo = subprocess.run(demo_cmd, capture_output=True, text=True, timeout=20)
+            res_demo = subprocess.run(demo_cmd, capture_output=True, text=True, timeout=20,
+                                  encoding="utf-8", errors="replace")
             report_lines.append(f"Demo Returncode: {res_demo.returncode}")
             report_lines.append("OUTPUT:\n" + res_demo.stdout)
             if res_demo.stderr:
@@ -112,7 +118,8 @@ def step1_run_c_tests():
         "--dump"
     ]
     try:
-        res_imp = subprocess.run(imp_cmd, capture_output=True, text=True, timeout=15)
+        res_imp = subprocess.run(imp_cmd, capture_output=True, text=True, timeout=15,
+                                 encoding="utf-8", errors="replace")
         report_lines.append(f"Importer Returncode: {res_imp.returncode}")
         report_lines.append("OUTPUT (Auszug):\n" + res_imp.stdout[:1500])
         if res_imp.stderr:
@@ -169,17 +176,32 @@ def step2_update_captains_log():
 def step3_create_claude_mission():
     print("=== SCHRITT 3: CLAUDE_MISSION.md erstellen ===")
     mission_content = (
-        "# STRUDELFORCE - Mission für Claude\n"
+        "# STRUDELFORCE - Mission für Claude (KIWI)\n"
+        "Stand: 2026-10-27 - finales Handoff. Details & Priorität: TODO.md; bindende Architektur-Regeln: AGENTS.md (die 3 Eisernen Gesetze).\n"
         "Deine Aufgaben in dieser Iteration:\n"
-        "**AUFGABE 1: TFMX REVERSE ENGINEERING (AUDIO)**\n"
-        "Der aktuelle TFMX-Konverter/Player erzeugt fehlerhaften Sound und Ladefehler. \n"
+        "**AUFGABE 1 (P0, HÖCHSTE PRIORITÄT): LEVEL-DESIGN OVERHAUL**\n"
+        "- Das aktuelle Level-Gerüst ist UNBRAUCHBAR: Es erlaubt derzeit nur rudimentäres Rechts/Links-Movement und hat keine echte Spielstruktur.\n"
+        "- Das Level-Design muss VON GRUND AUF neu gebaut werden: echte Kollisionen, Plattformen, Vertikalität.\n"
+        "- Ziel ist ein echtes, spielbares Fundament - erst DARAUF folgt das Balancing.\n"
+        "- Wir brauchen strukturierte Voxel-Levels (basierend auf unserer 2.5D Architektur):\n"
+        "  handgebaute Hommagen an Klassiker wie Turrican, Giana Sisters und Super Mario,\n"
+        "  ZUSÄTZLICH ein prozedural generierter Roguelike-Modus, der Level-Bausteine zufällig, aber logisch zusammensetzt.\n"
+        "  Nutze deine Stärke im Level-Design, um die Datenstrukturen (Arrays/Structs) in C dafür vorzubereiten.\n"
+        "**AUFGABE 2: TFMX REVERSE ENGINEERING + DER ORIGINAL-SOUNDTRACK (AUDIO)**\n"
+        "- Der aktuelle TFMX-Konverter/Player erzeugt fehlerhaften Sound und Ladefehler.\n"
         "- Analysiere die beiliegenden originalen .mdat/.smpl Dateien (z.B. Apidya).\n"
         "- Repariere die Byte-Offsets, Wait-States und DMA-Makros im C-Code / Python-Skript. Der Sound muss originalgetreu laufen.\n"
-        "**AUFGABE 2: VOXEL & LEVEL DESIGN**\n"
-        "- Wir brauchen strukturierte Voxel-Levels (basierend auf unserer 2.5D Architektur).\n"
-        "- Entwirf feste, handgebaute Level, die Hommagen an Klassiker wie Turrican, Giana Sisters und Super Mario sind.\n"
-        "- Entwirf ZUSÄTZLICH einen prozedural generierten Roguelike-Modus, der Level-Bausteine zufällig, aber logisch zusammensetzt. "
-        "Nutze deine Stärke im Level-Design, um die Datenstrukturen (Arrays/Structs) in C dafür vorzubereiten.\n"
+        "- NEU: Die originalen TFMX-Module (Apidya, Turrican etc.) sollen NICHT NUR technisch, sondern auch\n"
+        "  INHALTLICH/MUSIKALISCH analysiert werden (Song-Form, Stimm-Verbrauch, Sample-Zuordnung, Arrangement-Prinzipien).\n"
+        "- Ziel: EIN EIGENER ORIGINAL-SOUNDTRACK für \"STRUDELFORCE MASTER\" (Titel/Boot, Biome-Tunes, Boss-Kämpfe).\n"
+        "- Lass dich von den Klassikern inspirieren, extrahiere deren originale Amiga-Samples (aus .smpl/.mdat)\n"
+        "  und wiederverwende sie in unseren neuen Kompositionen.\n"
+        "**AUFGABE 3: DIE VOXEL-EVOLUTION (NEUES GAMEPLAY-KONZEPT, für die spätere Implementierung)**\n"
+        "- Der Spielercharakter wird modular aus Voxeln (PC) bzw. Pixel-Clustern (Amiga) zusammengesetzt.\n"
+        "- Der Spieler startet als kleines, rudimentäres Konstrukt und findet in der Welt Bauteile (Beine, Arme, Waffen).\n"
+        "- Durch das Einsammeln wächst der Charakter physisch, wird detaillierter und schaltet Funktionen frei.\n"
+        "- Architektur-Vorbereitung: statische C-Datenstrukturen (16.16-Fixed-Point, null malloc, 512 KB Chip-RAM),\n"
+        "  Bauteil-Spawns als Level-Features anbinden (-> Aufgabe 1), Amiga-Seite = Pixel-Cluster auf 6 Bitplanes.\n"
     )
 
     with open("CLAUDE_MISSION.md", "w", encoding="utf-8") as f:
@@ -188,13 +210,20 @@ def step3_create_claude_mission():
     print("  -> 'CLAUDE_MISSION.md' erfolgreich erstellt.")
 
 
-def step4_create_handoff_zip():
-    print("=== SCHRITT 4: STRUDELFORCE_Claude_Handoff.zip erstellen ===")
-    zip_filename = "STRUDELFORCE_Claude_Handoff.zip"
+def step4_create_handoff_zip(lite=False):
+    zip_filename = "STRUDELFORCE_Claude_Handoff_Lite.zip" if lite else "STRUDELFORCE_Claude_Handoff.zip"
+    print(f"=== SCHRITT 4: {zip_filename} erstellen{' (LITE: keine Audio-Dumps, nur 1 TFMX-Referenz-Track)' if lite else ''} ===")
     
     # Auszuschliessende Dateien & Ordner
-    excluded_extensions = {".exe", ".obj", ".o", ".a", ".lib", ".dll", ".wav", ".zip", ".pdb", ".ilk"}
+    # .wav/.adf/.mp3/.raw: Audio- & Disketten-Dumps rigoros ausschliessen (Code-Handoff)
+    excluded_extensions = {".exe", ".obj", ".o", ".a", ".lib", ".dll", ".wav", ".zip", ".pdb", ".ilk", ".adf", ".mp3", ".raw"}
     excluded_dirs = {"__pycache__", ".git", ".vscode", "releases", ".system_generated"}
+
+    # LITE: NUR genau EIN funktionierendes Referenz-Beispiel fuer das TFMX-Reverse-Engineering
+    lite_tfxmx_tracks = [
+        "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.sam",
+        "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx",
+    ]
 
     file_count = 0
     with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -214,6 +243,8 @@ def step4_create_handoff_zip():
         for fld in include_folders:
             if not os.path.exists(fld):
                 continue
+            if lite and fld == "TFMX Professional":
+                continue  # wird unten als einziger Referenz-Track angehaengt
             for root, dirs, files in os.walk(fld):
                 # Filter dirs in-place
                 dirs[:] = [d for d in dirs if d not in excluded_dirs]
@@ -225,16 +256,26 @@ def step4_create_handoff_zip():
                         zf.write(full_path, arcname)
                         file_count += 1
 
+        # 3. LITE: der einzige TFMX-Referenz-Track
+        if lite:
+            for track in lite_tfxmx_tracks:
+                if os.path.exists(track):
+                    zf.write(track, track)
+                    file_count += 1
+                else:
+                    print(f"  WARNUNG: Referenz-Track fehlt: {track}")
+
     zip_size = os.path.getsize(zip_filename)
     print(f"  -> '{zip_filename}' erfolgreich gepackt ({file_count} Dateien, {zip_size:,} Bytes).")
 
 
 def main():
-    print("Starte automatische Handoff-Vorbereitung fuer Claude...")
+    lite = "--lite" in sys.argv
+    print(f"Starte automatische Handoff-Vorbereitung fuer Claude{' (LITE-Modus)' if lite else '...'}")
     step1_run_c_tests()
     step2_update_captains_log()
     step3_create_claude_mission()
-    step4_create_handoff_zip()
+    step4_create_handoff_zip(lite=lite)
     print("\n[FERTIG] Handoff an Claude wurde vollstaendig vorbereitet!")
 
 if __name__ == "__main__":

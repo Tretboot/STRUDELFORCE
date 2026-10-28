@@ -32,10 +32,21 @@ enum {
 };
 
 enum {
-    STATE_WAVE_INTRO = 0,
-    STATE_PLAYING    = 1,
-    STATE_GAMEOVER   = 2
+    STATE_WAVE_INTRO  = 0,
+    STATE_PLAYING     = 1,
+    STATE_GAMEOVER    = 2,
+    STATE_LEVEL_CLEAR = 3, /* Kampagne: Level abgeschlossen (kurzes Intermezzo) */
+    STATE_VICTORY     = 4  /* Kampagne: alle 5 Level geklaert (Sieg) */
 };
+
+/* Spielmodes (Determinismus: MODE_ENDLESS = Verhalten v0.0, bit-identisch) */
+enum {
+    MODE_ENDLESS  = 0, /* Endlos-Roguelike: Wellen laufen endlos weiter (Default) */
+    MODE_CAMPAIGN = 1  /* Kampagne: 5 Level x 3 Wellen, feste Biome-Reihenfolge */
+};
+#define CAMPAIGN_LEVELS 5
+#define CAMPAIGN_WAVES_PER_LEVEL 3
+#define LEVEL_CLEAR_TICKS 150
 
 enum {
     PROJ_PELLET = 0, /* Spread-Pellets */
@@ -52,6 +63,12 @@ enum {
 #define MAX_PROJECTILES 64
 #define MAX_ENEMIES     32
 #define MAX_PARTICLES   128
+#define MAX_PICKUPS     8
+
+/* Leben-System (Turrican-Style): 3 Start-Leben, Extraleben-Pickups in der Welt */
+#define START_LIVES 3
+#define MAX_LIVES   9
+#define RESPAWN_INVULN_TICKS 100   /* 2 Sekunden Unverwundbarkeit nach Respawn */
 
 typedef struct {
     fix16_t  x, y;
@@ -84,12 +101,20 @@ typedef struct {
     uint16_t life;
 } Particle;
 
+/* Extraleben-Pickup (versteckt abseits der Hauptroute, belohnt Exploration) */
+typedef struct {
+    fix16_t  x, y;
+    uint8_t  active;
+} Pickup;
+
 typedef struct {
     /* Spieler */
     fix16_t  px, py, pvx, pvy;
     uint8_t  on_ground;
     int8_t   facing;      /* -1 links, +1 rechts */
     uint8_t  morphing;    /* DOWN halten: 1x1 Hitbox, unverwundbar gegen Standard-Schuesse */
+    uint8_t  lives;       /* uebrige Leben (START_LIVES .. 1; 1 = letztes) */
+    uint16_t respawn_timer; /* >0: Unverwundbar (Blinken) nach Respawn */
     uint16_t hp, max_hp;
     uint16_t shield;      /* 0..100 */
     uint16_t xp;
@@ -106,10 +131,13 @@ typedef struct {
     uint16_t wave;
     uint8_t  state;       /* STATE_* */
     uint16_t state_timer;
+    uint8_t  mode;         /* MODE_* (0 = ENDLESS Default) */
+    uint8_t  campaign_level; /* 1..CAMPAIGN_LEVELS (nur MODE_CAMPAIGN) */
     /* Statische Entity-Buffer (kein malloc in der Schleife) */
     Projectile projectiles[MAX_PROJECTILES];
     Enemy      enemies[MAX_ENEMIES];
     Particle   particles[MAX_PARTICLES];
+    Pickup     pickups[MAX_PICKUPS];
     uint8_t    proj_head, enemy_head, part_head; /* Ringbuffer-Heads */
     /* Deterministischer PRNG (LCG) fuer reproduzierbare Headless-Runs */
     uint32_t rng_state;
@@ -133,5 +161,6 @@ void     core_init(GameState *s, uint32_t seed);
 void     core_tick(GameState *s, uint16_t input_mask);
 uint32_t core_rng(GameState *s);                     /* deterministischer LCG */
 int      core_dir8_from_vec(fix16_t dx, fix16_t dy); /* 0..7 (0=Ost, 2=Nord, 4=West, 6=Sued) */
+uint8_t  core_campaign_biome(const GameState *s);    /* 0..4: Kampagne-Biome (Endless: 0) */
 
 #endif /* CORE_SIM_H */

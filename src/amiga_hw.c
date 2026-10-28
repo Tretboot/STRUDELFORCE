@@ -439,6 +439,86 @@ static void tfmx_paula_stream(void)
     a[0x06] = 0x1F;                          /* AUD0ST = play        */
 }
 
+/* ----------------------------------------------------------------------------
+ * Boot-/Title-Screen (2.5 Sekunden, Fire zum Ueberspringen):
+ * 2-Ton-Titel (Orange ueber Rot, dunkelroter Schlagschatten), Diskette-Zeile
+ * und blinkender "PRESS FIRE" - im Stil des PC-Hauptmenues, auf 320x256
+ * mit 6 Bitplanes (10-Farben-OCS-Palette). Nur statische Teile 1x zeichnen,
+ * dann nur die blinkende Zeile pro VBlank (Chip-RAM-schonend).
+ * Paletten-Indizes: 0=Schwarz 1=Rot 8=Dunkelrot 13=Orange 25=Dunkelorange
+ * ---------------------------------------------------------------------------- */
+#include "retro_font.h"
+
+#define BOOT_FRAMES 125                     /* 2.5 s @ 50 Hz                */
+#define BOOT_TITLE_X 16                     /* 12 Zeichen * 3 * 8 px = 288  */
+#define BOOT_TITLE_Y 64
+#define BOOT_SUB_Y   108
+#define BOOT_DISK_Y  140
+#define BOOT_FIRE_Y  192
+
+static uint32_t boot_tick_cnt;              /* 0 = noch nicht gestartet      */
+
+static int boot_active(void) { return (int)(boot_tick_cnt < (uint32_t)BOOT_FRAMES); }
+
+static void boot_char2(int x, int y, char ch, int top, int bot, int s)
+{
+    int row, col;
+    if ((unsigned char)ch >= 128) ch = '?';
+    for (row = 0; row < 8; row++) {
+        uint8_t bits = RETRO_FONT[(unsigned char)ch][row];
+        int c = (row < 4) ? top : bot;
+        for (col = 0; col < 8; col++) {
+            if (bits & (0x80 >> col)) {
+                int dx, dy;
+                for (dy = 0; dy < s; dy++)
+                    for (dx = 0; dx < s; dx++)
+                        put_px(x + col * s + dx, y + row * s + dy, (uint8_t)c);
+            }
+        }
+    }
+}
+
+static void boot_text(int x, int y, const char *t, int c)
+{
+    int i;
+    for (i = 0; t[i]; i++) boot_char2(x + i * 8, y, t[i], c, c, 1);
+}
+
+static void boot_draw_static(void)
+{
+    int i;
+    /* Copper-Baender (dunkelrot/dunkelorange, dezent) */
+    draw_rect(0, 36, 320, 2, 8);
+    draw_rect(0, 42, 320, 2, 25);
+    draw_rect(0, 214, 320, 2, 8);
+    /* Titel: Schlagschatten + 2 Toene (pro Zeichen leichtes Wanken) */
+    for (i = 0; i < 12; i++) {
+        int ox = BOOT_TITLE_X + i * 24;
+        int oy = BOOT_TITLE_Y + ((i % 2 == 0) ? 0 : 2);
+        boot_char2(ox + 2, oy + 2, "STRUDELFORCE"[i], 8, 8, 3);
+        boot_char2(ox, oy, "STRUDELFORCE"[i], 13, 1, 3);
+    }
+    boot_text(16, BOOT_SUB_Y, "A TURRICAN TRIBUTE FOR THE AMIGA 500", 25);
+    boot_text(16, BOOT_DISK_Y, "DISK 1 : STRUDELFORCE.ADF (SINGLE DISC)", 13);
+    boot_text(16, 232, "(C) 2026 FRANK MITZKATIS & AI CODING AGENTS", 8);
+}
+
+/* Ein 50Hz-Boot-Frame; ruft main() bei jedem VBlank im Boot-Modus. */
+void amiga_hw_boot_frame(void)
+{
+    boot_tick_cnt++;
+    if (boot_tick_cnt == 1) {
+        boot_draw_static();
+        return;                              /* Planes sind MEMF_CLEAR=0 */
+    }
+    /* Blinkende Zeile: Rect loeschen, alle 25 Ticks 1x anzeigen */
+    draw_rect(88, BOOT_FIRE_Y - 2, 150, 12, 0);
+    if ((boot_tick_cnt / 25) % 2 == 1)
+        boot_text(92, BOOT_FIRE_Y, "PRESS FIRE TO START", 13);
+}
+
+void amiga_hw_boot_skip(void) { boot_tick_cnt = (uint32_t)(BOOT_FRAMES + 1); }
+
 int main(void)
 {
     static VoxelRenderItem items[1024];      /* static: 68k stack is precious */
@@ -473,6 +553,17 @@ int main(void)
             }
         }
         if (quit) break;
+
+        /* Boot-/Title-Screen: Core bleibt gefroren, Fire/Enter springt ueber */
+        if (boot_active()) {
+            if (read_paddles() & SF_INPUT_FIRE) {
+                amiga_hw_boot_skip();
+            } else {
+                amiga_hw_boot_frame();
+            }
+            tfmx_paula_stream();             /* Titelmusik laeuft mit       */
+            continue;                        /* kein Core-Tick im Boot      */
+        }
 
         core_tick(state_ptr, read_paddles());
         tfmx_paula_stream();
