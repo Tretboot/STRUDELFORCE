@@ -257,37 +257,64 @@ static void draw_line(int x0, int y0, int x1, int y1, uint32_t c) {
     }
 }
 
-/* 360-Grad Surround Holding Beam (Turrican 2 Blitzstrahl) */
+/* Funken-Burst fuer Partikeleffekte in der GUI */
+static void spawn_sparks(GameState *s, fix16_t x, fix16_t y, uint8_t color, uint8_t n) {
+    for (uint8_t i = 0; i < n; i++) {
+        Particle *pt = &s->particles[s->part_head];
+        s->part_head = (uint8_t)((s->part_head + 1) % MAX_PARTICLES);
+        pt->x = x;
+        pt->y = y;
+        pt->vx = (fix16_t)(((int32_t)(core_rng(s) & 0xFFFF) - 32768) * 4);
+        pt->vy = (fix16_t)(((int32_t)(core_rng(s) & 0xFFFF) - 32768) * 4) + FIX(1);
+        pt->active = 1;
+        pt->color = color;
+        pt->life = 15 + (uint16_t)(core_rng(s) & 15);
+    }
+}
+
+/* 360-Grad Surround Holding Beam (Turrican 2 Blitzstrahl - Authentische Hochspannungs-Optik) */
 static void draw_holding_beam(int px, int py, uint8_t angle) {
     float rad = (float)angle * (6.283185307f / 256.0f);
     float cos_a = cosf(rad);
     float sin_a = sinf(rad);
     float nx = -sin_a;
     float ny = cos_a;
-    int beam_len = 220;
-    int segments = 14;
+    int beam_len = 240;
+    int segments = 16;
 
-    /* Rotierender Emitter-Ring um das Schiff */
-    for (int a = 0; a < 6; a++) {
-        float r_ang = (float)s_gui_frame * 0.15f + (float)a * 1.047f;
-        int rx = px + (int)(cosf(r_ang) * 26.0f);
-        int ry = py + (int)(sinf(r_ang) * 18.0f);
+    /* Rotierender Hochspannungs-Emitterring an der Muendung */
+    for (int a = 0; a < 8; a++) {
+        float r_ang = (float)s_gui_frame * 0.20f + (float)a * 0.785f;
+        int rx = px + (int)(cosf(r_ang) * 16.0f);
+        int ry = py + (int)(sinf(r_ang) * 12.0f);
         set_pixel(rx, ry, (a & 1) ? 0x00FFFF : 0xFFFFFF);
-        set_pixel(rx + 1, ry, 0x00A0E0);
+        set_pixel(rx + 1, ry, 0x0090E0);
     }
 
-    /* Blitz-Strahl Segmente mit dynamischem Jitter */
+    /* Blitz-Strahl Segmente mit wild zuckendem Jitter und elektrischen Neben-Arcs */
     int prev_x = px;
     int prev_y = py;
     for (int s = 1; s <= segments; s++) {
         float dist = (float)s * ((float)beam_len / (float)segments);
-        float jit = sinf((float)s_gui_frame * 0.7f + (float)s * 1.6f) * (s < segments ? 4.5f : 0.0f);
+        /* 2-Frequenz-Jitter fuer echte Turrican-2 Blitz-Optik */
+        float jit = sinf((float)s_gui_frame * 0.85f + (float)s * 1.8f) * 5.0f
+                  + cosf((float)s_gui_frame * 1.4f + (float)s * 3.1f) * 2.5f;
+        if (s == segments) jit = 0.0f;
         int cur_x = px + (int)(cos_a * dist + nx * jit);
         int cur_y = py + (int)(sin_a * dist + ny * jit);
 
         /* Doppelter Blitzfaden (Kern weiss, Rand cyan) */
-        draw_line(prev_x, prev_y, cur_x, cur_y, 0x00E0FF);
+        draw_line(prev_x, prev_y, cur_x, cur_y, 0x00B8FF);
         draw_line(prev_x + 1, prev_y, cur_x + 1, cur_y, 0xFFFFFF);
+
+        /* Gelegentliche elektrische Seiten-Entladungen (Mini-Funkenblitze) */
+        if ((s % 3 == 0) && (s < segments - 2)) {
+            float side_dir = ((s + s_gui_frame) & 1) ? 1.0f : -1.0f;
+            int branch_x = cur_x + (int)(nx * side_dir * 12.0f);
+            int branch_y = cur_y + (int)(ny * side_dir * 12.0f);
+            draw_line(cur_x, cur_y, branch_x, branch_y, 0x60D8FF);
+            set_pixel(branch_x, branch_y, 0xFFFFFF);
+        }
 
         /* Energie-Knotenperle */
         if (s % 2 == 0) {
@@ -301,10 +328,12 @@ static void draw_holding_beam(int px, int py, uint8_t angle) {
     /* Beam-Spitze: Energetischer Treffer-Funkenstern */
     int tip_x = px + (int)(cos_a * (float)beam_len);
     int tip_y = py + (int)(sin_a * (float)beam_len);
-    draw_line(tip_x - 8, tip_y, tip_x + 8, tip_y, 0xFFFFFF);
-    draw_line(tip_x, tip_y - 8, tip_x, tip_y + 8, 0xFFFFFF);
-    draw_line(tip_x - 5, tip_y - 5, tip_x + 5, tip_y + 5, 0x00E0FF);
-    draw_line(tip_x - 5, tip_y + 5, tip_x + 5, tip_y - 5, 0x00E0FF);
+    draw_line(tip_x - 10, tip_y, tip_x + 10, tip_y, 0xFFFFFF);
+    draw_line(tip_x, tip_y - 10, tip_x, tip_y + 10, 0xFFFFFF);
+    draw_line(tip_x - 7, tip_y - 7, tip_x + 7, tip_y + 7, 0x00E0FF);
+    draw_line(tip_x - 7, tip_y + 7, tip_x + 7, tip_y - 7, 0x00E0FF);
+    draw_rect(tip_x - 2, tip_y - 2, 5, 5, 0x80FFFF);
+    set_pixel(tip_x, tip_y, 0xFFFFFF);
 }
 
 /* Dynamisches Muendungsfeuer beim Schiessen */
@@ -329,53 +358,157 @@ static void draw_muzzle_flash(int nx, int ny, uint8_t weapon) {
     }
 }
 
-/* Turrican-2 Projektil: Laser-Twin-Bolt */
-static void draw_projectile_laser(int x, int y) {
-    /* Schweif-Nachleuchten */
-    draw_rect(x - 14, y + 2, 12, 2, 0x003870);
-    draw_rect(x - 6, y + 1, 6, 4, 0x0078C0);
-    /* 2.5D Extrudierter Laser-Koerper */
-    draw_voxel(x, y - 1, 24, 7, 2, 0x00B8F0);
-    /* Reiner weisser Hochenergie-Kern */
-    draw_rect(x + 2, y + 1, 20, 3, 0xFFFFFF);
+/* Turrican-2 Kontinuierlicher Dual-Laserstrahl (WEAPON_LASER aus Sprite-Sheet 143425) */
+static void draw_turrican_laser_beam(int x0, int y0, int x1, int y1, int level) {
+    (void)y1;
+    int min_x = (x0 < x1) ? x0 : x1;
+    int max_x = (x0 < x1) ? x1 : x0;
+    if (min_x < 0) min_x = 0;
+    if (max_x > WIN_W) max_x = WIN_W;
+    int len = max_x - min_x;
+    if (len <= 0) return;
+
+    int half_h = 3 + level;
+    if (half_h > 8) half_h = 8;
+
+    /* 1. Weicher aeusserer Plasma-Halo */
+    draw_rect(min_x, y0 - half_h - 1, len, (half_h * 2) + 3, 0x003060);
+    draw_rect(min_x, y0 - half_h, len, (half_h * 2) + 1, 0x0078C0);
+
+    /* 2. Strahlkoerper: Elektrisches Cyan */
+    draw_rect(min_x, y0 - half_h + 1, len, (half_h * 2) - 1, 0x00B8F0);
+
+    /* 3. Turrican-Signatur: Parallele weisse Laser-Doppellinien */
+    draw_rect(min_x, y0 - (half_h / 2), len, 2, 0xFFFFFF);
+    draw_rect(min_x, y0 + (half_h / 2) - 1, len, 2, 0xFFFFFF);
+
+    /* 4. Pulsierende Wander-Knotenperlen entlang des Strahls */
+    int pulse_phase = (s_gui_frame * 8) % 32;
+    for (int px = min_x + pulse_phase; px < max_x; px += 32) {
+        draw_rect(px - 3, y0 - half_h, 7, (half_h * 2) + 1, 0x80FFFF);
+        draw_rect(px - 1, y0 - 1, 3, 3, 0xFFFFFF);
+    }
+
+    /* 5. Einschlag-Fokus / Spitzen-Funken am Ziel */
+    int tip_x = (x1 > x0) ? (max_x - 1) : min_x;
+    draw_line(tip_x - 8, y0, tip_x + 8, y0, 0xFFFFFF);
+    draw_line(tip_x, y0 - 8, tip_x, y0 + 8, 0xFFFFFF);
+    draw_line(tip_x - 5, y0 - 5, tip_x + 5, y0 + 5, 0x00FFFF);
+    draw_line(tip_x - 5, y0 + 5, tip_x + 5, y0 - 5, 0x00FFFF);
 }
 
-/* Turrican-2 Projektil: Spread-Shotgun-Dart */
-static void draw_projectile_spread(int x, int y) {
-    /* Funken-Schweif */
-    set_pixel(x - 8, y + 2, 0x802000);
-    set_pixel(x - 5, y + 1, 0xC04010);
-    set_pixel(x - 5, y + 3, 0xC04010);
-    /* Aerodynamischer Pfeil-Koerper */
-    draw_voxel(x - 2, y, 8, 6, 2, 0xFF6010);
-    draw_voxel(x + 4, y + 1, 8, 4, 2, 0xFFD030);
-    /* Spitzen-Highlight */
-    set_pixel(x + 11, y + 2, 0xFFFFFF);
-    set_pixel(x + 10, y + 2, 0xFFFFFF);
+/* Turrican-2 Projektil: Laser-Twin-Bolt (Doppelter Hochenergie-Laserbolzen) */
+static void draw_projectile_laser(int x, int y, int dir) {
+    int sx = (dir > 0) ? (x - 16) : (x + 16);
+    int ex = (dir > 0) ? (x + 8)  : (x - 8);
+    int min_x = (sx < ex) ? sx : ex;
+    int max_x = (sx < ex) ? ex : sx;
+
+    /* Aeusserer Cyan-Plasma-Glanz */
+    draw_rect(min_x, y - 3, max_x - min_x, 7, 0x005090);
+    draw_rect(min_x + 2, y - 2, max_x - min_x - 2, 5, 0x00A0E0);
+    /* Obere und untere Hochenergie-Strahllinie */
+    draw_rect(min_x + 4, y - 1, max_x - min_x - 3, 1, 0xFFFFFF);
+    draw_rect(min_x + 4, y + 1, max_x - min_x - 3, 1, 0xFFFFFF);
+    /* Spitzenfokus */
+    set_pixel(ex, y, 0xFFFFFF);
 }
 
-/* Turrican-2 Projektil: Bouncing Emerald Sphere */
+/* Turrican-2 Projektil: Spread-Shotgun-Dart (Authentisches Feuer-Pfeil-Design) */
+static void draw_projectile_spread(int x, int y, fix16_t vx, fix16_t vy) {
+    int dir = (vx >= 0) ? 1 : -1;
+    int tilt = (vy > (1 << 15)) ? 1 : ((vy < -(1 << 15)) ? -1 : 0);
+    uint32_t col_core = 0xFFFFFF;
+    uint32_t col_glow = 0xFFF382;
+    uint32_t col_mid  = 0xDF5D00;
+    uint32_t col_dark = 0x921C00;
+
+    /* Flackernder Funken-Schweif (Amiga Particle Trail) */
+    int flick = (s_gui_frame + x) % 3;
+    set_pixel(x - dir * 10, y + tilt * 2, col_dark);
+    if (flick == 0) {
+        set_pixel(x - dir * 7, y - 2, col_mid);
+        set_pixel(x - dir * 8, y + 2, col_dark);
+    } else if (flick == 1) {
+        set_pixel(x - dir * 7, y + 2, col_mid);
+        set_pixel(x - dir * 8, y - 2, col_dark);
+    }
+
+    /* Aerodynamischer Feuerpfeil-Koerper (orientiert in Flugrichtung) */
+    if (dir > 0) {
+        /* Nach rechts fliegend */
+        draw_rect(x - 5, y - 1 + tilt, 4, 3, col_dark);
+        draw_rect(x - 3, y - 2 + tilt, 5, 5, col_mid);
+        draw_rect(x + 1, y - 1 + tilt, 5, 3, col_glow);
+        /* Spitzen-Keil */
+        set_pixel(x + 6, y + tilt, col_core);
+        set_pixel(x + 5, y - 1 + tilt, col_glow);
+        set_pixel(x + 5, y + 1 + tilt, col_glow);
+        set_pixel(x + 2, y + tilt, col_core);
+        set_pixel(x + 3, y + tilt, col_core);
+        set_pixel(x + 4, y + tilt, col_core);
+    } else {
+        /* Nach links fliegend */
+        draw_rect(x + 2, y - 1 + tilt, 4, 3, col_dark);
+        draw_rect(x - 1, y - 2 + tilt, 5, 5, col_mid);
+        draw_rect(x - 5, y - 1 + tilt, 5, 3, col_glow);
+        /* Spitzen-Keil */
+        set_pixel(x - 6, y + tilt, col_core);
+        set_pixel(x - 5, y - 1 + tilt, col_glow);
+        set_pixel(x - 5, y + 1 + tilt, col_glow);
+        set_pixel(x - 2, y + tilt, col_core);
+        set_pixel(x - 3, y + tilt, col_core);
+        set_pixel(x - 4, y + tilt, col_core);
+    }
+}
+
+/* Turrican-2 Projektil: Bouncing Emerald Sphere (Authentische 3D-Smaragdkugel) */
 static void draw_projectile_bounce(int x, int y) {
-    /* Glanzvoller Smaragd-Voxelball */
-    draw_voxel(x, y, 14, 14, 4, 0x00C838);
-    draw_rect(x + 2, y + 2, 8, 8, 0x40FF70);
-    /* Reiner weisser Glanzpunkt (oben links) */
-    set_pixel(x + 3, y + 3, 0xFFFFFF);
-    set_pixel(x + 4, y + 3, 0xFFFFFF);
-    set_pixel(x + 3, y + 4, 0xFFFFFF);
-    /* Schattierungs-Kante unten rechts */
-    draw_rect(x + 6, y + 8, 4, 2, 0x006018);
+    /* 14x14 Kreisfoermige, vielstufig schattierte Smaragd-Kugel aus Sprite-Sheet 143425 */
+    static const uint8_t s_emerald_map[14][14] = {
+        {0,0,0,0,1,1,1,1,1,1,0,0,0,0},
+        {0,0,1,1,2,2,2,2,2,2,1,1,0,0},
+        {0,1,2,3,4,4,3,3,2,2,2,1,0},
+        {0,1,3,4,5,5,4,3,3,2,2,1,0},
+        {1,2,4,5,5,5,4,4,3,2,2,1,1,0},
+        {1,2,4,5,5,4,4,3,3,2,2,1,1,0},
+        {1,2,3,4,4,4,3,3,2,2,1,1,1,0},
+        {1,2,3,3,3,3,2,2,2,1,1,1,1,0},
+        {1,1,2,2,2,2,2,2,1,1,1,1,1,0},
+        {1,1,2,2,2,2,2,1,1,1,1,1,1,0},
+        {0,1,1,2,2,2,1,1,1,1,1,1,0},
+        {0,1,1,1,1,1,1,1,1,1,1,1,0},
+        {0,0,1,1,1,1,1,1,1,1,0,0,0,0},
+        {0,0,0,0,1,1,1,1,1,1,0,0,0,0}
+    };
+    /* Farbstufen: 0=transparent, 1=Rand, 2=Schatten, 3=Koerper, 4=Leuchten, 5=Glanzpunkt */
+    static const uint32_t s_emerald_pal[6] = {
+        0, 0x004212, 0x007824, 0x00B836, 0x42FF72, 0xFFFFFF
+    };
+
+    int ox = x - 7;
+    int oy = y - 7;
+    for (int r = 0; r < 14; r++) {
+        for (int c = 0; c < 14; c++) {
+            uint8_t idx = s_emerald_map[r][c];
+            if (idx > 0) {
+                set_pixel(ox + c, oy + r, s_emerald_pal[idx]);
+            }
+        }
+    }
 }
 
 /* Turrican-2 Projektil: Pulsierendes Feind-Plasma */
 static void draw_projectile_enemy(int x, int y) {
-    uint32_t pulse_c = ((s_gui_frame / 4) % 2 == 0) ? 0xFF2040 : 0xFF6030;
-    draw_voxel(x, y, 12, 12, 3, 0xA01020);
-    draw_rect(x + 2, y + 2, 6, 6, pulse_c);
-    set_pixel(x + 4, y + 4, 0xFFFFFF);
-    set_pixel(x + 5, y + 4, 0xFFFFFF);
+    uint32_t pulse_c = ((s_gui_frame / 4) % 2 == 0) ? 0xFF3050 : 0xFF7030;
+    /* 10x10 Plasma-Flammenball */
+    draw_rect(x - 4, y - 3, 9, 7, 0x600020);
+    draw_rect(x - 3, y - 4, 7, 9, 0x600020);
+    draw_rect(x - 3, y - 2, 7, 5, pulse_c);
+    draw_rect(x - 2, y - 3, 5, 7, pulse_c);
+    draw_rect(x - 1, y - 1, 3, 3, 0xFFD080);
+    set_pixel(x, y, 0xFFFFFF);
 }
-
 /* HUD Retro-Waffen-Badge mit Power-LED-Leiste */
 static void draw_weapon_hud_badge(int x, int y, uint8_t weapon, uint8_t level) {
     /* 2.5D Badge-Rahmen */
@@ -505,8 +638,96 @@ static const EmbeddedTrack EMBEDDED_TRACKS[] = {
     { EMB_MOD_BLUE_MONDAY_KGB_NAME,   EMB_MOD_BLUE_MONDAY_KGB,   sizeof(EMB_MOD_BLUE_MONDAY_KGB),   NULL,                     0,                                1 }, /* 11: New Order - in the blue (KGB) */
     { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 12: New Order - blue-monday (chip tune) */
     { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                     0,                                1 }, /* 13: Wing Commander Combat */
-    { EMB_MOD_WC_OVERALLVICTORY_NAME, EMB_MOD_WC_OVERALLVICTORY, sizeof(EMB_MOD_WC_OVERALLVICTORY), NULL,                     0,                                1 }, /* 14: Wing Commander Victory */
+    { EMB_MOD_FAIRLIGHT_NAME,         EMB_MOD_FAIRLIGHT,         sizeof(EMB_MOD_FAIRLIGHT),         NULL,                     0,                                1 }, /* 14: Fairlight Amiga Cracktro */
+    { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 15: Skidrow Cracktro 10 */
+    { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 16: Paradox Cracktro 12 */
 };
+#define TRACK_IDX_FAIRLIGHT 14
+#define TRACK_IDX_SKIDROW   15
+#define TRACK_IDX_PARADOX   16
+
+/* ============================================================================
+ * DJ CROSSFADE ENGINE (Weiches Amiga DJ-Ineinander-Ueberblenden)
+ * ============================================================================ */
+#define DJ_XFADE_FRAMES 28 /* ca. 560ms butterweicher PAL-Crossfade */
+static int16_t s_xfade_tail[WIN_AUDIO_BUF_SAMPLES] = {0};
+static int     s_xfade_active = 0;
+static int     s_xfade_frame = 0;
+static int16_t s_last_audio_frame[WIN_AUDIO_BUF_SAMPLES] = {0};
+
+static void trigger_dj_crossfade(void) {
+    memcpy(s_xfade_tail, s_last_audio_frame, sizeof(s_xfade_tail));
+    s_xfade_active = 1;
+    s_xfade_frame = 0;
+}
+
+static void apply_dj_crossfade(int16_t *buf, int n) {
+    if (!s_xfade_active) return;
+    float t = (float)s_xfade_frame / (float)DJ_XFADE_FRAMES;
+    if (t > 1.0f) t = 1.0f;
+    float gain_in = sinf(t * 1.5707963f);
+    float gain_out = cosf(t * 1.5707963f);
+
+    for (int i = 0; i < n; i++) {
+        float mixed = (float)buf[i] * gain_in + (float)s_xfade_tail[i] * gain_out;
+        if (mixed > 32767.0f) mixed = 32767.0f;
+        else if (mixed < -32768.0f) mixed = -32768.0f;
+        buf[i] = (int16_t)mixed;
+        s_xfade_tail[i] = (int16_t)((float)s_xfade_tail[i] * 0.92f);
+    }
+    s_xfade_frame++;
+    if (s_xfade_frame >= DJ_XFADE_FRAMES) {
+        s_xfade_active = 0;
+    }
+}
+
+/* ============================================================================
+ * SUPERSAW LEAD SYNTHESIZER (7-Oszillator Detune Lead fuer Strudel Live-Coding)
+ * ============================================================================ */
+typedef struct {
+    uint8_t  enabled;
+    int16_t  note;
+    uint32_t phases[7];
+    uint32_t phase_inc[7];
+    int32_t  lp_state;
+    int      ticks_active;
+    float    detune;
+} SuperSawEngine;
+
+static SuperSawEngine s_supersaw = { 1, 36, {0}, {0}, 0, 0, 0.038f };
+
+static void supersaw_trigger(SuperSawEngine *ss, int16_t note) {
+    if (note < 12 || note > 108) return;
+    ss->note = note;
+    ss->ticks_active = 22; /* 440ms Gate */
+    float base_freq = 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
+    static const float s_detune_ratios[7] = {
+        0.0f, -0.012f, 0.012f, -0.026f, 0.026f, -0.045f, 0.045f
+    };
+    for (int k = 0; k < 7; k++) {
+        float f = base_freq * (1.0f + s_detune_ratios[k] * ss->detune * 25.0f);
+        ss->phase_inc[k] = (uint32_t)((f * 65536.0f * 65536.0f) / (float)GAME_AUDIO_RATE);
+    }
+}
+
+static void supersaw_render(SuperSawEngine *ss, int16_t *buf, int n, int16_t volume) {
+    if (!ss->enabled || ss->ticks_active <= 0 || volume <= 0) return;
+    for (int i = 0; i < n; i++) {
+        int32_t sum_saw = 0;
+        for (int k = 0; k < 7; k++) {
+            int16_t saw = (int16_t)(((ss->phases[k] >> 16) & 0xFFFF) - 32768);
+            sum_saw += saw;
+            ss->phases[k] += ss->phase_inc[k];
+        }
+        int32_t avg_saw = sum_saw / 7;
+        ss->lp_state += (avg_saw - ss->lp_state) >> 3;
+        int32_t out_val = (ss->lp_state * volume) >> 8;
+        int32_t mixed = buf[i] + out_val;
+        if (mixed > 32767) mixed = 32767;
+        else if (mixed < -32768) mixed = -32768;
+        buf[i] = (int16_t)mixed;
+    }
+}
 #define EMBEDDED_TRACK_COUNT (int)(sizeof(EMBEDDED_TRACKS) / sizeof(EMBEDDED_TRACKS[0]))
 
 static int s_current_subsong = 0;
@@ -516,6 +737,7 @@ static int s_last_subsong_reason = -1;
 static int music_play_embedded(int idx, int subsong) {
     if (idx < 0 || idx >= EMBEDDED_TRACK_COUNT) idx = 0;
     const EmbeddedTrack *t = &EMBEDDED_TRACKS[idx];
+    trigger_dj_crossfade();
     s_mod_active = 0;
     s_tfmx_active = 0;
 
@@ -564,6 +786,7 @@ static void music_subsong_switch(int subsong) {
     if (subsong >= s_tfmx.num_subsongs) subsong = 0;
     if (s_current_subsong == subsong) return;
 
+    trigger_dj_crossfade();
     s_current_subsong = subsong;
     tfmx_player_start(&s_tfmx, (uint8_t)subsong);
     s_music_toast_timer = 180;
@@ -1340,14 +1563,13 @@ typedef struct {
 } CreditSongStep;
 
 static const CreditSongStep s_credit_playlist[] = {
-    { 9, 21 }, /* Software Manager - Msx (Subsong 21 - Melodic Credits Theme) */
-    { 10, 0 }, /* Lost Patrol - tunev1 (Soundtracker Classic) */
-    { 4,  0 }, /* Turrican 2 - Cave (Subterranean Atmosphere) */
-    { 11, 0 }, /* New Order - in the blue (KGB) (80s Synthpop Masterpiece) */
-    { 9,  0 }, /* Software Manager - Msx (Subsong 0 - Main Theme) */
-    { 3,  0 }, /* Turrican 2 - Desert (Surface Battle Anthem) */
-    { 0,  0 }, /* Apidya - Meadow (Pastoral Synthesis) */
-    { 14, 0 }  /* Wing Commander - Overall Victory (Classic Fanfare) */
+    { 9,  0 }, /* 1. Software Manager - Msx (Subsong 0 - Intro & Amiga Exploration) */
+    { 9, 21 }, /* 2. Software Manager - Msx (Subsong 21 - Deep Melodic Reflection) */
+    { 4,  0 }, /* 3. Turrican 2 - Cave (Subterranean Atmosphere) */
+    { 11, 0 }, /* 4. New Order - in the blue (KGB) (80s Synthpop Masterpiece) */
+    { 14, 0 }, /* 5. Fairlight - Amiga Cracktro Classic (Chip Masterpiece) */
+    { 3,  0 }, /* 6. Turrican 2 - Desert (Surface Battle Anthem) */
+    { 0,  0 }  /* 7. Apidya - Meadow (Pastoral Synthesis) */
 };
 #define CREDIT_PLAYLIST_COUNT (int)(sizeof(s_credit_playlist) / sizeof(s_credit_playlist[0]))
 
@@ -1488,23 +1710,9 @@ static void credits_init(void) {
     credits_add_line("    [ ESC / ENTER ]   Zurueck zum Hauptmenue");
     credits_add_line("");
 
-    /* Vollstaendige In-Binary Einbettung des Workflow Essays */
-    credits_add_line("============================================================================");
-    credits_add_line("    TEIL 1: WORKFLOW ESSAY (ARCHITEKTUR & FORSCHUNGSBERICHT)");
-    credits_add_line("============================================================================");
-    credits_add_line("");
-    for (int i = 0; i < EMBEDDED_WORKFLOW_ESSAY_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 50; i++) {
-        credits_add_line(EMBEDDED_WORKFLOW_ESSAY[i]);
-    }
-
-    /* Vollstaendige In-Binary Einbettung des Captains Logs */
-    credits_add_line("");
-    credits_add_line("============================================================================");
-    credits_add_line("    TEIL 2: CAPTAIN'S LOG (FORSCHUNGSTAGEBUCH)");
-    credits_add_line("============================================================================");
-    credits_add_line("");
-    for (int i = 0; i < EMBEDDED_CAPTAINS_LOG_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 50; i++) {
-        credits_add_line(EMBEDDED_CAPTAINS_LOG[i]);
+    /* Vollstaendige In-Binary Einbettung des gesamten Archivs (Lore, TFMX Specs, Workflow, Log) */
+    for (int i = 0; i < EMBEDDED_CREDITS_TOTAL_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 50; i++) {
+        credits_add_line(EMBEDDED_CREDITS_ALL[i]);
     }
 
     credits_add_line("");
@@ -1574,7 +1782,15 @@ static void render_state_credits(void) {
     if (!s_credit_paused) {
         s_credit_scroll_y += 1;
         s_credit_music_timer++;
-        if (s_credit_music_timer >= 1800) { /* ca. 36 Sekunden pro Track */
+
+        /* Wenn die Luecke zwischen Kapitel II und III erreicht wird (oder nach ~40s):
+         * Nahtloser DJ-Wechsel von Software Manager Subsong 0 auf Subsong 21! */
+        int cur_top_line = s_credit_scroll_y / line_h;
+        if (s_credit_music_step == 0 && (cur_top_line >= (45 + EMBEDDED_CREDITS_GAP_LINE) || s_credit_music_timer >= 2000)) {
+            s_credit_music_step = 1; /* Subsong 21 */
+            s_credit_music_timer = 0;
+            music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
+        } else if (s_credit_music_step > 0 && s_credit_music_timer >= 2200) {
             s_credit_music_timer = 0;
             s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
             music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
@@ -2310,6 +2526,15 @@ static void render_tab_game(void) {
         if (s_game.fire_cooldown > 0 && !s_game.morphing) {
             draw_muzzle_flash(nozzle_x, nozzle_y, s_game.weapon);
         }
+
+        /* Turrican 2 Kontinuierlicher Dual-Laserstrahl (WEAPON_LASER) */
+        if (s_game.weapon == WEAPON_LASER && s_game.fire_cooldown > 0 && !s_game.morphing) {
+            int lvl = (int)s_game.weapon_level - 1;
+            if (lvl < 0) lvl = 0; if (lvl > 4) lvl = 4;
+            int beam_len_px = 320 + lvl * 160;
+            int end_x = nozzle_x + (dir > 0 ? beam_len_px : -beam_len_px);
+            draw_turrican_laser_beam(nozzle_x, nozzle_y, end_x, nozzle_y, lvl + 1);
+        }
     } /* Ende player_visible */
 
     /* 360-Grad Surround Holding Beam (Turrican 2 ALT / Controller X) */
@@ -2352,14 +2577,17 @@ static void render_tab_game(void) {
         int bx = (int)(((int64_t)b->x * 20) >> 16) - cam_x;
         int by = ground_y - 40 - (int)(((int64_t)b->y * 16) >> 16);
 
+        /* Viewport Culling: Nur zeichnen wenn im sichtbaren Bildschirmbereich */
+        if (bx < -32 || bx > WIN_W + 32 || by < 36 || by > WIN_H) continue;
+
         if (b->kind == PROJ_BOUNCE) {
             draw_projectile_bounce(bx, by);
         } else if (b->kind == PROJ_ENEMY) {
             draw_projectile_enemy(bx, by);
-        } else if (s_game.weapon == WEAPON_LASER || b->vx > (9 << 16)) {
-            draw_projectile_laser(bx, by);
+        } else if (b->vx > (9 << 16) || b->vx < -(9 << 16)) {
+            draw_projectile_laser(bx, by, (b->vx >= 0) ? 1 : -1);
         } else {
-            draw_projectile_spread(bx, by);
+            draw_projectile_spread(bx, by, b->vx, b->vy);
         }
     }
 
@@ -2664,15 +2892,25 @@ static void render_tab_strudel(void) {
     }
 
     /* Buttons */
-    draw_button(50, 215, 260, 36, "[ ENTER: PATTERN ANWENDEN ]", 1, 0);
-    draw_button(330, 215, 260, 36, "[ PRESET: THE GREAT BATH ]", 0, 0);
-    draw_button(610, 215, 240, 36, "[ PRESET: APIDYA MEADOW ]", 0, 0);
-    draw_button(870, 215, 200, 36, "[ DATEI SPEICHERN ]", 0, 0);
+    draw_button(50, 215, 220, 36, s_supersaw.enabled ? "[ F5: SUPERSAW: AN ]" : "[ F5: SUPERSAW: AUS ]", s_supersaw.enabled ? 1 : 0, 0);
+    draw_button(280, 215, 200, 36, "[ ENTER: ANWENDEN ]", 1, 0);
+    draw_button(490, 215, 180, 36, "[ 1: GREAT BATH ]", 0, 0);
+    draw_button(680, 215, 180, 36, "[ 2: STRANGER ]", 0, 0);
+    draw_button(870, 215, 180, 36, "[ 3: TRANCE ]", 0, 0);
+    draw_button(1060, 215, 170, 36, "[ 4: ACID SAW ]", 0, 0);
 
     /* 16-Step Sequencer LED Visualizer */
     draw_string(50, 280, "16-STEP PAL ZYKLUS-SEQUENCER (50Hz VBLANK):", 0xFFE040, 1);
 
     int cur_step = s_livecode.step_in_cycle;
+    int16_t c_note = livecode_current_note(&s_livecode);
+    static int s_prev_strudel_step = -1;
+    if (s_prev_strudel_step != cur_step) {
+        s_prev_strudel_step = cur_step;
+        if (c_note > 0 && s_supersaw.enabled) {
+            supersaw_trigger(&s_supersaw, c_note);
+        }
+    }
     for (int s = 0; s < 16; s++) {
         int lx = 50 + s * 72;
         int ly = 310;
@@ -2692,7 +2930,6 @@ static void render_tab_strudel(void) {
 
     /* Aktuelle MIDI Note */
     char note_info[256];
-    int16_t c_note = livecode_current_note(&s_livecode);
     snprintf(note_info, sizeof(note_info), "Aktuelle Bass-Note: %d | Zyklus: %u | Pending Swap: %s",
              c_note, s_livecode.cycle_num, s_livecode.have_pending ? "JA (am Zyklusrand)" : "NEIN");
     draw_string(50, 400, note_info, 0x80FFA0, 1);
@@ -2709,6 +2946,13 @@ static void render_tab_strudel(void) {
 /* --- TAB 4: Amiga Copper Intro View --- */
 static void render_tab_intro(void) {
     draw_rect(0, 36, WIN_W, WIN_H - 60, 0x000018);
+
+    /* Wenn noch kein Cracktro laeuft, automatisch Fairlight Cracktro anwerfen */
+    static int s_intro_mod_started = 0;
+    if (!s_intro_mod_started) {
+        s_intro_mod_started = 1;
+        music_play_embedded(TRACK_IDX_FAIRLIGHT, 0);
+    }
 
     /* 3 Bouncing Copperbars (GUI-Frame-Quelle: laeuft in ALLEN Tabs, nicht nur im Game) */
     float y1 = 360.0f + 160.0f * sinf((float)s_gui_frame * 0.05f);
@@ -2739,6 +2983,16 @@ static void render_tab_intro(void) {
 
         uint32_t col = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
         draw_rect(0, y, WIN_W, 1, col);
+    }
+
+    /* Cracktro Banner */
+    draw_rect(180, 92, 920, 48, 0x000E24);
+    draw_rect_outline(180, 92, 920, 48, 0x00FFFF);
+    draw_string(210, 102, ">>> COMMODORE AMIGA 500 CRACKTRO JUKEBOX (PROTRACKER 4-KANAL) <<<", 0x00FFFF, 1);
+    {
+        char cr_buf[140];
+        snprintf(cr_buf, sizeof(cr_buf), "TRACK: %s  |  [ LEERTASTE / M / N : WECHSELN ]", s_current_track_name);
+        draw_string(210, 120, cr_buf, 0xFFE040, 1);
     }
 
     /* Amiga Logo */
@@ -2811,6 +3065,26 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 if (s_gui_state != GUI_STATE_MENU && s_gui_state != GUI_STATE_LOADING)
                     s_gui_state = GUI_STATE_MENU;
                 return 0;
+            }
+
+            /* Tastatur-Kuerzel fuer Studio-Tabs */
+            if (s_gui_state == GUI_STATE_STUDIO) {
+                if (s_current_tab == TAB_INTRO) {
+                    if (wParam == VK_SPACE || wParam == 'M' || wParam == 'N') {
+                        static int s_intro_trk_step = 0;
+                        s_intro_trk_step = (s_intro_trk_step + 1) % 3;
+                        int trk = (s_intro_trk_step == 0) ? TRACK_IDX_FAIRLIGHT :
+                                  (s_intro_trk_step == 1) ? TRACK_IDX_SKIDROW : TRACK_IDX_PARADOX;
+                        music_play_embedded(trk, 0);
+                        return 0;
+                    }
+                } else if (s_current_tab == TAB_STRUDEL) {
+                    if (wParam == VK_F5) {
+                        s_supersaw.enabled = !s_supersaw.enabled;
+                        snprintf(s_status_msg, sizeof(s_status_msg), "SuperSaw Overdub: %s", s_supersaw.enabled ? "AKTIV (7-Osc)" : "AUS");
+                        return 0;
+                    }
+                }
             }
 
             /* M / N: Track wechseln | K / SHIFT+M: Subsong wechseln */
@@ -3266,29 +3540,32 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     if (idx < 0) idx = 0;
                     if (idx > len) idx = len;
                     s_strudel_cursor = idx;
-                } else if (mx >= 50 && mx <= 310 && my >= 215 && my <= 251) {
+                } else if (mx >= 50 && mx <= 270 && my >= 215 && my <= 251) {
+                    s_supersaw.enabled = !s_supersaw.enabled;
+                    snprintf(s_status_msg, sizeof(s_status_msg), "SuperSaw Overdub: %s", s_supersaw.enabled ? "AKTIV (7-Osc)" : "AUS");
+                } else if (mx >= 280 && mx <= 480 && my >= 215 && my <= 251) {
                     apply_strudel_code(&s_livecode, s_strudel_input);
                     snprintf(s_status_msg, sizeof(s_status_msg), "Pattern angewendet: %s", s_strudel_input);
-                } else if (mx >= 330 && mx <= 590 && my >= 215 && my <= 251) {
+                } else if (mx >= 490 && mx <= 670 && my >= 215 && my <= 251) {
                     strcpy(s_strudel_input, "<c3 eb3 g3 f3> [g3 c4 eb4 g4]*2 <ab2 bb2 c3 d3>");
                     s_strudel_cursor = (int)strlen(s_strudel_input);
                     apply_strudel_code(&s_livecode, s_strudel_input);
-                    snprintf(s_status_msg, sizeof(s_status_msg), "The Great Bath Tribute geladen!");
-                } else if (mx >= 610 && mx <= 850 && my >= 215 && my <= 251) {
-                    strcpy(s_strudel_input, "<[eb2 eb2 eb2 eb2] [eb2 bb2 eb2 eb2] [c#2 c#2 c#2 c#2]>");
+                    snprintf(s_status_msg, sizeof(s_status_msg), "Preset 1: The Great Bath Tribute geladen!");
+                } else if (mx >= 680 && mx <= 860 && my >= 215 && my <= 251) {
+                    strcpy(s_strudel_input, "c3 [e3 g3] b3 [c4 b3] [g3 e3]");
                     s_strudel_cursor = (int)strlen(s_strudel_input);
                     apply_strudel_code(&s_livecode, s_strudel_input);
-                    snprintf(s_status_msg, sizeof(s_status_msg), "Apidya Meadow Bassline geladen!");
-                } else if (mx >= 870 && mx <= 1070 && my >= 215 && my <= 251) {
-                    FILE *f = fopen("user_pattern.strudel", "w");
-                    if (f) {
-                        fputs(s_strudel_input, f);
-                        fputc('\n', f);
-                        fclose(f);
-                        snprintf(s_status_msg, sizeof(s_status_msg), "Gespeichert in: user_pattern.strudel");
-                    } else {
-                        snprintf(s_status_msg, sizeof(s_status_msg), "Fehler beim Speichern!");
-                    }
+                    snprintf(s_status_msg, sizeof(s_status_msg), "Preset 2: Stranger Things Theme geladen!");
+                } else if (mx >= 870 && mx <= 1050 && my >= 215 && my <= 251) {
+                    strcpy(s_strudel_input, "[c3 c4] [eb3 eb4] [g3 g4]*2 <bb3 g3(3,8)>");
+                    s_strudel_cursor = (int)strlen(s_strudel_input);
+                    apply_strudel_code(&s_livecode, s_strudel_input);
+                    snprintf(s_status_msg, sizeof(s_status_msg), "Preset 3: Cyber Trance Anthem geladen!");
+                } else if (mx >= 1060 && mx <= 1230 && my >= 215 && my <= 251) {
+                    strcpy(s_strudel_input, "<c2 c3> [eb2 g2 c3]*2 <bb2 ab2(5,8)>");
+                    s_strudel_cursor = (int)strlen(s_strudel_input);
+                    apply_strudel_code(&s_livecode, s_strudel_input);
+                    snprintf(s_status_msg, sizeof(s_status_msg), "Preset 4: Acid SuperSaw Lead geladen!");
                 }
             }
             break;
@@ -3843,7 +4120,102 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         }
                     }
 
+                    /* Turrican 2 Steuerbarer Drehlaser (Blitzstrahl):
+                     * Bei gehaltenem Beam (ALT / Pad X) bleibt der Spieler stehen.
+                     * Links/Rechts dreht den Strahl (CCW / CW), Oben/Unten lenkt vertikal,
+                     * Rechter Analogstick erlaubt direkte 360-Grad Praezisionspeilung!
+                     * Wenn keine Richtung gedrueckt wird: Strahl bleibt stabil ausgerichtet! */
+                    static float s_steered_beam_angle = 0.0f;
+                    if (mask & INPUT_SECOND) {
+                        int pad_aimed = 0;
+                        if (s_pad_connected) {
+                            XINPUT_STATE xs_aim;
+                            if (XInputGetState(0, &xs_aim) == ERROR_SUCCESS) {
+                                int rx = (int)xs_aim.Gamepad.sThumbRX;
+                                int ry = (int)xs_aim.Gamepad.sThumbRY;
+                                if (rx * rx + ry * ry < 6000 * 6000) {
+                                    rx = (int)xs_aim.Gamepad.sThumbLX;
+                                    ry = (int)xs_aim.Gamepad.sThumbLY;
+                                }
+                                if (rx * rx + ry * ry > 6000 * 6000) {
+                                    float rad = atan2f(-(float)ry, (float)rx);
+                                    if (rad < 0.0f) rad += 6.283185307f;
+                                    s_steered_beam_angle = rad * (256.0f / 6.283185307f);
+                                    pad_aimed = 1;
+                                }
+                            }
+                        }
+                        /* Im Drehlaser-Modus bleibt der Krieger fixiert stehen (Turrican 2) */
+                        mask &= ~(INPUT_LEFT | INPUT_RIGHT);
+
+                        if (!pad_aimed) {
+                            if (GetAsyncKeyState('A') & 0x8000 || GetAsyncKeyState(VK_LEFT) & 0x8000) {
+                                s_steered_beam_angle -= 4.0f;
+                            }
+                            if (GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000) {
+                                s_steered_beam_angle += 4.0f;
+                            }
+                            if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000) {
+                                float diff = 192.0f - s_steered_beam_angle;
+                                while (diff > 128.0f) diff -= 256.0f;
+                                while (diff < -128.0f) diff += 256.0f;
+                                s_steered_beam_angle += (diff > 0.0f ? 4.0f : -4.0f);
+                            }
+                            if (GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000) {
+                                float diff = 64.0f - s_steered_beam_angle;
+                                while (diff > 128.0f) diff -= 256.0f;
+                                while (diff < -128.0f) diff += 256.0f;
+                                s_steered_beam_angle += (diff > 0.0f ? 4.0f : -4.0f);
+                            }
+                        }
+                        while (s_steered_beam_angle < 0.0f) s_steered_beam_angle += 256.0f;
+                        while (s_steered_beam_angle >= 256.0f) s_steered_beam_angle -= 256.0f;
+                        s_game.beam_angle = (uint8_t)(((int)s_steered_beam_angle) & 255);
+                    }
+
                     core_tick(&s_game, mask);
+
+                    if (mask & INPUT_SECOND) {
+                        s_game.beam_angle = (uint8_t)(((int)s_steered_beam_angle) & 255);
+
+                        /* Steered Beam Treffer-Erkennung gegen Gegner im Strahl */
+                        if (s_game.tick % 4 == 0) {
+                            float rad = (float)s_game.beam_angle * (6.283185307f / 256.0f);
+                            float cos_a = cosf(rad);
+                            float sin_a = sinf(rad);
+                            fix16_t b_cos = (fix16_t)(cos_a * 65536.0f);
+                            fix16_t b_sin = (fix16_t)(-sin_a * 65536.0f);
+                            for (int ei = 0; ei < MAX_ENEMIES; ei++) {
+                                Enemy *e = &s_game.enemies[ei];
+                                if (!e->active) continue;
+                                fix16_t edx = e->x - s_game.px;
+                                fix16_t edy = e->y - s_game.py;
+                                int64_t proj = ((int64_t)edx * b_cos + (int64_t)edy * b_sin) >> 16;
+                                if (proj > 0 && proj < (11 << 16)) {
+                                    int64_t perp = ((int64_t)edx * b_sin - (int64_t)edy * b_cos) >> 16;
+                                    if (perp < 0) perp = -perp;
+                                    if (perp < (fix16_t)(1.6f * 65536.0f)) {
+                                        if (e->hp > 1) e->hp -= 1; else e->hp = 0;
+                                        spawn_sparks(&s_game, e->x, e->y + FIX(1), 2, 4);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    /* Bereinigung nicht-prallender Projektile an den Grenzen im Spiel */
+                    for (int pi = 0; pi < MAX_PROJECTILES; pi++) {
+                        Projectile *p = &s_game.projectiles[pi];
+                        if (!p->active) continue;
+                        if (p->kind != PROJ_BOUNCE) {
+                            if (p->x <= FIX(1) || p->x >= s_game.world_w - FIX(1) ||
+                                p->y <= FIX(1) || p->y >= s_game.world_h - FIX(1)) {
+                                p->active = 0;
+                                spawn_sparks(&s_game, p->x, p->y, 2, 2);
+                            }
+                        }
+                    }
+
                     livecode_tick(&s_livecode);
                     if (s_music_toast_timer > 0) s_music_toast_timer--;
 
@@ -3970,6 +4342,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 } else {
                     game_audio_render(&s_audio, abuf, WIN_AUDIO_BUF_SAMPLES);
                 }
+                /* Strudel SuperSaw Overdub (Lead Synthesizer) */
+                if (s_supersaw.enabled && (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_STRUDEL)) {
+                    supersaw_render(&s_supersaw, abuf, WIN_AUDIO_BUF_SAMPLES, 150);
+                }
+
+                /* DJ Crossfade (blendet alte Audio-Spur weich ueber neue) */
+                apply_dj_crossfade(abuf, WIN_AUDIO_BUF_SAMPLES);
+                memcpy(s_last_audio_frame, abuf, sizeof(s_last_audio_frame));
+
                 /* Soundgodizer (Stereo) oder Mono-Duplizierung */
                 if (s_god.enabled) {
                     god_process(&s_god, abuf, WIN_AUDIO_BUF_SAMPLES, s_god_buf);

@@ -44,7 +44,9 @@ TRACKS = [
     ("MOD_BLUE_MONDAY_KGB",  "mod",  "MOD/Pop Songs/- Dance and Pop/1980s/New Order/- in the blue (KGB).mod"),
     ("MOD_BLUE_MONDAY_CHIP", "mod",  "MOD/Pop Songs/- Dance and Pop/1980s/New Order/blue-monday (chip tune).mod"),
     ("MOD_WC_REGULARCOMBAT", "mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_regularcombat.mod"),
-    ("MOD_WC_OVERALLVICTORY","mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_overallvictory.mod"),
+    ("MOD_FAIRLIGHT",        "mod",  "MOD/Cracktro/Mod.Fairlight.Mod"),
+    ("MOD_SKIDROW",          "mod",  "MOD/Cracktro/Mod.Skidrow Crack10.Mod"),
+    ("MOD_PARADOX",          "mod",  "MOD/Cracktro/Mod.Paradox Crack 12.Mod"),
 ]
 
 NAMES = {
@@ -72,7 +74,9 @@ NAMES = {
     "MOD_BLUE_MONDAY_KGB":   "New Order - in the blue (KGB) (MOD)",
     "MOD_BLUE_MONDAY_CHIP":  "New Order - blue-monday (chip tune) (MOD)",
     "MOD_WC_REGULARCOMBAT":  "Wing Commander - Regular Combat (MOD)",
-    "MOD_WC_OVERALLVICTORY": "Wing Commander - Overall Victory (MOD)",
+    "MOD_FAIRLIGHT":         "Fairlight - Amiga Cracktro (MOD)",
+    "MOD_SKIDROW":           "Skidrow - Cracktro 10 (MOD)",
+    "MOD_PARADOX":           "Paradox - Cracktro 12 (MOD)",
 }
 
 
