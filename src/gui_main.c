@@ -540,6 +540,9 @@ static void playlist_scan_rec(const char *dir, int depth) {
 
     do {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        /* Blacklist Werbe- und defekte Tracks (Karamalz, Ooops Up) */
+        if (strstr(dir, "Karamalz") || strstr(dir, "Ooops") ||
+            strstr(fd.cFileName, "Karamalz") || strstr(fd.cFileName, "Ooops")) continue;
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             char sub[300];
             if (depth < 3) {
@@ -1101,6 +1104,138 @@ static void render_game_over_overlay(void) {
     }
 }
 
+/* ============================================================================
+ * TURRICAN BREN MCGUIRE: ZWEIBEINIGER CYBER-KRIEGER & MORPH-RAD (2.5D VOXEL)
+ * ============================================================================ */
+static void draw_player_warrior(int px, int foot_y, int facing, int on_ground, int running, int morphing) {
+    int dir = (facing < 0) ? -1 : 1;
+    uint32_t armor_main = 0x3858B8;  /* Turrican Stahlblau */
+    uint32_t armor_hi   = 0x6088D8;  /* Glanzkante */
+    uint32_t armor_dark = 0x203860;  /* Schattenkante */
+    uint32_t chassis    = 0x182430;  /* Gelenke / Chassis */
+    uint32_t visor_c    = 0x00E0FF;  /* HUD-Visor Cyan */
+    uint32_t core_c     = ((s_gui_frame / 8) % 2 == 0) ? 0x00FF80 : 0x40FFA0; /* Reaktorkern */
+
+    if (morphing) {
+        /* ================= 1. MORPH-BALL (TURRICAN GYRO-RAD) ================= */
+        int cy = foot_y - 12;
+        float spin = (float)s_gui_frame * 0.45f * (float)dir;
+
+        /* Aeusserer rotierender Voxel-Ring */
+        draw_voxel(px - 10, cy - 10, 20, 20, 3, armor_main);
+        draw_rect_outline(px - 9, cy - 9, 18, 18, armor_hi);
+        draw_rect_outline(px - 7, cy - 7, 14, 14, chassis);
+
+        /* Rotierende Speichen / Energiefurchen */
+        for (int spk = 0; spk < 4; spk++) {
+            float a = spin + (float)spk * 1.5707963f;
+            int sx = px + (int)(cosf(a) * 7.0f);
+            int sy = cy + (int)(sinf(a) * 7.0f);
+            draw_line(px, cy, sx, sy, visor_c);
+        }
+
+        /* Fusion-Kern */
+        draw_rect(px - 2, cy - 2, 5, 5, 0xFFFFFF);
+        set_pixel(px, cy, 0x00FFFF);
+
+        /* Reibungs-Funken am Boden beim Rollen */
+        if (running) {
+            for (int f = 0; f < 3; f++) {
+                int fx = px - dir * (8 + f * 5) + ((s_gui_frame * 3 + f * 7) % 5);
+                int fy = foot_y - 2 + (f % 2);
+                set_pixel(fx, fy, (f & 1) ? 0xFFFFA0 : 0xFF6020);
+            }
+        }
+        return;
+    }
+
+    /* ================= 2. ZWEIBEINIGER CYBER-KRIEGER (TURRICAN BREN MCGUIRE) ================= */
+    int idle_bob = (on_ground && !running) ? (int)(sinf((float)s_gui_frame * 0.12f) * 1.5f) : 0;
+    int top_y = foot_y - 40 + idle_bob;
+
+    /* --- HELM & VISOR (Kopf) --- */
+    int head_x = px - 6;
+    int head_y = top_y;
+    draw_voxel(head_x, head_y, 13, 10, 3, armor_main);
+    /* Helm-Kamm / Antenne */
+    draw_rect(head_x + 3, head_y - 3, 5, 3, armor_hi);
+    /* Leuchtender Cyan-Visor (in Blickrichtung orientiert) */
+    int vx = (dir > 0) ? (head_x + 6) : (head_x + 1);
+    draw_rect(vx, head_y + 3, 6, 3, visor_c);
+    set_pixel(vx + (dir > 0 ? 3 : 1), head_y + 3, 0xFFFFFF);
+
+    /* --- TORSO & BRUSTPANZER (mit Fusionsreaktor) --- */
+    int chest_x = px - 8;
+    int chest_y = head_y + 10;
+    draw_voxel(chest_x, chest_y, 16, 14, 4, armor_main);
+    /* Schulterstueck (Puldron) */
+    draw_voxel(px + (dir > 0 ? 5 : -11), chest_y - 1, 7, 7, 2, armor_hi);
+    /* Zentraler Fusionskern */
+    draw_rect(chest_x + 5, chest_y + 4, 6, 6, core_c);
+    set_pixel(chest_x + 7, chest_y + 6, 0xFFFFFF);
+    /* Guertel / Hueftgelenk */
+    draw_rect(chest_x + 2, chest_y + 13, 12, 3, chassis);
+
+    /* --- BEINE & MAGNET-STIEFEL (Run-Cycle / Jump / Idle) --- */
+    int leg_y = chest_y + 15;
+    if (!on_ground) {
+        /* Sprung-Pose: Beine angewinkelt mit Boot-Thruster Jets */
+        draw_voxel(px - dir * 6, leg_y, 6, 8, 2, armor_dark);
+        draw_voxel(px - dir * 4, leg_y + 6, 7, 5, 2, armor_main);
+        draw_voxel(px + dir * 2, leg_y + 2, 7, 10, 2, armor_main);
+        draw_voxel(px + dir * 4, leg_y + 10, 8, 5, 2, armor_hi);
+
+        /* Boot-Thruster Flame / Partikel nach unten */
+        for (int th = 0; th < 2; th++) {
+            int tx = px - 2 + th * 6;
+            int ty = leg_y + 15 + ((s_gui_frame * 2 + th * 4) % 6);
+            set_pixel(tx, ty, 0x00FFFF);
+            set_pixel(tx, ty + 1, 0xFFFFFF);
+        }
+    } else if (running) {
+        /* 4-Frame mechanischer Run-Cycle */
+        int r_frame = (s_gui_frame / 4) % 4;
+        int l1_off = 0, l2_off = 0;
+        int l1_h = 13, l2_h = 13;
+
+        if (r_frame == 0) { l1_off = 5 * dir; l2_off = -5 * dir; l1_h = 13; l2_h = 11; }
+        else if (r_frame == 1) { l1_off = 2 * dir; l2_off = -1 * dir; l1_h = 14; l2_h = 13; }
+        else if (r_frame == 2) { l1_off = -5 * dir; l2_off = 5 * dir; l1_h = 11; l2_h = 13; }
+        else { l1_off = -1 * dir; l2_off = 2 * dir; l1_h = 13; l2_h = 14; }
+
+        /* Vorderes Bein */
+        draw_voxel(px - 3 + l1_off, leg_y, 6, l1_h, 2, armor_main);
+        draw_rect(px - 4 + l1_off, leg_y + l1_h - 3, 8, 3, armor_hi);
+
+        /* Hinteres Bein */
+        draw_voxel(px - 3 + l2_off, leg_y, 6, l2_h, 2, armor_dark);
+        draw_rect(px - 4 + l2_off, leg_y + l2_h - 3, 8, 3, armor_hi);
+
+        /* Staub-Partikel bei Bodenkontakt */
+        if (r_frame == 0 || r_frame == 2) {
+            set_pixel(px - dir * 10, foot_y - 2, 0x8098A8);
+            set_pixel(px - dir * 13, foot_y - 3, 0x607888);
+        }
+    } else {
+        /* Idle-Stance: Sicherer Stand auf beiden Stiefeln */
+        draw_voxel(px - 7, leg_y, 6, 14, 2, armor_dark);
+        draw_rect(px - 8, foot_y - 3, 8, 3, armor_hi);
+        draw_voxel(px + 1, leg_y, 6, 14, 2, armor_main);
+        draw_rect(px, foot_y - 3, 8, 3, armor_hi);
+    }
+
+    /* --- SCHWERE ARM-KANONE (BLASTER) --- */
+    int gun_y = chest_y + 4;
+    int gun_x = px + (dir > 0 ? 4 : -18);
+    draw_voxel(gun_x, gun_y, 16, 7, 3, 0x243242);
+    /* Lauf & Muendungs-Ring */
+    int tip_gx = (dir > 0) ? (gun_x + 14) : gun_x;
+    draw_rect(tip_gx, gun_y + 1, 3, 5, 0x00E0FF);
+    set_pixel(tip_gx + 1, gun_y + 2, 0xFFFFFF);
+    /* Energieleitung auf der Waffe */
+    draw_line(gun_x + 3, gun_y - 1, gun_x + 11, gun_y - 1, 0x00B0E0);
+}
+
 /* --- TAB 1: 2.5D Voxel Game View ---
  * Parallax-Regel (12x Welt-Zoom, s_game.px = Weltposition in fix16):
  *   Layer 3 (Himmel):  statisch,  1/16  -> keine Bewegung (Copper-Verlauf)
@@ -1374,47 +1509,31 @@ static void render_tab_game(void) {
 
     /* Layer 1: Gameplay Entities */
 
-    /* 1. Spieler (2.5D Voxel-Raumschiff, Side-Scroll-Silhouette nach rechts) */
+    /* 1. Spieler: Zweibeiniger Cyber-Krieger (Turrican Bren McGuire) */
     int p_screen_x = 80 + (s_game.px >> 16) * 12;
-    int p_screen_y = ground_y - 40 - (s_game.py >> 16) * 16;
+    int foot_y = ground_y - (s_game.py >> 16) * 16;
     if (p_screen_x < 40) p_screen_x = 40;
     if (p_screen_x > WIN_W - 80) p_screen_x = WIN_W - 80;
+
+    int dir = (s_game.facing < 0) ? -1 : 1;
+    int is_running = (s_game.pvx != 0);
+    int nozzle_x = p_screen_x + (dir > 0 ? 18 : -18);
+    int nozzle_y = foot_y - 24;
 
     /* Respawn-Gnadenfrist: Spieler blinkt (Unverwundbar-Optik) */
     int player_visible = (s_game.respawn_timer == 0) || ((s_game.respawn_timer / 5) % 2 == 0);
     if (player_visible) {
-    /* Antriebsflamme (links, hinterm Rumpf) */
-    for (int f = 0; f < 3; f++) {
-        int fl_x = p_screen_x - 14 - f * 8;
-        int fl_y = p_screen_y + 6 + (int)(sinf((float)s_game.tick * 0.5f + f) * 3.0f);
-        draw_voxel(fl_x, fl_y, 8, 6, 2, f == 0 ? 0xFFFF40 : 0xFF6020);
-    }
+        draw_player_warrior(p_screen_x, foot_y, s_game.facing, s_game.on_ground, is_running, s_game.morphing);
 
-    /* Motormodul (hinten, tiefer) */
-    draw_voxel(p_screen_x - 6, p_screen_y + 4, 10, 12, 3, 0x304868);
-
-    /* Rumpf: lang & flach, Stahlblau */
-    draw_voxel(p_screen_x, p_screen_y, 40, 14, 6, 0x3858B8);
-
-    /* Nase: nach vorn zulaufend (auf Rumpf-Mitte-Hohe, nicht darunter) */
-    draw_voxel(p_screen_x + 40, p_screen_y + 2, 14, 10, 4, 0x5878D0);
-    draw_voxel(p_screen_x + 54, p_screen_y + 4, 8, 6, 3, 0x90B0F8);
-
-    /* Cockpit-Canopy: hinten-oben (klare Trennung zur Nase) */
-    draw_voxel(p_screen_x + 8, p_screen_y - 6, 16, 8, 4, 0x40D8E0);
-
-    /* Blaster unter Rumpf-Mitte (dunkel, nicht grell-weiß) */
-    draw_voxel(p_screen_x + 18, p_screen_y + 14, 18, 6, 2, 0x283848);
-
-    /* Muendungsfeuer beim Schiessen */
-    if (s_game.fire_cooldown > 0) {
-        draw_muzzle_flash(p_screen_x + 62, p_screen_y + 4, s_game.weapon);
-    }
+        /* Muendungsfeuer am Blaster-Lauf */
+        if (s_game.fire_cooldown > 0 && !s_game.morphing) {
+            draw_muzzle_flash(nozzle_x, nozzle_y, s_game.weapon);
+        }
     } /* Ende player_visible */
 
     /* 360-Grad Surround Holding Beam (Turrican 2 ALT / Controller X) */
-    if (s_game.beam_active) {
-        draw_holding_beam(p_screen_x + 30, p_screen_y + 8, s_game.beam_angle);
+    if (s_game.beam_active && !s_game.morphing) {
+        draw_holding_beam(nozzle_x, nozzle_y, s_game.beam_angle);
     }
 
     /* 3.5 Extraleben-Pickups (an den Welt-Raendern, Bob-Animation) */
@@ -2592,8 +2711,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         for (p = 0; p < (int)(sizeof(priority_dirs)/sizeof(priority_dirs[0])); p++) {
             playlist_scan_rec(priority_dirs[p], 0);
         }
-        /* Danach den Rest der TFMX Library ergaenzen (ohne Duplikate) */
-        playlist_scan_rec("TFMX Professional", 0);
+        /* Nur kuratierte Action-Soundtracks im Jukebox-Pool */
     }
 
     /* Intro: Embedded Apidya Meadow (TFMX + Original-Amiga-Samples) — laeuft im Hauptmenue */
