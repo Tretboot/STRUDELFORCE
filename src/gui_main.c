@@ -1201,25 +1201,31 @@ static void apply_demoscene_postprocess(void) {
     }
 }
 
-/* v0.3.0 Feinschliff: T2 Load raus, Software Manager Msx -> Titel (sauberere
- * Effekte), Wing Commander Regular Combat -> Commander Office. Indizes 0-9. */
+/* v0.3.1 Kuratierter, sparsamer Soundtrack: 100% Amiga & PC Paritaet */
 static const EmbeddedTrack EMBEDDED_TRACKS[] = {
-    { EMB_TFMX_APIDYA_MEADOW_NAME,    EMB_TFMX_APIDYA_MEADOW,    sizeof(EMB_TFMX_APIDYA_MEADOW),    EMB_SAM_APIDYA_MEADOW,    sizeof(EMB_SAM_APIDYA_MEADOW),    0 }, /* 0: Apidya Meadow (Intro) */
-    { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 1: Turrican 2 Desert */
-    { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 2: Turrican 2 Cave */
-    { EMB_TFMX_SOFTMAN_NAME,          EMB_TFMX_SOFTMAN,          sizeof(EMB_TFMX_SOFTMAN),          EMB_SAM_SOFTMAN,          sizeof(EMB_SAM_SOFTMAN),          0 }, /* 3: Software Manager Titel (22 Subsongs!) */
-    { EMB_MOD_LOST_PATROL_NAME,       EMB_MOD_LOST_PATROL,       sizeof(EMB_MOD_LOST_PATROL),       NULL,                     0,                                1 }, /* 4: Lost Patrol (15-Sample MOD) */
-    { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 5: Blue Monday Chiptune (8-Bit MOD) */
-    { EMB_MOD_WC_OFFICE_NAME,         EMB_MOD_WC_OFFICE,         sizeof(EMB_MOD_WC_OFFICE),         NULL,                     0,                                1 }, /* 6: Wing Commander Commander Office (MOD) */
-    { EMB_MOD_FAIRLIGHT_NAME,         EMB_MOD_FAIRLIGHT,         sizeof(EMB_MOD_FAIRLIGHT),         NULL,                     0,                                1 }, /* 7: Fairlight Cracktro (MOD) */
-    { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 8: Skidrow Cracktro (MOD) */
-    { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 9: Paradox Cracktro (MOD) */
+    { EMB_TFMX_T3W1_NAME,         EMB_TFMX_T3W1,         sizeof(EMB_TFMX_T3W1),         EMB_SAM_T3W1,         sizeof(EMB_SAM_T3W1),         0 }, /* 0: Turrican 3: World 1 Factory (Action Theme) */
+    { EMB_TFMX_BIFI_NAME,         EMB_TFMX_BIFI,         sizeof(EMB_TFMX_BIFI),         EMB_SAM_BIFI,         sizeof(EMB_SAM_BIFI),         0 }, /* 1: BiFi Adventure (Chris Huelsbeck) */
+    { EMB_TFMX_CYBER_NAME,        EMB_TFMX_CYBER,        sizeof(EMB_TFMX_CYBER),        EMB_SAM_CYBER,        sizeof(EMB_SAM_CYBER),        0 }, /* 2: Cybersty (Action Synth) */
+    { EMB_TFMX_MADTV_NAME,        EMB_TFMX_MADTV,        sizeof(EMB_TFMX_MADTV),        EMB_SAM_MADTV,        sizeof(EMB_SAM_MADTV),        0 }, /* 3: Mad TV: Ongame 6 (Amiga Classic) */
+    { EMB_TFMX_SOFTMAN_NAME,      EMB_TFMX_SOFTMAN,      sizeof(EMB_TFMX_SOFTMAN),      EMB_SAM_SOFTMAN,      sizeof(EMB_SAM_SOFTMAN),      0 }, /* 4: Software Manager Titel (22 Subsongs!) */
+    { EMB_MOD_AIRWOLF2_NAME,      EMB_MOD_AIRWOLF2,      sizeof(EMB_MOD_AIRWOLF2),      NULL,                 0,                            1 }, /* 5: Airwolf 2 (Chiptune MOD) */
+    { EMB_MOD_OCEAN_LOADER_NAME,  EMB_MOD_OCEAN_LOADER,  sizeof(EMB_MOD_OCEAN_LOADER),  NULL,                 0,                            1 }, /* 6: Ocean Loader (Demoscene MOD) */
+    { EMB_MOD_INTRO45_NAME,       EMB_MOD_INTRO45,       sizeof(EMB_MOD_INTRO45),       NULL,                 0,                            1 }, /* 7: Intro 45 Cracktro (MOD) */
+    { EMB_MOD_INTRO31_NAME,       EMB_MOD_INTRO31,       sizeof(EMB_MOD_INTRO31),       NULL,                 0,                            1 }, /* 8: Intro 31 Cracktro (MOD) */
+    { EMB_MOD_INTRO75_NAME,       EMB_MOD_INTRO75,       sizeof(EMB_MOD_INTRO75),       NULL,                 0,                            1 }, /* 9: Intro 75 Cracktro (MOD) */
 };
-#define TRACK_IDX_BLUE_MONDAY 5
-#define TRACK_IDX_FAIRLIGHT 7
-#define TRACK_IDX_SKIDROW   8
-#define TRACK_IDX_PARADOX   9
-#define TRACK_IDX_WC_OFFICE 6
+#define TRACK_IDX_AIRWOLF2     5
+#define TRACK_IDX_OCEAN_LOADER 6
+#define TRACK_IDX_INTRO45      7
+#define TRACK_IDX_INTRO31      8
+#define TRACK_IDX_INTRO75      9
+
+/* Aliase fuer Abwaertskompatibilitaet mit Studio/Menue */
+#define TRACK_IDX_BLUE_MONDAY  TRACK_IDX_AIRWOLF2
+#define TRACK_IDX_WC_OFFICE    TRACK_IDX_OCEAN_LOADER
+#define TRACK_IDX_FAIRLIGHT    TRACK_IDX_INTRO45
+#define TRACK_IDX_SKIDROW      TRACK_IDX_INTRO31
+#define TRACK_IDX_PARADOX      TRACK_IDX_INTRO75
 
 /* ============================================================================
  * DJ FADE ENGINE (Pop-freier Studio Gain-Crossfade)
@@ -1717,9 +1723,8 @@ static int music_load_index(int idx) {
 }
 
 static void music_play_campaign_level(int level) {
-    /* v0.3.0 Indizes: 2=T2 Cave, 3=SoftMan Titel, 7=Fairlight, 5=Blue Monday,
-     * 6=WC Commander Office (ersetzt T2 Load als Endlevel-Thema) */
-    static const int camp_map[5] = { 2, 3, 7, 5, TRACK_IDX_WC_OFFICE };
+    /* v0.3.1 Kuratierter Amiga-Soundtrack: 0=Turrican 3 W1, 1=BiFi, 2=Cybersty, 3=Mad TV, 4=Software Manager */
+    static const int camp_map[5] = { 0, 1, 2, 3, 4 };
     int idx = (level >= 1 && level <= 5) ? (level - 1) : 0;
     int emb_id = camp_map[idx];
 
@@ -2612,17 +2617,16 @@ typedef struct {
     int subsong;
 } CreditSongStep;
 
-/* v0.3.0 Indizes: 3=SoftMan Titel, 4=Lost Patrol, 5=Blue Monday, 1=T2 Desert,
- * 7=Fairlight, 2=T2 Cave, 0=Apidya */
+/* v0.3.1 Kuratierte Credits-Playlist (Startet mit Software Manager!) */
 static const CreditSongStep s_credit_playlist[] = {
-    { 3,  0 }, /* Phase 0: Software Manager Titel Subsong 0 (Opening & Overview) */
-    { 4,  0 }, /* Phase 1: Lost Patrol (15-Sample MOD Atmosphaere) */
-    { 3, 21 }, /* Phase 2: Software Manager Titel Subsong 21 (Amiga Heritage Thema) */
-    { 5,  0 }, /* Phase 3: Blue Monday Chiptune (8-Bit MOD) */
-    { 1,  0 }, /* Phase 4: Turrican 2 Desert (TFMX) */
-    { 7,  0 }, /* Phase 5: Fairlight Cracktro (MOD) */
-    { 2,  0 }, /* Phase 6: Turrican 2 Cave (TFMX) */
-    { 0,  0 }  /* Phase 7: Apidya Meadow (TFMX) */
+    { 4,  0 }, /* Phase 0: Software Manager Titel Subsong 0 (Opening & Overview) */
+    { 6,  0 }, /* Phase 1: Ocean Loader (Demoscene MOD Atmosphaere) */
+    { 4, 21 }, /* Phase 2: Software Manager Titel Subsong 21 (Amiga Heritage Thema) */
+    { 5,  0 }, /* Phase 3: Airwolf 2 Chiptune (8-Bit MOD) */
+    { 1,  0 }, /* Phase 4: BiFi Adventure (Chris Huelsbeck TFMX) */
+    { 7,  0 }, /* Phase 5: Intro 45 Cracktro (MOD) */
+    { 2,  0 }, /* Phase 6: Cybersty (Action Synth TFMX) */
+    { 0,  0 }  /* Phase 7: Turrican 3 World 1 Factory (TFMX) */
 };
 #define CREDIT_PLAYLIST_COUNT (int)(sizeof(s_credit_playlist) / sizeof(s_credit_playlist[0]))
 
@@ -5397,11 +5401,11 @@ static int run_headless_tests(void) {
 
     /* 5. Embedded Soundtracks */
     {
-        if (EMB_TFMX_APIDYA_MEADOW_LEN > 0 && EMB_SAM_APIDYA_MEADOW_LEN > 0) {
-            pass++; printf("  [PASS] Embedded Apidya Meadow TFMX & Paula-Samples (%u + %u Bytes)\n",
-                           EMB_TFMX_APIDYA_MEADOW_LEN, EMB_SAM_APIDYA_MEADOW_LEN);
+        if (EMB_TFMX_T3W1_LEN > 0 && EMB_SAM_T3W1_LEN > 0) {
+            pass++; printf("  [PASS] Embedded Turrican 3 World 1 TFMX & Paula-Samples (%u + %u Bytes)\n",
+                           EMB_TFMX_T3W1_LEN, EMB_SAM_T3W1_LEN);
         } else {
-            fail++; printf("  [FAIL] Embedded Apidya Meadow TFMX\n");
+            fail++; printf("  [FAIL] Embedded Turrican 3 World 1 TFMX\n");
         }
     }
 

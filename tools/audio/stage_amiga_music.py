@@ -9,7 +9,7 @@ import os
 import shutil
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DST = os.path.join(ROOT, "amiga_dist", "music")
 DIST = os.path.join(ROOT, "amiga_dist")
 

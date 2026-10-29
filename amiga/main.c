@@ -19,6 +19,7 @@
 
 extern void  memclr(void *dest, unsigned long len);
 extern void *memcpy(void *dest, const void *src, unsigned long len);
+extern void  sys_boot_banner(void);
 extern int   sys_take(void);
 extern void  sys_free(void);
 extern void  sys_waitvbl(void);
@@ -104,7 +105,7 @@ static int       draw_idx;
 EMBED player_bin[] = {
 #embed "player610.6.no_cia.bin"
 };
-EMBED module_bin[] = {
+EMBED_CHIP module_bin[] = {
 #embed "testmod.p61"
 };
 
@@ -421,9 +422,9 @@ static void render_menu(int sel, uint32_t f)
     }
 
     /* Bedienhinweise */
-    draw_text(44, 204, "JOYSTICK HOCH/RUNTER = AUSWAHL", C_WHITE);
-    draw_text(84, 218, "FEUERKNOPF = START", C_GOLD);
-    draw_text(60, 238, "PORT 1 LMB = BEENDEN (CLI)", C_GR_M);
+    draw_text(36, 204, "JOYSTICK / PFEILTASTEN = AUSWAHL", C_WHITE);
+    draw_text(40, 218, "FEUER / SPACE / ENTER / LMB = START", C_GOLD);
+    draw_text(76, 238, "ESC = BEENDEN (CLI)", C_GR_M);
 }
 
 static void render_controls(void)
@@ -431,17 +432,17 @@ static void render_controls(void)
     fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
     draw_text(4, 2, "[STEUERUNG / CONTROLS]", C_HUD_G);
 
-    draw_text(80, 30, "JOYSTICK (PORT 2):", C_GOLD);
-    draw_text(40, 55, "LINKS / RECHTS : BEWEGEN", C_WHITE);
-    draw_text(40, 75, "HOCH           : SPRINGEN", C_WHITE);
-    draw_text(40, 95, "RUNTER         : MORPH-BALL", C_WHITE);
-    draw_text(40, 115, "FEUER          : SCHUSS (3 WAFFEN)", C_WHITE);
-    draw_text(40, 135, "2. TASTE / ALT : HALT-STRAHL (BEAM)", C_WHITE);
+    draw_text(40, 28, "JOYSTICK (PORT 2) ODER TASTATUR:", C_GOLD);
+    draw_text(40, 48, "LINKS / RECHTS / A / D : BEWEGEN", C_WHITE);
+    draw_text(40, 66, "HOCH / W               : SPRINGEN", C_WHITE);
+    draw_text(40, 84, "RUNTER / S             : MORPH-BALL", C_WHITE);
+    draw_text(40, 102, "FEUER / SPACE / ENTER  : SCHUSS", C_WHITE);
+    draw_text(40, 120, "2. TASTE / ALT         : HALT-STRAHL", C_WHITE);
+    draw_text(40, 138, "PORT 1 LMB             : FEUER / AUSWAHL", C_WHITE);
+    draw_text(40, 156, "ESC                    : MENUE / PAUSE", C_CYAN);
 
-    draw_text(40, 165, "PORT 1 LMB     : ZURUECK ZUR WORKBENCH", C_GR_L);
-
-    fill_rect(40, 205, 240, 20, C_HUD_BG);
-    draw_text(56, 211, "DRUECKE FEUER ZUM HAUPTMENUE", C_GOLD);
+    fill_rect(40, 195, 240, 20, C_HUD_BG);
+    draw_text(52, 201, "DRUECKE FEUER / SPACE ZUM MENUE", C_GOLD);
 }
 
 static void render_credits(void)
@@ -661,28 +662,73 @@ static void set_front(int idx)
     }
 }
 
-/* ---- Eingabe: Joystick Port 2 --------------------------------------------- */
+/* ---- Tastatur: CIA-A 0xBFEC01 (SDR), 0xBFED01 (ICR), 0xBFEE01 (CRA) ----- */
+#define CIAA_ICR (*(volatile uint8_t *)0xBFED01UL)
+#define CIAA_SDR (*(volatile uint8_t *)0xBFEC01UL)
+#define CIAA_CRA (*(volatile uint8_t *)0xBFEE01UL)
+
+static uint8_t s_keys[128];
+
+static void poll_keyboard(void)
+{
+    uint8_t icr = CIAA_ICR;
+    if (icr & 0x08) {
+        uint8_t raw = (uint8_t)~CIAA_SDR;
+        uint8_t key = (raw >> 1) & 0x7Fu;
+        int released = raw & 1;
+        if (key < 128) {
+            s_keys[key] = (uint8_t)(!released);
+        }
+        CIAA_CRA |= 0x40;
+        for (volatile int d = 0; d < 40; d++) { }
+        CIAA_CRA &= ~0x40;
+    }
+}
+
+/* ---- Eingabe: Joystick Port 2 + Tastatur + Maus --------------------------- */
 static uint16_t read_input(void)
 {
+    poll_keyboard();
+
     uint16_t j = REG16(R_JOY1DAT), m = 0;
     int right = (j >> 1) & 1, left = (j >> 9) & 1;
     int down = right ^ ((j >> 0) & 1), up = left ^ ((j >> 8) & 1);
-    if (left)  m |= INPUT_LEFT;
-    if (right) m |= INPUT_RIGHT;
-    if (up)    m |= INPUT_JUMP;
-    if (down)  m |= INPUT_MORPH;
-    if (!(CIAA_PRA & 0x80)) m |= INPUT_FIRE;                /* Port-2 Feuer     */
-    if (!(REG16(R_POTGOR) & (1u << 14))) m |= INPUT_SECOND; /* Port-2 2. Taste  */
+
+    /* Bewegung: Joystick Port 2, Pfeiltasten (0x4F,0x4E,0x4C,0x4D), A/D/W/S (0x20,0x22,0x11,0x21) */
+    if (left  || s_keys[0x4F] || s_keys[0x20]) m |= INPUT_LEFT;
+    if (right || s_keys[0x4E] || s_keys[0x22]) m |= INPUT_RIGHT;
+    if (up    || s_keys[0x4C] || s_keys[0x11]) m |= INPUT_JUMP;
+    if (down  || s_keys[0x4D] || s_keys[0x21]) m |= INPUT_MORPH;
+
+    /* Feuer: Port-2 Feuer, Space (0x40), Enter (0x44), Pad-Enter (0x43), Ctrl (0x63), Port 1 LMB */
+    if (!(CIAA_PRA & 0x80) || s_keys[0x40] || s_keys[0x44] || s_keys[0x43] || s_keys[0x63] || !(CIAA_PRA & 0x40)) {
+        m |= INPUT_FIRE;
+    }
+
+    /* 2. Taste / Beam: Port-2 2. Taste, Alt-Links (0x64), Alt-Rechts (0x65), C (0x33) */
+    if (!(REG16(R_POTGOR) & (1u << 14)) || s_keys[0x64] || s_keys[0x65] || s_keys[0x33]) {
+        m |= INPUT_SECOND;
+    }
+
     return m;
 }
 
 static GameState g_state;
+static int       s_running = 1;
 
 int main(void)
 {
     int i, front = 0;
     uint8_t *mem;
     uint16_t prev_input = 0;
+
+    /* AmigaOS CLI-Begruessung anzeigen */
+    sys_boot_banner();
+
+    /* ThePlayer 6.1a Replayer initialisieren mit Chip-RAM Modul (VOR sys_take) */
+    if (p61_init(module_bin) == 0) {
+        s_p61_active = 1;
+    }
 
     if (!sys_take()) return 20;
 
@@ -694,15 +740,6 @@ int main(void)
         planes[1][i] = mem + (unsigned long)PLANE_BYTES * (NPLANES + i);
     }
     copper = (uint16_t *)(mem + (unsigned long)PLANE_BYTES * NPLANES * 2);
-
-    /* Chip-RAM fuer ThePlayer 6.1a Modul allozieren */
-    s_p61_chip_mod = (uint8_t *)sys_alloc_chip(sizeof(module_bin));
-    if (s_p61_chip_mod) {
-        memcpy(s_p61_chip_mod, module_bin, sizeof(module_bin));
-        if (p61_init(s_p61_chip_mod) == 0) {
-            s_p61_active = 1;
-        }
-    }
 
     build_copper();
     set_front(front);
@@ -719,10 +756,11 @@ int main(void)
     REG32(R_COP1LC) = (uint32_t)(uintptr_t)copper;
     REG16(R_COPJMP1) = 0;
 
-    /* DMA aktivieren: Master, Bitplanes, Copper, und alle 4 Paula-Audio-Kanaele! */
-    REG16(R_DMACON)  = 0x8000 | 0x0200 | 0x0100 | 0x0080 | 0x000F;
+    /* Interrupts und DMA fuer Paula 4-Kanal Audio & Copper/Bitplanes aktivieren */
+    REG16(R_INTENA) = 0x8000 | 0x4000 | 0x2000 | 0x0020; /* SETCLR | INTEN | EXTER | VERTB */
+    REG16(R_DMACON) = 0x8000 | 0x0200 | 0x0100 | 0x0080 | 0x0040 | 0x000F; /* SETCLR | DMAEN | BPLEN | COPEN | BLTEN | AUD0-3 */
 
-    while (CIAA_PRA & 0x40) {                 /* Port 1 LMB beendet (CLI)      */
+    while (s_running) {
         uint16_t in = read_input();
         uint16_t trig = in & ~prev_input;     /* Flankenerkennung fuer Menue   */
         prev_input = in;
@@ -733,12 +771,18 @@ int main(void)
         switch (s_ami_state) {
         case AMI_STATE_INTRO:
             render_intro(s_frame_cnt);
-            if (trig & INPUT_FIRE) {
+            /* Feuer, Space, Enter, LMB, ESC oder Attract-Timeout nach 500 Frames (~10s) -> Menue */
+            if ((trig & INPUT_FIRE) || (s_frame_cnt > 500) || s_keys[0x45]) {
                 s_ami_state = AMI_STATE_MENU;
+                s_keys[0x45] = 0;
             }
             break;
 
         case AMI_STATE_MENU:
+            if (s_keys[0x45]) { /* ESC beendet sauber zur Workbench */
+                s_running = 0;
+                break;
+            }
             if (trig & INPUT_JUMP)  s_menu_sel = (s_menu_sel + 3) % 4;
             if (trig & INPUT_MORPH) s_menu_sel = (s_menu_sel + 1) % 4;
             if (trig & INPUT_FIRE) {
@@ -766,12 +810,18 @@ int main(void)
 
         case AMI_STATE_CONTROLS:
             render_controls();
-            if (trig & INPUT_FIRE) s_ami_state = AMI_STATE_MENU;
+            if ((trig & INPUT_FIRE) || s_keys[0x45]) {
+                s_ami_state = AMI_STATE_MENU;
+                s_keys[0x45] = 0;
+            }
             break;
 
         case AMI_STATE_CREDITS:
             render_credits();
-            if (trig & INPUT_FIRE) s_ami_state = AMI_STATE_MENU;
+            if ((trig & INPUT_FIRE) || s_keys[0x45]) {
+                s_ami_state = AMI_STATE_MENU;
+                s_keys[0x45] = 0;
+            }
             break;
 
         case AMI_STATE_LOADING:
@@ -790,6 +840,11 @@ int main(void)
 
         case AMI_STATE_GAME: {
             int px;
+            if (s_keys[0x45]) { /* ESC im Spiel -> Zurueck zum Menue */
+                s_ami_state = AMI_STATE_MENU;
+                s_keys[0x45] = 0;
+                break;
+            }
             core_tick(&g_state, in);
 
             px = (int)(g_state.px >> (16 - PX_PER_UNIT_SHIFT));

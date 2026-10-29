@@ -7,6 +7,10 @@
 import sys, os, json, re, tempfile, shutil, zipfile, struct
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "audio"))
+sys.path.insert(0, os.path.join(HERE, "kiwi"))
+sys.path.insert(0, os.path.join(HERE, "generators"))
+sys.path.insert(0, os.path.join(HERE, "analysis"))
 FAILS = []
 def check(name, cond, info=""):
     print("  [%s] %s %s" % ("OK" if cond else "FAIL", name, info))

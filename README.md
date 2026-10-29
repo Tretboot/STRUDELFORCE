@@ -31,6 +31,22 @@
 
 ---
 
+## 📸 Visual Showcase & Cross-Platform Parity
+
+STRUDELFORCE bietet 100% Bit-Parität zwischen moderner Windows-Präsentation und echter Amiga-500-Hardware:
+
+| Amiga 500 (320x256 @ 50Hz PAL, WinUAE / OCS) | Windows PC (1280x720 2.5D Voxel Engine) |
+|:---:|:---:|
+| ![Amiga 500 Gameplay](docs/img/amiga_gameplay_a500.png) | ![PC Gameplay](docs/img/pc_gameplay.png) |
+| *Echter Amiga 500 Bare-Metal OCS Build (Wave 0)* | *1280x720 Native 2.5D Voxel Projektion (Wave 0)* |
+
+| PC Turrican-2 Hauptmenü | PC Authentischer Ladebildschirm |
+|:---:|:---:|
+| ![PC Menu](docs/img/pc_menu.png) | ![PC Loading](docs/img/pc_loading.png) |
+| *Turrican-2 2-Ton Banner & Modus-Auswahl* | *Block-Ladebalken & Hardware-Status* |
+
+---
+
 ## ⚡ Highlights & Features
 
 1. **Grafisches 2.5D-Voxel-Frontend (`strudelforce.exe`):**
@@ -38,17 +54,19 @@
    - Echte **2.5D-Voxel-Projektion** mit direktionalem Face-Shading (Top-Highlight, Front-Base, Side-Shadow) – kein Texturen-Minecraft-Look.
    - **4 Parallax-Ebenen:** Deep-Sky-Copperverläufe, Ruinen-Säulen, Gameplay-Ebene, Vordergrund-Rohre.
    - **Multi-Tier 2.5D Plattform-System:** Erhöhte Industrie-Laufstege, Aquädukte und Tempel-Altäre (Turrican-2 Vertikalität).
-   - **Dynamischer Chris Hülsbeck Kampagnen-Soundtrack:** Turrican 2 Level-Soundtracks (Desert, Cave, Factory, Flight, Aliens) und Jukebox-Shuffle (`M`/`N` oder Gamepad `Y`).
+   - **Kuratierter Chris Hülsbeck & Amiga-Soundtrack (~335 KB):** Turrican 3 World 1 Factory, BiFi Adventure, Cybersty, Mad TV, Software Manager (22 Subsongs!) und Cracktro-Chiptunes.
    - Amiga-Zeilen-Interlace-Jitter bei kritischer Energie (`HP < 25%`).
    - Turrican-2-inspiriertes Hauptmenü, Ladebildschirm, Sieg- und Game-Over-Overlays.
    - **F5 Soundgodizer:** Analog-Wärme, Bass-Boost, tanh-Soft-Drive und Haas-Stereo-Wide.
 
 2. **Nativer Amiga 500 Bare-Metal Port (`amiga/` & `strudelforce.adf`):**
    - Echter M68K Bare-Metal Build via `m68k-amiga-elf-gcc` (keine libc-Abhängigkeit, `-nostdlib -ffreestanding`).
+   - **Vollständige State-Machine mit Parität:** Cracktro-Intro (3D-Wireframe-Vektorwürfel, Sinus-Scroller) -> Turrican-2 Hauptmenü -> Amiga-Block Ladebildschirm -> 50Hz Fixed-Point Spiel.
    - 5 OCS-Bitplanes (320x256 @ 50Hz PAL, 32 Farben, Doppelpuffer) direkt im Chip-RAM.
    - Dynamischer Copper-Farbverlauf-Himmel (Amiga Raster-Bänder).
-   - 100% Smith-Kern-Gameplay-Kopplung: 1 `core_tick` pro VBlank (50Hz), Joystick Port 2, Linke Maustaste für OS-Rückkehr.
-   - Bootfähiges 880 KB Floppy Image (`strudelforce.adf`) im Standard Amiga OFS-Format mit Kickstart 1.3 Bootblock (`boot1x`) und `s/startup-sequence`. Lauffähig auf jedem Amiga 500 (Kickstart 1.3, RetroArch PUAE, WinUAE, echte Hardware).
+   - **Paula 4-Kanal Hardware DMA Audio:** ThePlayer 6.1a Replayer direkt im Chip-RAM auf VBlank.
+   - **Volle Eingabe-Unterstützung:** Joystick Port 2, Tastatur (Pfeiltasten, WASD, Space, Enter, Alt, Ctrl, ESC) und Maus Port 1 LMB.
+   - Bootfähiges 880 KB Floppy Image (`strudelforce.adf`, Volume: **`StrudelOS`**) im Standard Amiga OFS-Format mit Kickstart 1.3 Bootblock (`boot1x`) und `s/startup-sequence`. Lauffähig auf jedem Amiga 500 (Kickstart 1.3, WinUAE mit authentischem Diskettenladegeräusch, RetroArch PUAE, echte Hardware).
 
 3. **Konsolidierte Monolithische Architektur:**
    - **`src/game_logic.c`**: 16.16 Fixed-Point Physik, 3-Leben-System, Respawn-Schutz, 3 Waffen (Spread, Laser, Bounce 2.0 mit Eck-Clamp-Fix), Gegner, Endlos-Roguelike & Kampagnen-Modus.
@@ -81,6 +99,10 @@
 ---
 
 ## 📜 Die 3 Eisernen Gesetze von STRUDELFORCE
+
+> [!IMPORTANT]
+> **Amiga-First Subordination:**  
+> Im Falle jeglicher Diskrepanzen zwischen Plattformen ist die PC-Version der Amiga-Version strikt untergeordnet. Level-Logik, Fixed-Point-Physik, Arcade-Pacing und Spielbarkeit orientieren sich immer an der unschlagbaren Haptik und Latenzfreiheit der originalen Amiga-500-Hardware.
 
 Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.md](PROJECT_BIBLE.md)):
 
@@ -144,15 +166,15 @@ Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.m
 | **Rechter Schulterbutton (RB/RS)** | Waffe wechseln |
 | **Start-Taste** | Hauptmenü / Pause |
 
-### Amiga 500 Steuerung
-| Amiga Port | Aktion |
+### Amiga 500 Steuerung (Joystick & Tastatur)
+| Eingabe | Aktion |
 |---|---|
-| **Joystick Port 2 Links / Rechts** | Raumschiff bewegen |
-| **Joystick Port 2 Oben** | Sprung |
-| **Joystick Port 2 Feuer** | Primärfeuer |
-| **Joystick Port 2 Unten** | Morph-Ball |
-| **Joystick Port 2 Taste 2 (Pot-Line)** | 360° Halt-Strahl |
-| **Maus Port 1 (Linke Maustaste)** | Spiel beenden (Rückkehr zu AmigaOS/Kickstart) |
+| **Joystick Port 2 Links / Rechts** / **A, D** / **Pfeiltasten** | Raumschiff bewegen |
+| **Joystick Port 2 Oben** / **W** / **Pfeil Oben** | Sprung |
+| **Joystick Port 2 Unten** / **S** / **Pfeil Unten** | Morph-Ball |
+| **Joystick Port 2 Feuer** / **Leertaste** / **Enter** / **Ctrl** / **Maus Port 1 LMB** | Primärfeuer (Spread, Laser, Bounce) / Menü-Auswahl |
+| **Joystick Port 2 Taste 2** / **ALT** / **C** | 360° Halt-Strahl (Surround-Beam) |
+| **ESC** | Zurück zum Menü / Beenden (AmigaDOS CLI) |
 
 ---
 
@@ -241,10 +263,11 @@ python tools/make_release.py      # Erstellt saubere Source-, Windows- und Amiga
 ```text
 STRUDELFORCE_Master/
 ├── amiga/                      # Amiga 500 Bare-Metal Target (m68k-amiga-elf-gcc)
-│   ├── main.c                  # OCS 5-Bitplane Renderer, Copper-Sky, 50Hz VBlank Loop
-│   ├── sys.c                   # Hardware Takeover/Restore (LoadView, DMACON, Interrupts)
+│   ├── main.c                  # OCS 5-Bitplane Renderer, Copper-Sky, ThePlayer 6.1a DMA Audio
+│   ├── sys.c                   # Hardware Takeover/Restore (LoadView, DMACON, Interrupts, Boot-Banner)
 │   ├── rt.c                    # Freestanding 64-Bit Arithmetik (__muldi3 fuer fix16_mul)
 │   ├── Makefile                # Bare-Metal Build zu out/a.exe
+│   ├── builds/                 # Versionierte Amiga-Disk-Images (strudelforce_v0.3.1.adf)
 │   └── support/                # GCC8 CRT & VBR Helpers
 ├── src/
 │   ├── strudelforce.h          # Zentraler Master-Header fuer alle Subsysteme
@@ -258,7 +281,7 @@ STRUDELFORCE_Master/
 │   ├── test_suite.c            # Konsolidierte Integrationstest-Suite (44 Checks)
 │   ├── localization.h          # (generiert) Statische Mehrsprachen-Tabellen
 │   ├── assets_index.h          # (generiert) Asset-IDs und Blob-Index
-│   └── embedded_music.h        # Integrierte Soundtrack-Daten (Apidya Meadow u.a.)
+│   └── embedded_music.h        # Integrierte Soundtrack-Daten (Turrican 3, BiFi, Cybersty, Mad TV, SoftMan)
 ├── levels/                     # Level-Definitionen & Chunks (levels_v2.json)
 ├── levelkit/                   # Level-Editor & Generierungs-Toolkit (lv2.py)
 ├── assets/                     # Game-Assets & Spezifikationen
@@ -267,13 +290,17 @@ STRUDELFORCE_Master/
 │   ├── lang.json               # Lokalisierung (DE/EN)
 │   ├── audio_reference/        # Referenz-MODs, TFMX-Tracks und Strudel-Sketche
 │   └── *.tfmx.json             # Soundtrack- und Album-Spezifikationen
-├── tools/                      # Tooling, Generatoren & Packer
+├── tools/                      # Schlanke Werkzeug-Struktur
 │   ├── build_amiga_adf.py      # Erstellt 880 KB Standard OFS Floppy Disk Image (strudelforce.adf)
+│   ├── start_winuae.bat        # 1-Klick A500 Emulator mit echten Laufwerks-Sounds
+│   ├── winuae_a500.uae         # Vorkonfigurierte WinUAE A500 Hardware-Umgebung
+│   ├── retroarch_test.bat      # Startet das ADF in RetroArch (PUAE A500)
 │   ├── make_release.py         # Deterministischer Release-Packer (Source, Windows, Amiga)
 │   ├── selftest.py             # Konsolidierter Syntax- & Modultester
-│   ├── curate_audio.py         # Audio-Kuratierung fuer M68K- & PC-Soundtracks
-│   ├── stage_amiga_music.py    # Staged TFMX-Dateien fuer Amiga-Floppy
-│   └── ...                     # Oracles & Hilfswerkzeuge
+│   ├── analysis/               # Diagnose, Linter & Frame-Konverter (ppm2png.py, budget, etc.)
+│   ├── audio/                  # Audio-Oracles, Staging & Kuratierung (stage_amiga_music.py, etc.)
+│   ├── generators/             # Code-, Font- & Level-Generatoren
+│   └── kiwi/                   # Kiwi Handoff-, Rescue- & Synchronisations-Tools
 ├── Kickstart/                  # ROM-Dateien fuer Emulator-Tests (kick34005.A500)
 ├── PROJECT_BIBLE.md            # Single Source of Truth fuer Architektur, Gesetze & APIs
 ├── TODO.md                     # Aktueller Aufgaben-Backlog & Meilensteine

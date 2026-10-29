@@ -149,9 +149,9 @@ static void test_tfmx_playback(void) {
     int i, peak = 0;
     printf("\n--- [7] TFMX Replay & Paula 8-Voice Rendering ---\n");
     tfmx_player_init(&tfmx);
-    CHECK(tfmx_player_load_mem(&tfmx, EMB_TFMX_APIDYA_MEADOW, EMB_TFMX_APIDYA_MEADOW_LEN,
-                               (const int8_t *)EMB_SAM_APIDYA_MEADOW, EMB_SAM_APIDYA_MEADOW_LEN),
-          "Apidya Meadow TFMX+SAM mem load");
+    CHECK(tfmx_player_load_mem(&tfmx, EMB_TFMX_T3W1, EMB_TFMX_T3W1_LEN,
+                               (const int8_t *)EMB_SAM_T3W1, EMB_SAM_T3W1_LEN),
+          "Turrican 3 World 1 TFMX+SAM mem load");
     CHECK(tfmx.loaded == 1, "TFMX geladen");
     tfmx_player_start(&tfmx, 0);
     CHECK(tfmx.playing == 1, "TFMX gestartet");
@@ -184,8 +184,8 @@ static void test_mod_playback(void) {
     int i, peak = 0;
     printf("\n--- [8] ProTracker MOD Replay ---\n");
     mod_player_init(&mod);
-    CHECK(mod_player_load_mem(&mod, EMB_MOD_WC_OFFICE, EMB_MOD_WC_OFFICE_LEN),
-          "Commander Office MOD mem load");
+    CHECK(mod_player_load_mem(&mod, EMB_MOD_AIRWOLF2, EMB_MOD_AIRWOLF2_LEN),
+          "Airwolf 2 Chiptune MOD mem load");
     CHECK(mod.loaded == 1 && mod.nch == 4, "MOD 4-Kanal geladen");
     mod_player_start(&mod, GAME_AUDIO_RATE);
     CHECK(mod.playing == 1, "MOD gestartet");
@@ -200,13 +200,13 @@ static void test_mod_playback(void) {
     printf("  MOD Peak Amplitude ueber 50 Ticks: %d\n", peak);
     CHECK(peak > 500, "MOD generiert echtes Audio (Peak > 500)");
 
-    ModPlayer st15;
-    mod_player_init(&st15);
-    CHECK(mod_player_load_mem(&st15, EMB_MOD_LOST_PATROL, EMB_MOD_LOST_PATROL_LEN),
-          "Lost Patrol 15-Sample Soundtracker load");
-    CHECK(st15.loaded == 1 && st15.nch == 4, "Soundtracker 15-Sample 4-Kanal geladen");
-    mod_player_start(&st15, GAME_AUDIO_RATE);
-    CHECK(st15.playing == 1, "Lost Patrol 15-Sample MOD gestartet");
+    ModPlayer mod2;
+    mod_player_init(&mod2);
+    CHECK(mod_player_load_mem(&mod2, EMB_MOD_OCEAN_LOADER, EMB_MOD_OCEAN_LOADER_LEN),
+          "Ocean Loader Demoscene MOD mem load");
+    CHECK(mod2.loaded == 1 && mod2.nch == 4, "MOD 4-Kanal geladen");
+    mod_player_start(&mod2, GAME_AUDIO_RATE);
+    CHECK(mod2.playing == 1, "Ocean Loader MOD gestartet");
 }
 
 static void test_level_engine(void) {

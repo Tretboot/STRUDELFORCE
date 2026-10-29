@@ -11,6 +11,8 @@ from collections import deque
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "..", "levels", "levels.json")
+if not os.path.isfile(DB):
+    DB = os.path.join(HERE, "..", "..", "levels", "levels.json")
 SOLID = set("#BMO?=")          # blocks movement (bonus/pipe/belt are solid blocks)
 HAZARD = set("^")
 

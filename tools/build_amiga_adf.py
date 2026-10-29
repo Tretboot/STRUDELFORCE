@@ -50,7 +50,9 @@ def run_stage_music() -> bool:
         print("[ADF] Keine TFMX-Bibliothek -> Disk ohne Musik")
         shutil.rmtree(os.path.join(DIST, "music"), ignore_errors=True)
         return True
-    stage_script = os.path.join(ROOT, "tools", "stage_amiga_music.py")
+    stage_script = os.path.join(ROOT, "tools", "audio", "stage_amiga_music.py")
+    if not os.path.isfile(stage_script):
+        stage_script = os.path.join(ROOT, "tools", "stage_amiga_music.py")
     return subprocess.run([sys.executable, stage_script], cwd=ROOT).returncode == 0
 
 def ensure_amiga_exe() -> bool:
@@ -84,16 +86,23 @@ def build_adf() -> int:
     cmd = [
         sys.executable, "-m", "amitools.tools.xdftool",
         "-f", ADF_PATH,
-        "format", "STRUDELFORCE", "ofs",
+        "format", "StrudelOS", "ofs",
         "+", "boot", "install", "boot1x",
         "+", "pack", DIST,
         "+", "list"
     ]
-    print(f"[ADF] Erzeuge {ADF_PATH}...")
+    print(f"[ADF] Erzeuge {ADF_PATH} (Volume: StrudelOS)...")
     res = subprocess.run(cmd, cwd=ROOT)
     if res.returncode != 0:
         print("[FEHLER] xdftool pack fehlgeschlagen!")
         return res.returncode
+
+    # 4. Versioniertes ADF in amiga/builds/ ablegen
+    builds_dir = os.path.join(ROOT, "amiga", "builds")
+    os.makedirs(builds_dir, exist_ok=True)
+    versioned_adf = os.path.join(builds_dir, "strudelforce_v0.3.1.adf")
+    shutil.copy2(ADF_PATH, versioned_adf)
+    print(f"[ADF] Versioniertes Image gesichert: {versioned_adf}")
 
     # 4. Check size
     size = os.path.getsize(ADF_PATH)
