@@ -693,7 +693,7 @@ void core_tick(GameState *s, uint16_t input) {
             if (s->pvx > 0 && s->pvx < STOP_EPSILON) s->pvx = 0;
             if (s->pvx < 0 && s->pvx > -STOP_EPSILON) s->pvx = 0;
         }
-        if ((input & INPUT_UP) && s->on_ground) {
+        if ((input & (INPUT_UP | INPUT_JUMP)) && s->on_ground) {
             s->pvy = JUMP_V_FP;
             s->on_ground = 0;
         }

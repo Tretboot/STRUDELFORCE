@@ -16,6 +16,7 @@
 #include "support/gcc8_c_support.h"
 #include "strudelforce.h"
 #include "retro_font.h"
+#include "sprite_data.h"
 
 extern void  memclr(void *dest, unsigned long len);
 extern void *memcpy(void *dest, const void *src, unsigned long len);
@@ -121,9 +122,9 @@ static int p61_init(const void* m) {
     register volatile const void* _a6 __asm__("a6") = (void*)0xdff000;
     register int _d0 __asm__("d0");
     __asm__ volatile (
-        "movem.l %%d1-%%d7/%%a4-%%a5,-(%%sp)\n"
+        "movem.l %%d1-%%d7/%%a0-%%a6,-(%%sp)\n"
         "jsr 0(%%a3)\n"
-        "movem.l (%%sp)+,%%d1-%%d7/%%a4-%%a5"
+        "movem.l (%%sp)+,%%d1-%%d7/%%a0-%%a6"
     : "=r" (_d0), "+rf"(_a0), "+rf"(_a1), "+rf"(_a2), "+rf"(_a3), "+rf"(_a6)
     :
     : "cc", "memory");
@@ -134,9 +135,9 @@ static void p61_music(void) {
     register volatile const void* _a3 __asm__("a3") = player_bin;
     register volatile const void* _a6 __asm__("a6") = (void*)0xdff000;
     __asm__ volatile (
-        "movem.l %%d0-%%d7/%%a0-%%a2/%%a4-%%a5,-(%%sp)\n"
+        "movem.l %%d0-%%d7/%%a0-%%a6,-(%%sp)\n"
         "jsr 4(%%a3)\n"
-        "movem.l (%%sp)+,%%d0-%%d7/%%a0-%%a2/%%a4-%%a5"
+        "movem.l (%%sp)+,%%d0-%%d7/%%a0-%%a6"
     : "+rf"(_a3), "+rf"(_a6)
     :
     : "cc", "memory");
@@ -146,9 +147,9 @@ static void p61_end(void) {
     register volatile const void* _a3 __asm__("a3") = player_bin;
     register volatile const void* _a6 __asm__("a6") = (void*)0xdff000;
     __asm__ volatile (
-        "movem.l %%d0-%%d1/%%a0-%%a1,-(%%sp)\n"
+        "movem.l %%d0-%%d7/%%a0-%%a6,-(%%sp)\n"
         "jsr 8(%%a3)\n"
-        "movem.l (%%sp)+,%%d0-%%d1/%%a0-%%a1"
+        "movem.l (%%sp)+,%%d0-%%d7/%%a0-%%a6"
     : "+rf"(_a3), "+rf"(_a6)
     :
     : "cc", "memory");
@@ -271,6 +272,60 @@ static void draw_number(int x, int y, uint32_t v, int c)
     buf[i] = 0;
     do { buf[--i] = (char)('0' + (v % 10u)); v /= 10u; } while (v && i > 0);
     draw_text(x, y, &buf[i], c);
+}
+
+/* ---- Sprite- & Animations-Rendering (Amiga OCS 5-Bitplane) ---------------- */
+static void draw_sprite(int x, int y, const SFSprite *spr, int flip_x)
+{
+    int sw, sh, top_x, top_y, r, c;
+    /* Globpalette -> OCS Palette-Indizes */
+    static const uint8_t s_pal_map[16] = {
+        0, 4, 3, 2, 1, 11, 10, 12, 13, 13, 23, 6, 29, 5, 6, 0
+    };
+    if (!spr) return;
+    sw = spr->w;
+    sh = spr->h;
+    top_x = x - spr->ax;
+    top_y = y - spr->ay;
+
+    for (r = 0; r < sh; r++) {
+        int py = top_y + r;
+        int row_off;
+        if (py < 0 || py >= SCR_H) continue;
+        row_off = r * sw;
+
+        for (c = 0; c < sw; c++) {
+            int src_x = flip_x ? (sw - 1 - c) : c;
+            uint8_t pidx = spr->px[row_off + src_x];
+            uint8_t gcol;
+            int col, px, wl, p;
+            uint16_t mask;
+
+            if (pidx == SF_SPRITE_TRANSPARENT || pidx >= spr->n_colors) continue;
+
+            px = top_x + c;
+            if (px < 0 || px >= SCR_W) continue;
+
+            gcol = spr->pal[pidx];
+            col = s_pal_map[gcol & 15];
+
+            wl = px >> 4;
+            mask = (uint16_t)(0x8000u >> (px & 15));
+            for (p = 0; p < NPLANES; p++) {
+                uint16_t *w = (uint16_t *)planes[draw_idx][p] + py * ROW_WORDS + wl;
+                if ((col >> p) & 1) *w |= mask;
+                else              *w &= (uint16_t)~mask;
+            }
+        }
+    }
+}
+
+static void draw_anim(int x, int y, const SFAnim *anim, int frame_tick, int flip_x)
+{
+    int f;
+    if (!anim || anim->n_frames == 0) return;
+    f = frame_tick % anim->n_frames;
+    draw_sprite(x, y, anim->frames[f], flip_x);
 }
 
 /* ---- Welt -> Bildschirm ---------------------------------------------------- */
@@ -541,13 +596,13 @@ static void render_credits(uint32_t f, uint16_t in)
     }
 
     /* 2. Scroll-Steuerung */
-    if (in & INPUT_MORPH) { /* Down / S: Schneller vorwaerts */
-        s_credit_scroll_y += 3;
-    } else if (in & INPUT_JUMP) { /* Up / W: Zurueck */
-        s_credit_scroll_y -= 3;
+    if (in & (INPUT_MORPH | INPUT_DOWN)) { /* Down / S: Schneller vorwaerts */
+        s_credit_scroll_y += 5;
+    } else if (in & (INPUT_JUMP | INPUT_UP)) { /* Up / W: Zurueck */
+        s_credit_scroll_y -= 5;
         if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
     } else if (!s_credit_paused) {
-        if ((f & 1) == 0) s_credit_scroll_y++; /* Weicher 25-50Hz Scroll */
+        s_credit_scroll_y += 2; /* Fluessiger, zuegiger 50Hz-Scroll */
     }
 
     if (s_credit_scroll_y > total_scroll) s_credit_scroll_y = total_scroll;
@@ -788,31 +843,34 @@ static void render_gameplay(const GameState *s)
         fill_rect(x, y, w, 2, pl->kind == 2 ? C_E1_L : C_PL_L);
     }
 
-    /* Pickups */
+    /* Pickups (Turrican Diamanten / Icons) */
     for (i = 0; i < MAX_PICKUPS; i++) {
         const Pickup *p = &s->pickups[i];
+        int icon_idx;
         if (!p->active) continue;
-        fill_rect(wx(p->x) - 3, wy(p->y) - 8, 6, 8, C_GOLD);
-        fill_rect(wx(p->x) - 1, wy(p->y) - 7, 2, 2, C_WHITE);
+        icon_idx = (i + (s->tick / 6)) % 3;
+        draw_anim(wx(p->x), wy(p->y), (icon_idx == 0 ? &ICON_0_ANIM : icon_idx == 1 ? &ICON_1_ANIM : &ICON_2_ANIM), 0, 0);
     }
 
-    /* Gegner */
+    /* Gegner mit Turrican-Sprites */
     for (i = 0; i < MAX_ENEMIES; i++) {
         const Enemy *e = &s->enemies[i];
-        int x, y, w, h, cl, cd;
+        int ex, ey, flip;
         if (!e->active) continue;
+        ex = wx(e->x);
+        ey = wy(e->y);
+        flip = (e->vx < 0);
         switch (e->kind) {
-        case ENEMY_SHOOTER: w = 8;  h = 12; cl = C_E2_L; cd = C_E2_D; break;
-        case ENEMY_TANK:    w = 16; h = 16; cl = C_E3_L; cd = C_E3_D; break;
-        default:            w = 8;  h = 8;  cl = C_E1_L; cd = C_E1_D; break;
+        case ENEMY_SHOOTER:
+            draw_anim(ex, ey, &ENEMY_SHOOT_ANIM, (s->tick + i * 7) / 4, flip);
+            break;
+        case ENEMY_TANK:
+            draw_anim(ex, ey, &ENEMY_TANK_ANIM, (s->tick + i * 5) / 5, flip);
+            break;
+        default:
+            draw_anim(ex, ey, &ENEMY_WALK_ANIM, (s->tick + i * 4) / 4, flip);
+            break;
         }
-        x = wx(e->x) - w / 2;
-        y = wy(e->y) - h;
-        if (e->hit_timer & 2) { cl = C_WHITE; cd = C_WHITE; }
-        fill_rect(x, y, w, h, cd);
-        fill_rect(x + 1, y + 1, w - 2, h / 2, cl);
-        fill_rect(x + w / 4, y + 2, 2, 2, C_WHITE);
-        fill_rect(x + w - w / 4 - 2, y + 2, 2, 2, C_WHITE);
     }
 
     /* Projektile */
@@ -825,19 +883,24 @@ static void render_gameplay(const GameState *s)
         fill_rect(wx(p->x) - 1, wy(p->y) - 1, 2, 2, C_WHITE);
     }
 
-    /* Spieler */
+    /* Spieler mit lebendigem Turrican-Sprite & Animation */
     if (s->state != STATE_GAMEOVER && !(s->respawn_timer && (s->tick & 4))) {
         int px = wx(s->px), py = wy(s->py);
+        int flip = (s->facing < 0);
         if (s->morphing) {
-            fill_rect(px - 4, py - 8, 8, 8, C_P_DARK);
-            fill_rect(px - 3, py - 7, 6, 4, C_P_BODY);
+            /* Rotierender Turrican Morph-Ball */
+            draw_anim(px, py, &PLAYER_MORPH_ANIM, s->tick / 3, flip);
+        } else if (!s->on_ground) {
+            /* Sprung: Aim-Up Frame */
+            draw_sprite(px, py, &PLAYER_AIM_UP_0, flip);
+        } else if (s->pvx != 0) {
+            /* Lauf-Animation (14 Frames) */
+            draw_anim(px, py, &PLAYER_RUN_ANIM, s->tick / 3, flip);
         } else {
-            fill_rect(px - 4, py - 14, 8, 14, C_P_DARK);
-            fill_rect(px - 3, py - 13, 6, 6, C_P_BODY);
-            fill_rect(px + (s->facing > 0 ? 1 : -3), py - 12, 2, 2, C_P_GLOW);
-            fill_rect(px + (s->facing > 0 ? 4 : -9), py - 9, 5, 2, C_PL_L);
+            /* Stand-Pose */
+            draw_sprite(px, py, &PLAYER_STAND_0, flip);
         }
-        if (s->shield) fill_rect(px - 6, py - 16, 12, 1, C_SHIELD);
+        if (s->shield) fill_rect(px - 10, py - 36, 20, 2, C_SHIELD);
     }
 
     /* Partikel */
@@ -950,20 +1013,25 @@ static uint16_t read_input(void)
     int right = (j >> 1) & 1, left = (j >> 9) & 1;
     int down = right ^ ((j >> 0) & 1), up = left ^ ((j >> 8) & 1);
 
-    /* Bewegung: Joystick Port 2, Pfeiltasten (0x4F,0x4E,0x4C,0x4D), A/D/W/S (0x20,0x22,0x11,0x21) */
+    /* Bewegung: Joystick Port 2, Pfeiltasten (0x4F,0x4E,0x4C,0x4D), A/D/W/S (0x20,0x22,0x11,0x21), Space (0x40) */
     if (left  || s_keys[0x4F] || s_keys[0x20]) m |= INPUT_LEFT;
     if (right || s_keys[0x4E] || s_keys[0x22]) m |= INPUT_RIGHT;
-    if (up    || s_keys[0x4C] || s_keys[0x11]) m |= INPUT_JUMP;
-    if (down  || s_keys[0x4D] || s_keys[0x21]) m |= INPUT_MORPH;
+    if (up    || s_keys[0x4C] || s_keys[0x11] || s_keys[0x40]) m |= (INPUT_UP | INPUT_JUMP);
+    if (down  || s_keys[0x4D] || s_keys[0x21]) m |= (INPUT_DOWN | INPUT_MORPH);
 
-    /* Feuer: Port-2 Feuer, Space (0x40), Enter (0x44), Pad-Enter (0x43), Ctrl (0x63), Port 1 LMB */
-    if (!(CIAA_PRA & 0x80) || s_keys[0x40] || s_keys[0x44] || s_keys[0x43] || s_keys[0x63] || !(CIAA_PRA & 0x40)) {
+    /* Feuer: Port-2 Feuer, Enter (0x44), Pad-Enter (0x43), Ctrl (0x63), Port 1 LMB */
+    if (!(CIAA_PRA & 0x80) || s_keys[0x44] || s_keys[0x43] || s_keys[0x63] || !(CIAA_PRA & 0x40)) {
         m |= INPUT_FIRE;
     }
 
-    /* 2. Taste / Beam: Port-2 2. Taste, Alt-Links (0x64), Alt-Rechts (0x65), C (0x33) */
-    if (!(REG16(R_POTGOR) & (1u << 14)) || s_keys[0x64] || s_keys[0x65] || s_keys[0x33]) {
+    /* 2. Taste / Beam: Port-2 2. Taste, Alt-Links (0x64), Alt-Rechts (0x65), X (0x32) */
+    if (!(REG16(R_POTGOR) & (1u << 14)) || s_keys[0x64] || s_keys[0x65] || s_keys[0x32]) {
         m |= INPUT_SECOND;
+    }
+
+    /* Waffenwechsel: C (0x33), Tab (0x42) */
+    if (s_keys[0x33] || s_keys[0x42]) {
+        m |= INPUT_WEAPSW;
     }
 
     return m;

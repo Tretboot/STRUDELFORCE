@@ -37,7 +37,7 @@ $(OUT).exe: $(OUT).elf
 	$(info Elf2Hunk $(program).exe)
 	@elf2hunk $(OUT).elf $(OUT).exe -s
 
-$(OUT).elf: $(objects)
+$(OUT).elf: $(objects) | out
 	$(info Linking $(program).elf)
 	@$(CC) $(CCFLAGS) $(LDFLAGS) $(objects) -o $@
 
@@ -51,10 +51,24 @@ endif
 
 -include $(objects:.o=.d)
 
-$(c_objects) : obj/%.o : %.c
+$(c_objects) : obj/%.o : %.c | obj
 	$(info Compiling $<)
 	@$(CC) $(CCFLAGS) -c -o $@ $<
 
-$(s_objects): obj/%.o : %.s
+$(s_objects): obj/%.o : %.s | obj
 	$(info Assembling $<)
 	@$(CC) $(CCFLAGS) $(ASFLAGS) -c -o $@ $<
+
+obj:
+ifdef WINDOWS
+	@if not exist obj mkdir obj
+else
+	@mkdir -p obj
+endif
+
+out:
+ifdef WINDOWS
+	@if not exist out mkdir out
+else
+	@mkdir -p out
+endif

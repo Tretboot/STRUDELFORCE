@@ -123,7 +123,7 @@ class Tfmx:
         s.voices = [Voice() for _ in range(NVOICES)]
         s.tracks = [Track() for _ in range(8)]
         s.first = s.starts[sub]; s.last = s.ends[sub]; s.pos = s.first
-        s.speed = 2; s.set_cia(0) # Default speed 2 (Turrican 3 / TFMX Pro fix)
+        s.speed = 1; s.set_cia(0) # Default speed 1 (Turrican 3 / TFMX Pro double speed)
         tp = s.tempos[sub]
         if tp >= 0x10: s.set_cia(tp); s.speed = 0
         elif tp: s.speed = tp

@@ -22,6 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: ilammy/msvc-dev-cmd@v1
+
       - name: Build (build_msvc.bat)
         run: build_msvc.bat
         shell: cmd
@@ -59,10 +61,11 @@ jobs:
           gcc -std=c99 -Wall -Wextra -Isrc -c src/game_logic.c -o /tmp/game_logic.o
           gcc -std=c99 -Wall -Wextra -Isrc -c src/engine_core.c -o /tmp/engine_core.o
           gcc -std=c99 -Wall -Wextra -Isrc -c src/soundengine_core.c -o /tmp/soundengine_core.o
+          gcc -std=c99 -Wall -Wextra -Isrc -c src/level_engine.c -o /tmp/level_engine.o
 
       - name: Integrationstest
         run: |
-          gcc -std=c99 -O2 -Isrc src/test_suite.c src/game_logic.c src/engine_core.c src/soundengine_core.c -lm -o /tmp/test_suite
+          gcc -std=c99 -O2 -Isrc src/test_suite.c src/game_logic.c src/engine_core.c src/soundengine_core.c src/level_engine.c -lm -o /tmp/test_suite
           /tmp/test_suite
 
       - name: Python-Oracle
@@ -100,6 +103,7 @@ jobs:
           BIN="$PWD/.toolchain/extension/bin/linux"
           export PATH="$BIN/opt/bin:$BIN:$PATH"
           m68k-amiga-elf-gcc --version | head -1
+          mkdir -p amiga/obj amiga/out
           make -C amiga
 
       - name: ADF bauen

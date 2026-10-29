@@ -5,6 +5,7 @@ floppy0=F:\AgentHome\STRUDELFORCE_Master\strudelforce.adf
 # Authentische Amiga 500 Hardware-Laufwerksgeraeusche & 100% PAL-Speed
 floppy_speed=100
 floppy_volume=100
+floppysound=100
 floppy0sound=1
 floppy0soundvolume_disk=100
 floppy0soundvolume_empty=40

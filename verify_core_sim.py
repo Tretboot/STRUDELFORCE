@@ -532,6 +532,7 @@ INPUT_DOWN = 0x0008
 INPUT_FIRE = 0x0010
 INPUT_SECOND = 0x0020
 INPUT_WEAPSW = 0x0040
+INPUT_JUMP = 0x0400
 
 
 def core_tick(s, input_mask):
@@ -587,7 +588,7 @@ def core_tick(s, input_mask):
             s.pvx = 0
         if -STOP_EPSILON < s.pvx < 0:
             s.pvx = 0
-    if (input_mask & INPUT_UP) and s.on_ground:
+    if (input_mask & (INPUT_UP | INPUT_JUMP)) and s.on_ground:
         s.pvy = JUMP_V_FP
         s.on_ground = 0
     s.pvy -= GRAVITY_FP
