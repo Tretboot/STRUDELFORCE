@@ -8,11 +8,19 @@ import os
 import sys
 import shutil
 import subprocess
+import stat
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WIKI_DIR = os.path.join(ROOT, 'wiki')
 TMP_WIKI_REPO = os.path.join(ROOT, 'tmp', 'wiki_clone')
 WIKI_GIT_URL = 'https://github.com/Tretboot/STRUDELFORCE.wiki.git'
+
+def on_rm_error(func, path, exc_info):
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except Exception:
+        pass
 
 def run_cmd(cmd, cwd=None):
     res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
@@ -54,7 +62,13 @@ def main():
     print("[+] Wiki-Remote-Repository ist aktiv!")
     os.makedirs(os.path.dirname(TMP_WIKI_REPO), exist_ok=True)
     if os.path.isdir(TMP_WIKI_REPO):
-        shutil.rmtree(TMP_WIKI_REPO)
+        try:
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(TMP_WIKI_REPO, onexc=on_rm_error)
+            else:
+                shutil.rmtree(TMP_WIKI_REPO, onerror=on_rm_error)
+        except Exception:
+            subprocess.run(f'rmdir /s /q "{TMP_WIKI_REPO}"', shell=True)
 
     print(f"[*] Klone {WIKI_GIT_URL} nach tmp/wiki_clone...")
     code, out, err = run_cmd(f'git clone "{WIKI_GIT_URL}" "{TMP_WIKI_REPO}"')
