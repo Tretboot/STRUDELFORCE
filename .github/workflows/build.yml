@@ -74,6 +74,19 @@ jobs:
           python3 verify_core_sim.py --seed 1234 --campaign
           python3 tools/selftest.py
 
+      - name: Build Linux Game Binary (strudelforce_game)
+        run: |
+          gcc -std=c99 -O2 -Isrc src/game_main.c src/game_logic.c src/engine_core.c src/soundengine_core.c src/level_engine.c -lm -o strudelforce_game
+          chmod +x strudelforce_game
+          ./strudelforce_game --demo 2500 --no-intro --no-sound
+          ./strudelforce_game --campaign --demo 5000 --no-intro --no-sound
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: strudelforce_game
+          if-no-files-found: error
+
   amiga:
     name: Amiga (m68k-amiga-elf-gcc + ADF)
     runs-on: ubuntu-24.04
@@ -138,12 +151,18 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: linux-binaries
+          path: .
+
+      - uses: actions/download-artifact@v4
+        with:
           name: amiga
           path: .
 
       - name: Release-Pakete bauen (nur relevante Dateien)
         run: |
           mkdir -p amiga/out && mv -f a.exe amiga/out/a.exe 2>/dev/null || true
+          chmod +x strudelforce_game || true
           python3 tools/make_release.py
           ls -la release_out
 

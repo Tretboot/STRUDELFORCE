@@ -60,7 +60,13 @@ def make_zip(name, entries):
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
         for src, arc in entries:
             if os.path.isfile(src):
-                z.write(src, arc)
+                info = zipfile.ZipInfo(arc)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                # Unix Executable Permissions (0755) fuer Linux-Binaries setzen
+                if not arc.endswith(".adf") and not arc.endswith(".exe") and not arc.endswith(".txt") and not arc.endswith(".md"):
+                    info.external_attr = 0o755 << 16
+                with open(src, "rb") as f:
+                    z.writestr(info, f.read())
                 n += 1
             else:
                 print("  [uebersprungen, fehlt] " + src)
@@ -71,18 +77,35 @@ def main():
     ver = version()
     os.makedirs(OUT, exist_ok=True)
     made = [make_source(ver)]
+
+    # Windows ZIP: NUR die Executables
     if "--no-windows" not in sys.argv:
-        ent = [(os.path.join(ROOT, f), f) for f in WIN_FILES + DOC_FILES]
-        n = notes_for(ver)
-        if n:
-            ent.append((n, "RELEASE_NOTES.md"))
-        made.append(make_zip("strudelforce-v%s-windows-x64.zip" % ver, ent))
+        ent = [(os.path.join(ROOT, f), f) for f in WIN_FILES if os.path.isfile(os.path.join(ROOT, f))]
+        if ent:
+            made.append(make_zip("strudelforce-v%s-windows-x64.zip" % ver, ent))
+
+    # Amiga ZIP: NUR die ADF
     adf = os.path.join(ROOT, "strudelforce.adf")
     if os.path.isfile(adf):
         made.append(make_zip("strudelforce-v%s-amiga.zip" % ver,
-                             [(adf, "strudelforce.adf"),
-                              (os.path.join(ROOT, "amiga", "out", "a.exe"), "strudelforce.amiga"),
-                              (os.path.join(ROOT, "README.md"), "README.md")]))
+                             [(adf, "strudelforce.adf")]))
+
+    # Linux ZIP: NUR das strudelforce_game Binary
+    linux_bin = os.path.join(ROOT, "strudelforce_game")
+    if os.path.isfile(linux_bin):
+        made.append(make_zip("strudelforce-v%s-linux-x64.zip" % ver,
+                             [(linux_bin, "strudelforce_game")]))
+
+    # Standalone-Binaries direkt nach release_out kopieren
+    import shutil
+    for fn in ["strudelforce.adf", "strudelforce.exe", "strudelforce_game"]:
+        src = os.path.join(ROOT, fn)
+        if os.path.isfile(src):
+            dst = os.path.join(OUT, fn)
+            shutil.copy2(src, dst)
+            if dst not in made:
+                made.append(dst)
+
     made = [m for m in made if m]
     with open(os.path.join(OUT, "SHA256SUMS.txt"), "w", encoding="utf-8", newline="\n") as f:
         for m in made:

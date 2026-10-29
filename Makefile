@@ -48,11 +48,17 @@ help:
 	@echo "make amiga_bin    - Baut 68k Amiga Binary (strudelforce.amiga)"
 	@echo "make amiga_adf    - Baut bootfaehiges 880 KB Amiga Floppy Image (strudelforce.adf)"
 
+ifeq ($(OS),Windows_NT)
+WINMM ?= -lwinmm
+else
+WINMM ?=
+endif
+
 gui: $(GUI_SRCS)
 	$(CC) $(CFLAGS) $(GUI_SRCS) -o strudelforce -lgdi32 -lwinmm -luser32 $(LDFLAGS)
 
 game: $(GAME_SRCS)
-	$(CC) $(CFLAGS) $(GAME_SRCS) -o strudelforce_game -lwinmm $(LDFLAGS)
+	$(CC) $(CFLAGS) $(GAME_SRCS) -o strudelforce_game $(WINMM) $(LDFLAGS)
 
 test: $(TEST_SRCS)
 	$(CC) $(CFLAGS) $(TEST_SRCS) -o test_suite $(LDFLAGS)
