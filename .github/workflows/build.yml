@@ -149,5 +149,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          name: STRUDELFORCE v0.3.1 (Amiga 500 ADF Preview & Star Wars 3D Crawl)
+          body_path: releases/RELEASE_NOTES_v0.3.1.md
           files: release_out/*
-          generate_release_notes: true
