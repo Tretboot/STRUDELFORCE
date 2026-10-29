@@ -11,7 +11,7 @@
 
 static const char * const EMBEDDED_CREDITS_DATA[EMBEDDED_CREDITS_COUNT] = {
     "==========================================================================",
-    "  S T R U D E L F O R C E   0 . 3 . 0   --   A B S P A N N   &   C R E D I T S",
+    "  S T R U D E L F O R C E   0 . 3 . 1   --   A B S P A N N   &   C R E D I T S",
     "==========================================================================",
     "",
     "  Chris Huelsbeck Tribute | Manfred Trenz Turrican II Benchmark",

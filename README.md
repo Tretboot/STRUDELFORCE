@@ -61,10 +61,12 @@ STRUDELFORCE bietet 100% Bit-Parität zwischen moderner Windows-Präsentation un
 
 2. **Nativer Amiga 500 Bare-Metal Port (`amiga/` & `strudelforce.adf`):**
    - Echter M68K Bare-Metal Build via `m68k-amiga-elf-gcc` (keine libc-Abhängigkeit, `-nostdlib -ffreestanding`).
-   - **Vollständige State-Machine mit Parität:** Cracktro-Intro (3D-Wireframe-Vektorwürfel, Sinus-Scroller) -> Turrican-2 Hauptmenü -> Amiga-Block Ladebildschirm -> 50Hz Fixed-Point Spiel.
+   - **Vollständige State-Machine mit Parität:** Cracktro-Intro (3D-Wireframe-Vektorwürfel, Sinus-Scroller) -> Turrican-2 Hauptmenü -> Amiga-Block Ladebildschirm -> 50Hz Fixed-Point Spiel -> Interaktive Credits (`AMI_STATE_CREDITS`).
+   - **De-Dimmed High-Contrast Visuals:** Keine störenden Abdunklungs-Rechtecke hinter Texten; Menüs und Abspann schweben frei über Sternenfeld, Copper-Verläufen und Spielgrafik mit lebendigen Farb-Tags.
+   - **Interaktiver Amiga-Abspann:** 50Hz-Vertikalscroll mit Beschleunigung (Runter/S), Rücklauf (Hoch/W), Pause (Leertaste) und Menü-Rückkehr (Feuer/ESC), 2-Ton Turrican-Überschriften und farbigen Kategorien-Tags.
    - 5 OCS-Bitplanes (320x256 @ 50Hz PAL, 32 Farben, Doppelpuffer) direkt im Chip-RAM.
    - Dynamischer Copper-Farbverlauf-Himmel (Amiga Raster-Bänder).
-   - **Paula 4-Kanal Hardware DMA Audio:** ThePlayer 6.1a Replayer direkt im Chip-RAM auf VBlank.
+   - **Paula 4-Kanal Hardware DMA Audio:** ThePlayer 6.1a Replayer direkt im Chip-RAM auf VBlank mit Register A6 Hardware-Basis ($DFF000).
    - **Volle Eingabe-Unterstützung:** Joystick Port 2, Tastatur (Pfeiltasten, WASD, Space, Enter, Alt, Ctrl, ESC) und Maus Port 1 LMB.
    - Bootfähiges 880 KB Floppy Image (`strudelforce.adf`, Volume: **`StrudelOS`**) im Standard Amiga OFS-Format mit Kickstart 1.3 Bootblock (`boot1x`) und `s/startup-sequence`. Lauffähig auf jedem Amiga 500 (Kickstart 1.3, WinUAE mit authentischem Diskettenladegeräusch, RetroArch PUAE, echte Hardware).
 

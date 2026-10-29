@@ -2734,7 +2734,7 @@ static void credits_init(void) {
 
     credits_add_line("");
     credits_add_line("============================================================================");
-    credits_add_line("                         STRUDELFORCE 0.3.0");
+    credits_add_line("                         STRUDELFORCE 0.3.1");
     credits_add_line("           RETRO 2.5D VOXEL-SHOOTER & CYBER-PAULA AUDIO ENGINE");
     credits_add_line("                  COMMODORE AMIGA 500 HOMMAGE (50HZ PAL)");
     credits_add_line("============================================================================");
@@ -2792,7 +2792,7 @@ static void credits_init(void) {
     credits_add_line("    ENDE DER DOKUMENTATION - VIELEN DANK FUERS LESEN UND SPIELEN!");
     credits_add_line("============================================================================");
     credits_add_line("");
-    credits_add_line("             STRUDELFORCE 0.3.0  -  50HZ PAL FOREVER");
+    credits_add_line("             STRUDELFORCE 0.3.1  -  50HZ PAL FOREVER");
     credits_add_line("                      AMIGA RULEZ THE WORLD!");
     credits_add_line("");
     credits_add_line("           [ ESC ] ODER [ ENTER ] DRUECKEN FUERS HAUPTMENUE");
@@ -2844,16 +2844,9 @@ static void render_state_credits(void) {
 
     update_and_render_starfield(star_speed);
 
-    /* Abgedunkeltes Zentrum fuer optimale Text-Lesbarkeit (LUT-Integer) */
-    int panel_w = 780;
-    int panel_x = (WIN_W - panel_w) / 2;
-    dim_lut_init(71); /* ~0.28 Helligkeit */
-    dim_screen_rect(panel_x, 30, panel_x + panel_w, WIN_H - 26);
-    /* Rahmen: nur oben + unten — die blauen Seiten-Streifen sind weg (v0.3.0) */
-    draw_line(panel_x - 1, 30, panel_x + panel_w + 1, 30, 0x003060);
-    draw_line(panel_x - 1, WIN_H - 27, panel_x + panel_w + 1, WIN_H - 27, 0x003060);
-
     /* Text-Scroll-Berechnung */
+    int panel_w = 820;
+    int panel_x = (WIN_W - panel_w) / 2;
     int line_h = 20;
     int total_scroll = s_credit_line_count * line_h + WIN_H + 80;
 
@@ -2898,25 +2891,43 @@ static void render_state_credits(void) {
             draw_rect(panel_x + 10, ly + 9, panel_w - 20, 2, 0x00A0FF);
             draw_rect(panel_x + 10, ly + 11, panel_w - 20, 1, 0xFF4080);
         } else if (strncmp(l, "    TEIL", 8) == 0 || strncmp(l, "                         STRUDELFORCE", 37) == 0) {
-            draw_rect(panel_x + 10, ly - 2, panel_w - 20, 22, 0x002040);
-            draw_rect_outline(panel_x + 10, ly - 2, panel_w - 20, 22, 0x00FFFF);
-            draw_title(WIN_W / 2, ly, l, 1);
+            draw_title(WIN_W / 2, ly - 4, l, 2);
         } else if (l[0] == '#' && l[1] == '#') {
-            draw_rect(panel_x + 16, ly - 1, panel_w - 32, 18, 0x001830);
-            draw_string(panel_x + 24, ly, l, 0xFFD700, 1);
-            draw_rect(panel_x + 24, ly + 15, panel_w - 48, 1, 0xFF8000);
+            draw_string(panel_x + 24, ly, l, 0xFFD700, 2);
+            draw_rect(panel_x + 24, ly + 18, panel_w - 48, 1, 0xFF8000);
         } else if (l[0] == '#') {
-            draw_rect(panel_x + 10, ly - 2, panel_w - 20, 22, 0x002850);
-            draw_rect_outline(panel_x + 10, ly - 2, panel_w - 20, 22, 0x00FFFF);
-            draw_string(panel_x + 20, ly + 2, l, 0x00FFFF, 1);
+            draw_title(WIN_W / 2, ly - 4, l, 2);
+        } else if (l[0] == '[') {
+            const char *cb = strchr(l, ']');
+            if (cb) {
+                int tag_len = (int)(cb - l) + 1;
+                char tag[64];
+                if (tag_len >= (int)sizeof(tag)) tag_len = (int)sizeof(tag) - 1;
+                strncpy(tag, l, tag_len);
+                tag[tag_len] = '\0';
+                uint32_t tag_col = 0x60D0FF;
+                if (strstr(tag, "PROJEKT") || strstr(tag, "DESIGN")) tag_col = 0xFFD700;
+                else if (strstr(tag, "AUDIO") || strstr(tag, "SOUND") || strstr(tag, "MUSIK")) tag_col = 0xFF40A0;
+                else if (strstr(tag, "CORE") || strstr(tag, "PHYSIK") || strstr(tag, "ENGINE")) tag_col = 0x40FF60;
+                else if (strstr(tag, "AI") || strstr(tag, "AGENT")) tag_col = 0x00E0FF;
+                else if (strstr(tag, "HERO") || strstr(tag, "COMMODORE")) tag_col = 0xFFFF40;
+                else if (strstr(tag, "TRIBUTE") || strstr(tag, "THANKS")) tag_col = 0xFFA030;
+                else if (strstr(tag, "SCENE") || strstr(tag, "GREET")) tag_col = 0xD060FF;
+                else if (strstr(tag, "TASTEN") || strstr(tag, "LEER")) tag_col = 0x40E0D0;
+
+                draw_string(panel_x + 20, ly, tag, tag_col, 1);
+                draw_string(panel_x + 20 + tag_len * 8 + 8, ly, cb + 1, 0xFFFFFF, 1);
+            } else {
+                draw_string(panel_x + 24, ly, l, 0x60D0FF, 1);
+            }
         } else if (l[0] == '>') {
             draw_rect(panel_x + 20, ly, 4, 16, 0x00FFFF);
             draw_string(panel_x + 32, ly, l + 1, 0x60D0FF, 1);
         } else if (l[0] == '-' || l[0] == '*') {
             draw_rect(panel_x + 22, ly + 6, 4, 4, 0xFF8000);
-            draw_string(panel_x + 32, ly, l, 0xE0E0E0, 1);
+            draw_string(panel_x + 32, ly, l, 0xF0F0F0, 1);
         } else if (strncmp(l, "    ", 4) == 0) {
-            draw_string(panel_x + 36, ly, l, 0x80D8FF, 1);
+            draw_string(panel_x + 36, ly, l, 0x90E0FF, 1);
         } else if (l[0] >= 'A' && l[0] <= 'Z' && strchr(l, ':') != NULL) {
             draw_string(panel_x + 24, ly, l, 0xFFFFA040, 1);
         } else {
@@ -2947,7 +2958,7 @@ static void render_state_credits(void) {
     /* Top HUD */
     draw_rect(0, 0, WIN_W, 30, 0xEE000814);
     draw_rect(0, 29, WIN_W, 1, 0x004080);
-    draw_string(20, 10, "STRUDELFORCE 0.3.0  -  CREDITS & ARTEFAKT-DOKUMENTATION", 0xFFE040, 1);
+    draw_string(20, 10, "STRUDELFORCE 0.3.1  -  CREDITS & ARTEFAKT-DOKUMENTATION", 0xFFE040, 1);
     char mus_info[128];
     snprintf(mus_info, sizeof(mus_info), "AUDIO: [%s] %s %s",
              s_current_track_type, s_current_track_name, s_credit_paused ? "[PAUSE]" : "");
@@ -4538,7 +4549,7 @@ static void render_tab_intro(void) {
     }
 
     /* Sinus-tanzender Amiga-Scroller */
-    const char *scroller = "+++ STRUDELFORCE 0.3.0 +++ 100% 50HZ PAL AMIGA ENGINE +++ CHRIS HUELSBECK TFMX SOUNDTRACK +++ TURRICAN II 360-DEGREE LIGHTNING BEAM +++ DEMOSCENE CRT & BLOOM FILTERS +++ DRUECKE ENTER ODER LEERTASTE FUERS HAUPTMENUE +++";
+    const char *scroller = "+++ STRUDELFORCE 0.3.1 +++ 100% 50HZ PAL AMIGA ENGINE +++ CHRIS HUELSBECK TFMX SOUNDTRACK +++ TURRICAN II 360-DEGREE LIGHTNING BEAM +++ DEMOSCENE CRT & BLOOM FILTERS +++ DRUECKE ENTER ODER LEERTASTE FUERS HAUPTMENUE +++";
     int slen = (int)strlen(scroller);
     int offset = s_gui_frame / 2;
 

@@ -24,6 +24,7 @@ extern int   sys_take(void);
 extern void  sys_free(void);
 extern void  sys_waitvbl(void);
 extern void *sys_alloc_chip(unsigned long bytes);
+extern void  sys_free_chip(void *ptr, unsigned long bytes);
 extern int   level_load_campaign(GameState *s);
 
 /* ---- Custom-Chip-Register (Offsets ab 0xDFF000) ------------------------- */
@@ -117,12 +118,13 @@ static int p61_init(const void* m) {
     register volatile const void* _a1 __asm__("a1") = 0;
     register volatile const void* _a2 __asm__("a2") = 0;
     register volatile const void* _a3 __asm__("a3") = player_bin;
+    register volatile const void* _a6 __asm__("a6") = (void*)0xdff000;
     register int _d0 __asm__("d0");
     __asm__ volatile (
-        "movem.l %%d1-%%d7/%%a4-%%a6,-(%%sp)\n"
+        "movem.l %%d1-%%d7/%%a4-%%a5,-(%%sp)\n"
         "jsr 0(%%a3)\n"
-        "movem.l (%%sp)+,%%d1-%%d7/%%a4-%%a6"
-    : "=r" (_d0), "+rf"(_a0), "+rf"(_a1), "+rf"(_a2), "+rf"(_a3)
+        "movem.l (%%sp)+,%%d1-%%d7/%%a4-%%a5"
+    : "=r" (_d0), "+rf"(_a0), "+rf"(_a1), "+rf"(_a2), "+rf"(_a3), "+rf"(_a6)
     :
     : "cc", "memory");
     return _d0;
@@ -330,8 +332,7 @@ static void render_intro(uint32_t f)
     int cosY = cos_get(ay), sinY = sin_get(ay);
     int cosZ = cos_get(az), sinZ = sin_get(az);
 
-    /* 1. Header Banner */
-    fill_rect(0, 4, SCR_W, 14, C_HUD_BG);
+    /* 1. Header Banner (ohne Abdunkelkasten) */
     draw_text(16, 7, "* COMMODORE AMIGA 500 DEMO INTRO *", C_CYAN);
 
     /* 2. 3D Rotating Vector Cube in Bitplanes */
@@ -387,80 +388,191 @@ static void render_intro(uint32_t f)
 static void render_menu(int sel, uint32_t f)
 {
     int i;
-    /* Top Bar */
-    fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
-    draw_text(4, 2, "[>] STRUDELFORCE 0.3.1 - AMIGA 500 PAL", C_HUD_G);
+    /* Top Bar (ohne dunklen Kasten) */
+    draw_text(8, 4, "[>] STRUDELFORCE 0.3.1 - AMIGA 500 PAL", C_HUD_G);
 
     /* Turrican-2 Style 2-Ton Titel (Schlagschatten + Front) */
-    draw_text2x(66, 30, "STRUDELFORCE", C_DARK_RED, C_DARK_RED);
-    draw_text2x(64, 28, "STRUDELFORCE", C_GOLD, C_HUD_R);
+    draw_text2x(66, 26, "STRUDELFORCE", C_DARK_RED, C_DARK_RED);
+    draw_text2x(64, 24, "STRUDELFORCE", C_GOLD, C_HUD_R);
 
-    draw_text(44, 66, "A TURRICAN TRIBUTE FOR AMIGA 500", C_PL_L);
-    draw_text(36, 80, "DISK 1 : STRUDELFORCE.ADF (SINGLE DISC)", C_GR_M);
+    draw_text(40, 58, "A TURRICAN TRIBUTE FOR AMIGA 500", C_PL_L);
+    draw_text(32, 72, "DISK 1 : STRUDELFORCE.ADF (SINGLE DISC)", C_CYAN);
 
-    /* Menue-Kasten */
-    fill_rect(30, 102, 260, 84, C_HUD_BG);
-    fill_rect(32, 104, 256, 80, C_GR_D);
-
+    /* Menue-Eintraege: Jeder mit eigener lebhafter Farbe (ohne dunklen Hintergrund) */
     const char *items[4] = {
         "KAMPAGNE (5 WELTEN)",
         "ENDLOS ROGUELIKE",
         "STEUERUNG / CONTROLS",
         "CREDITS & INFO"
     };
+    const uint8_t item_colors[4] = {
+        C_GOLD,
+        C_CYAN,
+        C_HUD_G,
+        C_ESHOT
+    };
 
     for (i = 0; i < 4; i++) {
-        int y = 112 + i * 18;
+        int y = 104 + i * 20;
         if (i == sel) {
             int blink_c = ((f / 8) & 1) ? C_WHITE : C_GOLD;
-            fill_rect(36, y - 2, 248, 14, C_HUD_BG);
-            draw_text(40, y, "> ", blink_c);
-            draw_text(58, y, items[i], blink_c);
+            draw_text(38, y, "> ", blink_c);
+            draw_text(58, y, items[i], C_WHITE);
         } else {
-            draw_text(58, y, items[i], C_GR_L);
+            draw_text(58, y, items[i], item_colors[i]);
         }
     }
 
     /* Bedienhinweise */
-    draw_text(36, 204, "JOYSTICK / PFEILTASTEN = AUSWAHL", C_WHITE);
-    draw_text(40, 218, "FEUER / SPACE / ENTER / LMB = START", C_GOLD);
-    draw_text(76, 238, "ESC = BEENDEN (CLI)", C_GR_M);
+    draw_text(36, 198, "JOYSTICK / PFEILTASTEN : AUSWAHL", C_WHITE);
+    draw_text(40, 214, "FEUER / SPACE / ENTER  : START", C_GOLD);
+    draw_text(72, 234, "ESC : BEENDEN ZUR WORKBENCH", C_GR_M);
 }
 
 static void render_controls(void)
 {
-    fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
-    draw_text(4, 2, "[STEUERUNG / CONTROLS]", C_HUD_G);
+    /* Top Header */
+    draw_text(8, 4, "[STEUERUNG / CONTROLS]", C_HUD_G);
 
-    draw_text(40, 28, "JOYSTICK (PORT 2) ODER TASTATUR:", C_GOLD);
-    draw_text(40, 48, "LINKS / RECHTS / A / D : BEWEGEN", C_WHITE);
-    draw_text(40, 66, "HOCH / W               : SPRINGEN", C_WHITE);
-    draw_text(40, 84, "RUNTER / S             : MORPH-BALL", C_WHITE);
-    draw_text(40, 102, "FEUER / SPACE / ENTER  : SCHUSS", C_WHITE);
-    draw_text(40, 120, "2. TASTE / ALT         : HALT-STRAHL", C_WHITE);
-    draw_text(40, 138, "PORT 1 LMB             : FEUER / AUSWAHL", C_WHITE);
-    draw_text(40, 156, "ESC                    : MENUE / PAUSE", C_CYAN);
+    /* Grosser 2-Ton Titel */
+    draw_text2x(76, 18, "STEUERUNG", C_DARK_RED, C_DARK_RED);
+    draw_text2x(74, 16, "STEUERUNG", C_GOLD, C_HUD_R);
+    draw_text(88, 38, "TURRICAN AMIGA 500 KEYS", C_CYAN);
 
-    fill_rect(40, 195, 240, 20, C_HUD_BG);
-    draw_text(52, 201, "DRUECKE FEUER / SPACE ZUM MENUE", C_GOLD);
+    /* Farbige Tags pro Eingabe-Art */
+    draw_text(24, 60,  "[STICK]", C_CYAN);
+    draw_text(88, 60,  ": JOYSTICK PORT 2 / WASD", C_WHITE);
+
+    draw_text(24, 78,  "[SPRUNG]", C_HUD_G);
+    draw_text(88, 78,  ": HOCH / W = SPRINGEN", C_WHITE);
+
+    draw_text(24, 96,  "[MORPH]", C_BOUNCE);
+    draw_text(88, 96,  ": RUNTER / S = MORPH-BALL", C_WHITE);
+
+    draw_text(24, 114, "[FEUER]", C_GOLD);
+    draw_text(88, 114, ": FEUER / SPACE / ENTER", C_WHITE);
+
+    draw_text(24, 132, "[BEAM]", C_PELLET);
+    draw_text(88, 132, ": 2. TASTE / ALT / C", C_WHITE);
+
+    draw_text(24, 150, "[MAUS]", C_PL_L);
+    draw_text(88, 150, ": PORT 1 LMB = FEUER / AUSWAHL", C_WHITE);
+
+    draw_text(24, 168, "[MENUE]", C_ESHOT);
+    draw_text(88, 168, ": ESC = PAUSE / HAUPTMENUE", C_WHITE);
+
+    draw_text(48, 222, "DRUECKE FEUER / SPACE ZUM MENUE", C_GOLD);
 }
 
-static void render_credits(void)
+typedef struct {
+    const char *tag;
+    const char *text;
+    uint8_t     tag_col;
+    uint8_t     txt_col;
+    uint8_t     is_hdr;
+} AmiCreditLine;
+
+static const AmiCreditLine AMI_CREDITS[] = {
+    {"",           "STRUDELFORCE",                    C_GOLD,   C_HUD_R,  1},
+    {"",           "AMIGA 500 BARE-METAL EDITION",    C_CYAN,   C_CYAN,   0},
+    {"",           "VERSION 0.3.1 (50HZ PAL)",        C_GOLD,   C_GOLD,   0},
+    {"",           "",                                0,        0,        0},
+    {"[PROJEKT]",  "FRANK MITZKATIS",                 C_GOLD,   C_WHITE,  0},
+    {"[KONZEPT]",  "TURRICAN II BENCHMARK TRIBUTE",   C_CYAN,   C_PL_L,   0},
+    {"[CORE SIM]", "16.16 FIXED-POINT ZERO-FLOAT",    C_HUD_G,  C_WHITE,  0},
+    {"[AUDIO]",    "THEPLAYER 6.1A REPLAYER",         C_ESHOT,  C_WHITE,  0},
+    {"[HARDWARE]", "PAULA 4-VOICE DMA 16574 HZ",      C_ESHOT,  C_PL_L,   0},
+    {"[GRAFIK]",   "OCS 5 BITPLANES COPPER DUAL-BUF", C_E2_L,   C_WHITE,  0},
+    {"[LEVELS]",   "197 CHUNKS ROGUE GENERATOR",      C_PELLET, C_WHITE,  0},
+    {"[AI CORE]",  "AUTONOMOUS AGENTS PAIR-CODING",   C_CYAN,   C_WHITE,  0},
+    {"",           "",                                0,        0,        0},
+    {"",           "SPECIAL THANKS",                  C_GOLD,   C_HUD_R,  1},
+    {"[HERO]",     "CHRIS HUELSBECK (TFMX SOUND)",    C_PELLET, C_WHITE,  0},
+    {"[TRIBUTE]",  "MANFRED TRENZ & FACTOR 5",        C_GOLD,   C_WHITE,  0},
+    {"[LEGENDS]",  "RAINBOW ARTS & COMMODORE",        C_CYAN,   C_WHITE,  0},
+    {"[SCENE]",    "FAIRLIGHT, SKID ROW, RAZOR 1911", C_ESHOT,  C_PL_L,   0},
+    {"[SCENE]",    "PARADOX, THE SILENTS, RED SECT",  C_E3_L,   C_PL_L,   0},
+    {"",           "",                                0,        0,        0},
+    {"",           "SYSTEM SPECS",                    C_GOLD,   C_HUD_R,  1},
+    {"[CPU]",      "MOTOROLA 68000 @ 7.09 MHZ PAL",   C_HUD_G,  C_WHITE,  0},
+    {"[CHIP-RAM]", "512 KB BASE RAM (OFS BOOT)",      C_CYAN,   C_WHITE,  0},
+    {"[DISK]",     "SINGLE 880K FLOPPY (STRUDELOS)",  C_GOLD,   C_WHITE,  0},
+    {"",           "",                                0,        0,        0},
+    {"",           "TURRICAN FOREVER",                C_GOLD,   C_HUD_R,  1},
+    {"",           "THANK YOU FOR PLAYING!",          C_WHITE,  C_CYAN,   0},
+    {"",           "",                                0,        0,        0}
+};
+#define AMI_CREDITS_COUNT ((int)(sizeof(AMI_CREDITS) / sizeof(AMI_CREDITS[0])))
+
+static struct {
+    int16_t x, y;
+    int8_t  sp;
+    uint8_t col;
+} s_ami_stars[24];
+static int s_ami_stars_init = 0;
+static int s_credit_scroll_y = 0;
+static int s_credit_paused = 0;
+
+static void render_credits(uint32_t f, uint16_t in)
 {
-    fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
-    draw_text(4, 2, "[CREDITS & INFO]", C_HUD_G);
+    int i;
+    int line_h = 16;
+    int total_scroll = AMI_CREDITS_COUNT * line_h + SCR_H + 40;
 
-    draw_text(44, 30, "STRUDELFORCE 0.3.1 AMIGA PORT", C_GOLD);
-    draw_text(30, 60, "ORIGINAL DESIGN : FRANK MITZKATIS", C_PL_L);
-    draw_text(30, 80, "AMIGA 500 CORE  : AI CODING AGENTS", C_PL_L);
-    draw_text(30, 100, "AUDIO SYSTEM    : THEPLAYER 6.1A", C_PL_L);
-    draw_text(30, 120, "TFMX ENGINE     : CHRIS HUELSBECK TRIBUTE", C_PL_L);
-    draw_text(30, 140, "DEVELOPED FOR   : FACTOR 5 & AMIGA FANS", C_PL_L);
+    /* 1. Sterne im Hintergrund ohne jedes Abdunkeln */
+    if (!s_ami_stars_init) {
+        for (i = 0; i < 24; i++) {
+            s_ami_stars[i].x = (int16_t)((i * 37 + 13) % (SCR_W - 8));
+            s_ami_stars[i].y = (int16_t)((i * 29 + 7) % SCR_H);
+            s_ami_stars[i].sp = (int8_t)(1 + (i % 3));
+            s_ami_stars[i].col = (i % 3 == 0) ? C_WHITE : ((i % 3 == 1) ? C_CYAN : C_PELLET);
+        }
+        s_ami_stars_init = 1;
+    }
+    for (i = 0; i < 24; i++) {
+        if (!s_credit_paused) {
+            s_ami_stars[i].y += s_ami_stars[i].sp;
+            if (s_ami_stars[i].y >= SCR_H) s_ami_stars[i].y = 0;
+        }
+        draw_glyph(s_ami_stars[i].x, s_ami_stars[i].y, '.', s_ami_stars[i].col);
+    }
 
-    draw_text(30, 175, "BIT-GENAUE 16.16-FIXED-POINT-PHYSIK", C_WHITE);
+    /* 2. Scroll-Steuerung */
+    if (in & INPUT_MORPH) { /* Down / S: Schneller vorwaerts */
+        s_credit_scroll_y += 3;
+    } else if (in & INPUT_JUMP) { /* Up / W: Zurueck */
+        s_credit_scroll_y -= 3;
+        if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
+    } else if (!s_credit_paused) {
+        if ((f & 1) == 0) s_credit_scroll_y++; /* Weicher 25-50Hz Scroll */
+    }
 
-    fill_rect(40, 205, 240, 20, C_HUD_BG);
-    draw_text(56, 211, "DRUECKE FEUER ZUM HAUPTMENUE", C_GOLD);
+    if (s_credit_scroll_y > total_scroll) s_credit_scroll_y = total_scroll;
+
+    /* 3. Textzeilen zeichnen */
+    for (i = 0; i < AMI_CREDITS_COUNT; i++) {
+        const AmiCreditLine *cl = &AMI_CREDITS[i];
+        int ly = SCR_H - 30 - s_credit_scroll_y + i * line_h;
+        if (ly < 16 || ly > SCR_H - 20) continue;
+
+        if (cl->is_hdr) {
+            /* Grosse 2-Ton Turrican-2 Ueberschrift */
+            draw_text2x(42, ly - 2, cl->text, C_DARK_RED, C_DARK_RED);
+            draw_text2x(40, ly - 4, cl->text, cl->tag_col, cl->txt_col);
+        } else if (cl->tag[0]) {
+            /* Farbiger Tag + Text */
+            draw_text(16, ly, cl->tag, cl->tag_col);
+            draw_text(104, ly, cl->text, cl->txt_col);
+        } else if (cl->text[0]) {
+            draw_text(36, ly, cl->text, cl->txt_col);
+        }
+    }
+
+    /* 4. Top & Bottom Info (ohne Kasten) */
+    draw_text(8, 4, "[>] STRUDELFORCE 0.3.1 CREDITS", C_GOLD);
+    draw_text(220, 4, s_credit_paused ? "[PAUSIERT]" : "[AMIGA 500]", C_CYAN);
+
+    draw_text(16, 242, "FEUER/ESC: MENUE  SPACE: PAUSE  PFEILE: TEMPO", C_GR_L);
 }
 
 static void render_loading(int ticks)
@@ -721,20 +833,26 @@ int main(void)
     int i, front = 0;
     uint8_t *mem;
     uint16_t prev_input = 0;
+    unsigned long chip_bytes = (unsigned long)PLANE_BYTES * NPLANES * 2 + COP_WORDS * 2;
 
     /* AmigaOS CLI-Begruessung anzeigen */
     sys_boot_banner();
+
+    /* Chip-RAM fuer Doppelpuffer + Copper-Liste VOR sys_take anfordern (sauber & OS-konform) */
+    mem = (uint8_t *)sys_alloc_chip(chip_bytes);
+    if (!mem) return 20;
 
     /* ThePlayer 6.1a Replayer initialisieren mit Chip-RAM Modul (VOR sys_take) */
     if (p61_init(module_bin) == 0) {
         s_p61_active = 1;
     }
 
-    if (!sys_take()) return 20;
+    if (!sys_take()) {
+        if (s_p61_active) p61_end();
+        sys_free_chip(mem, chip_bytes);
+        return 20;
+    }
 
-    /* Chip-RAM fuer Doppelpuffer + Copper-Liste */
-    mem = (uint8_t *)sys_alloc_chip((unsigned long)PLANE_BYTES * NPLANES * 2 + COP_WORDS * 2);
-    if (!mem) { sys_free(); return 20; }
     for (i = 0; i < NPLANES; i++) {
         planes[0][i] = mem + (unsigned long)PLANE_BYTES * i;
         planes[1][i] = mem + (unsigned long)PLANE_BYTES * (NPLANES + i);
@@ -801,6 +919,8 @@ int main(void)
                     s_ami_state = AMI_STATE_CONTROLS;
                     break;
                 case 3: /* Credits */
+                    s_credit_scroll_y = 0;
+                    s_credit_paused = 0;
                     s_ami_state = AMI_STATE_CREDITS;
                     break;
                 }
@@ -817,10 +937,16 @@ int main(void)
             break;
 
         case AMI_STATE_CREDITS:
-            render_credits();
-            if ((trig & INPUT_FIRE) || s_keys[0x45]) {
+            if (s_keys[0x40]) { /* Space toggelt Pause */
+                s_credit_paused = !s_credit_paused;
+                s_keys[0x40] = 0;
+            }
+            render_credits(s_frame_cnt, in);
+            if ((trig & INPUT_FIRE) || s_keys[0x44] || s_keys[0x43] || s_keys[0x45]) {
                 s_ami_state = AMI_STATE_MENU;
                 s_keys[0x45] = 0;
+                s_keys[0x44] = 0;
+                s_keys[0x43] = 0;
             }
             break;
 
@@ -876,5 +1002,6 @@ int main(void)
 
     REG16(R_DMACON) = 0x078F;                 /* Bitplane, Copper, Paula aus   */
     sys_free();
+    sys_free_chip(mem, chip_bytes);
     return 0;
 }

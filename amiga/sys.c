@@ -57,24 +57,38 @@ void sys_waitvbl(void)
 
 void *sys_alloc_chip(unsigned long bytes)
 {
+    SysBase = *((struct ExecBase **)4UL);
     return AllocMem(bytes, MEMF_CHIP | MEMF_CLEAR);
+}
+
+void sys_free_chip(void *ptr, unsigned long bytes)
+{
+    if (ptr) {
+        SysBase = *((struct ExecBase **)4UL);
+        FreeMem(ptr, bytes);
+    }
 }
 
 void sys_boot_banner(void)
 {
+    SysBase = *((struct ExecBase **)4UL);
+    custom = (struct Custom *)0xdff000;
     DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 0);
     if (DOSBase) {
-        const char banner[] =
-            "\n\x1b[33m==================================================\n"
-            "  StrudelOS v0.3.1 - Amiga 500 Bare-Metal Edition\n"
-            "  (C) 2026 Frank Mitzkatis & AI Team - Turrican Tribute\n"
-            "==================================================\n\x1b[32m"
-            "  [*] System: 512KB Chip-RAM + OCS/ECS Blitter\n"
-            "  [*] Audio:  Paula 4-Channel DMA Hardware Sound\n"
-            "  [*] Core:   16.16 Fixed-Point (50Hz PAL)\n"
-            "  [*] Starte Strudelforce auf Custom-Chipset...\n\n\x1b[0m";
-        Write(Output(), (APTR)banner, sizeof(banner) - 1);
-        Delay(35);
+        BPTR out = Output();
+        if (out) {
+            const char banner[] =
+                "\n\x1b[33m==================================================\n"
+                "  StrudelOS v0.3.1 - Amiga 500 Bare-Metal Edition\n"
+                "  (C) 2026 Frank Mitzkatis & AI Team - Turrican Tribute\n"
+                "==================================================\n\x1b[32m"
+                "  [*] System: 512KB Chip-RAM + OCS/ECS Blitter\n"
+                "  [*] Audio:  Paula 4-Channel DMA Hardware Sound\n"
+                "  [*] Core:   16.16 Fixed-Point (50Hz PAL)\n"
+                "  [*] Starte Strudelforce auf Custom-Chipset...\n\n\x1b[0m";
+            Write(out, (APTR)banner, sizeof(banner) - 1);
+            Delay(25);
+        }
         CloseLibrary((struct Library *)DOSBase);
         DOSBase = 0;
     }
