@@ -1,8 +1,7 @@
 # STRUDELFORCE v0.3.0 – Release Notes
 
 **Release-Datum:** 29. Oktober 2026  
-**Binary-Größe:** `963,584 Bytes` gemessen (Feinschliff-Build 2026-10-29); nach dem
-Musik-Budget-Tausch (−64 KB Embedded) erwartet ≈ `899 KB` — strikt unter dem 1.0 MB-Budget!  
+**Binary-Größe:** `967,680 Bytes` (≈ 945 KB, Final-Build 2026-10-29) — strikt unter dem 1.0 MB-Budget!  
 **Architektur:** C89/C99 Monolith mit 16.16 Fixed-Point Physik & Cyber-Paula TFMX/MOD Hub  
 **Verifikation:** 38/38 Integrationstests PASS | Deterministischer Score: 14700 (2500 Ticks, v0.3.0-Physik)  
 
@@ -65,7 +64,7 @@ Musik-Budget-Tausch (−64 KB Embedded) erwartet ≈ `899 KB` — strikt unter d
 
 | Komponente | Status | Details |
 |---|---|---|
-| `strudelforce.exe` | **963,584 Bytes** (≈ 899 KB nach Musik-Swap) | < 1 MB Budget ✅ |
+| `strudelforce.exe` | **967,680 Bytes** (≈ 945 KB) | < 1 MB Budget ✅ |
 | `strudelforce_game.exe` | **266,240 Bytes** | 50Hz ANSI/ASCII Terminal Game |
 | `test_suite.exe` | **38 / 38 PASS** | Fixed-Point, Determinismus, TFMX, MOD, AST, SFX |
 | `verify_core_sim.py` | **PASS (Score 14700)** | Bit-identischer Core-Sim-Verifikationslauf (v0.3.0-Physik) |
@@ -86,6 +85,11 @@ Musik-Budget-Tausch (−64 KB Embedded) erwartet ≈ `899 KB` — strikt unter d
   Game-Over-/Sieg-Overlay & Credits-Panel (~4x schneller).
 - **Musik-Budget:** −64 KB Embedded (T2 Load raus, Software Manager Titel statt Msx,
   Wing Commander Commander Office statt Regular Combat) — Details in Abschnitt 5.
+- **Demoscene-Intro:** Grosses ASCII „STRUDELFORCE“ fliegt perspektivisch (Star-Wars-Zoom)
+  auf die Kamera zu — Copper-Rainbow, Glow-Halo, Chromatic-Aberration + Warp-Sternenfeld.
+- **Eigene Soundtracks:** Handbuch (Kap. IV), Jukebox & Intro weisen darauf hin, dass
+  `.mod`/`.tfx`-Dateien neben der EXE in „TFMX PROFESSIONAL“/„MOD“ automatisch
+  in die Jukebox gescannt werden (bis 3 Ebenen tief).
 
 ---
 
