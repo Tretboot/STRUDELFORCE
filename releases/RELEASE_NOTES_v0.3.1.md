@@ -10,35 +10,53 @@
 
 ## 🔥 Highlights der Version 0.3.1
 
-### 1. Bootfähige Amiga 500 Floppy Disk (`strudelforce.adf`)
+### 1. "THE WUG" – Star Wars Story Crawl Intro (Amiga & PC Parität)
+- **Großer 2-Ton "THE WUG" Star Wars Titel:** Im Kampagnen-Modus startet nach dem Laden das neue Story-Intro im Star Wars Stil mit großem 2-Ton-Banner (Gold über Rubinrot) und dem Untertitel *"EPISODE I: DIE INVASION"*.
+- **3D-Perspektiv-Crawl in die Tiefe:** Die Spiel-Lore scrollt in echter räumlicher 3D-Perspektive von unten schräg in den Weltraum-Horizont. Die Zeichenbreite und -höhe verjüngt sich dynamisch zum Fluchtpunkt, begleitet von einem tiefen Farbverlauf (Gold $\to$ Bernstein $\to$ Cyan $\to$ leuchtendes Wug-Rot).
+- **Interaktive Steuerung:**
+  - `Pfeil Runter / S`: Schneller vorwärts scrollen
+  - `Pfeil Hoch / W`: Zurück scrollen
+  - `Leertaste / P`: Pause umschalten
+  - `Feuer / Enter / ESC`: Direkt ins Spiel springen
+- **Volle Amiga & PC Parität:** Sowohl in `amiga/main.c` (`AMI_STATE_STORY`) als auch in der PC-GUI `src/gui_main.c` (`GUI_STATE_STORY`) bit- und darstellungskonform implementiert.
+
+### 2. Verbose AmigaShell Ladebildschirm mit echtem Feedback
+- **Authentischer Amiga CLI Terminal-Look:** Der Ladebalken ist keine statische Dummy-Animation mehr, sondern ein interaktives Shell-Fenster (`AmigaShell - StrudelOS v0.3.1 CLI`).
+- **Echte Subsystem-Phasen:**
+  1. *StrudelOS Chip-RAM & Hardware Init*
+  2. *Copper 5 OCS Bitplanes & 32-Color Palette Setup*
+  3. *Level-Engine: 197 Chunks & Biomes Parsed* (`level_load_campaign`)
+  4. *Paula DMA: 4-Voice Replayer Sync @ 50Hz*
+  5. *Core Sim: 16.16 Fixed-Point Zero-Float Pools* (`core_init`)
+  6. *Bereit: Start der Kampagne und "THE WUG" Story!*
+- **Laufende Lichtblenden:** Weich wandernde weiße Glanzlichter im Amiga-Block-Balken mit Prozentanzeige (0% bis 100%).
+
+### 3. Bootfähige Amiga 500 Floppy Disk (`strudelforce.adf`) & Paula DMA Sound
 - **Echte Amiga-Floppy (880 KB OFS):** Erstellt mit `amitools.tools.xdftool` und Kickstart 1.3 Bootblock (`boot1x`) sowie `s/startup-sequence`. Bootet direkt in das Spiel auf Amiga 500, WinUAE und RetroArch PUAE.
+- **Paula Hardware DMA Audio:** ThePlayer 6.1a Replayer im beschreibbaren Datensegment (`.data`) für selbstmodifizierenden 68k-Code. Hardware-Takeover aktiviert Paula DMA (`AUD0..AUD3`) und CIA-B Timer-Timing für saubere 4-Kanal-Wiedergabe.
 - **Volume-Label `StrudelOS`:** Authentische AmigaDOS-Diskette mit CLI-Boot-Banner.
-- **Belegter Speicherplatz:** Nur ca. 280 KB Daten auf der Diskette – Platz für Spiel und Module.
+- **Belegter Speicherplatz:** Nur ca. 280 KB Daten auf der Diskette – voller Spielgenuss innerhalb des 880 KB Limits.
 
-### 2. Amiga-Boot-Fix & Bare-Metal Stabilität
-- **ExecBase & dos.library Fix:** Initialisierung von `SysBase` (Offset 4) vor allen Bibliotheksaufrufen behoben, wodurch die Kickstart-Fehlermeldung *"Software error - task held"* vollständig eliminiert wurde.
-- **Sichere Chip-RAM Voraballokation:** Doppelpuffer (5 Bitplanes @ 320x256) und Copper-Liste werden vor dem System-Takeover regulär über AmigaOS `AllocMem(MEMF_CHIP)` allokiert und beim sauberen Beenden mit `ESC` per `FreeMem` freigegeben.
-- **Paula Hardware DMA Audio:** ThePlayer 6.1a Replayer empfängt Custom-Chip Basis (`0xDFF000`) in Register `A6` und streamt 4-Kanal Paula Musik synchron zu den 50Hz PAL VBlanks.
-
-### 3. Vollständige Amiga State Machine & Interaktive Credits
+### 4. Vollständige Amiga State Machine & Interaktive Credits
 - **Amiga State Machine Parität:**
   1. *Cracktro-Intro:* 3D-Wireframe-Vektorwürfel in Bitplanes, Copper-Farbverläufe, Amiga Sinus-Scroller.
   2. *Turrican-2 Hauptmenü:* Großer 2-Ton Titel (Gold über Dunkelrot), Modus-Auswahl (Kampagne 5 Welten vs. Endlos Roguelike), Steuerung und Credits.
-  3. *Ladebildschirm:* Authentischer Amiga-Block-Fortschrittsbalken mit Lichtblenden und mehrphasigen Hardware-Statusmeldungen.
-  4. *50Hz Gameplay:* 16.16 Fixed-Point Physik, Plattformen, Gegner, Projektile und HUD.
-  5. *Credits & Info (`AMI_STATE_CREDITS`):* Flüssiger 50Hz-Vertikal-Scroll mit driftendem Sternenfeld, großen 2-Ton Überschriften und farbkodierten Tags.
+  3. *AmigaShell Ladebildschirm:* Authentischer Amiga-Block-Fortschrittsbalken mit Lichtblenden und Hardware-Statusmeldungen.
+  4. *"THE WUG" Star Wars Story Crawl:* 3D-Perspektiv-Lore mit Fluchtpunkt und Starfield.
+  5. *50Hz Gameplay:* 16.16 Fixed-Point Physik, Plattformen, Gegner, Projektile und HUD.
+  6. *Credits & Info (`AMI_STATE_CREDITS`):* Flüssiger 50Hz-Vertikal-Scroll mit driftendem Sternenfeld, großen 2-Ton Überschriften und farbkodierten Tags.
 - **Interaktive Steuerung im Abspann:**
   - `Pfeil Runter / S`: Schneller scrollen
   - `Pfeil Hoch / W`: Zurück scrollen
   - `Leertaste`: Pause umschalten
   - `Feuer / Enter / ESC`: Zurück zum Hauptmenü
 
-### 4. De-Dimming & High-Contrast Visuals (Amiga & PC)
+### 5. De-Dimming & High-Contrast Visuals (Amiga & PC)
 - **Keine störenden Hintergrundkästen:** Dunkle Rechtecke hinter Texten wurden sowohl auf dem Amiga als auch auf dem PC entfernt.
 - **Schwebende Texte:** Menüs, Steuerungsanleitungen und Abspann-Texte schweben direkt über den animierten Hintergründen, dem Copper-Raster und dem Sternenfeld.
 - **Vergrößerte 2x Überschriften & Farbkodierung:** Große 2-Ton Titel und dedizierte leuchtende Farben pro Kategorie (`[PROJEKT]`: Gold, `[AUDIO]`: Neonpink, `[CORE]`: Limettengrün, `[AI]`: Cyan, `[HERO]`: Gelb, `[TRIBUTE]`: Orange, `[SCENE]`: Violett).
 
-### 5. Schlanker, kuratierter Soundtrack (~335 KB)
+### 6. Schlanker, kuratierter Soundtrack (~335 KB)
 - **Turrican 3 World 1 (Factory):** Tempo-Fix für Chris Hülsbecks `tempo == 0` Subsong-Bug (`speed = 2` statt 5) für volles Arcade-Tempo.
 - **BiFi Adventure & Cybersty:** Legendäre Hülsbeck-Tracks und Kaiko-Sound-System-Chiptunes.
 - **Software Manager:** Titel-Track mit allen 22 Subsongs.
@@ -55,13 +73,15 @@
 | **Morph-Ball (Kreisel)** | Unten / S | S / Gamepad B |
 | **Feuer** | Feuerknopf / Space / Enter | STRG / Leertaste / Gamepad A |
 | **Halt-Strahl (Holding Beam)** | 2. Taste / Alt / C | ALT / Gamepad X |
+| **Story Crawl Tempo** | Pfeiltasten Oben/Unten (W/S) | Pfeiltasten Oben/Unten (W/S) / D-Pad |
+| **Story Crawl Skip** | Feuerknopf / Space / Enter / ESC | Space / Enter / STRG / Gamepad A |
 | **Pause / Menü** | ESC | ESC / Start-Taste |
 
 ---
 
 ## 📦 Release-Dateien
 
-- `strudelforce.adf`: 880 KB Amiga 500 Floppy Disk Image (Bootfähig)
+- `strudelforce.adf`: 880 KB Amiga 500 Floppy Disk Image (Bootfähig, Volume `StrudelOS`)
 - `strudelforce-v0.3.1-amiga.zip`: ADF + `strudelforce.amiga` 68k Binary + Dokumentation
 - `strudelforce-v0.3.1-windows-x64.zip`: `strudelforce.exe` (2.5D GUI) + `strudelforce_game.exe` (Terminal)
 - `strudelforce-v0.3.1-source.zip`: Vollständiger Quellcode

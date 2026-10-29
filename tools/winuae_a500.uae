@@ -30,7 +30,7 @@ gfx_width_windowed=720
 gfx_height_windowed=576
 
 # Audio: Echte Paula-Stereo-Emulation mit Hardware-Filter
-sound_output=exact
+sound_output=normal
 sound_channels=stereo
 sound_frequency=44100
 sound_stereo_separation=7

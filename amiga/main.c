@@ -103,7 +103,7 @@ static int       draw_idx;
 #define COP_WORDS 256
 
 /* ---- ThePlayer 6.1a (Paula 4-Kanal DMA Musik) ----------------------------- */
-EMBED player_bin[] = {
+static unsigned char player_bin[] __attribute__((aligned(2))) = {
 #embed "player610.6.no_cia.bin"
 };
 EMBED_CHIP module_bin[] = {
@@ -286,7 +286,8 @@ typedef enum {
     AMI_STATE_MENU,         /* Turrican-2 Hauptmenue */
     AMI_STATE_CONTROLS,     /* Steuerung-Anzeige */
     AMI_STATE_CREDITS,      /* Credits-Anzeige */
-    AMI_STATE_LOADING,      /* Authentischer Amiga Ladebalken */
+    AMI_STATE_LOADING,      /* Verbose Amiga Shell Ladebalken mit echtem Feedback */
+    AMI_STATE_STORY,        /* "THE WUG" - Star Wars Perspective Lore Crawl */
     AMI_STATE_GAME          /* 50Hz Fixed-Point Spiel */
 } AmiState;
 
@@ -294,9 +295,11 @@ static AmiState s_ami_state = AMI_STATE_INTRO;
 static int      s_menu_sel  = 0;
 static int      s_mode      = MODE_CAMPAIGN;
 static int      s_load_tick = 0;
+static int      s_story_scroll = 0;
+static int      s_story_paused = 0;
 static uint32_t s_frame_cnt = 0;
 
-#define LOAD_TICKS_TOTAL 90 /* ~1.8 Sekunden Loading */
+#define LOAD_TICKS_TOTAL 84 /* ~1.7 Sekunden Loading (6 Phasen a 14 Ticks) */
 
 /* ---- Demoscene 3D Vector Cube Vertices & Edges (100% Integer Math) -------- */
 static const int8_t s_cube_v[8][3] = {
@@ -575,45 +578,186 @@ static void render_credits(uint32_t f, uint16_t in)
     draw_text(16, 242, "FEUER/ESC: MENUE  SPACE: PAUSE  PFEILE: TEMPO", C_GR_L);
 }
 
+static const char * const LOAD_CONSOLE_LOGS[6] = {
+    "1.Workbench:> execute S:Startup-Sequence",
+    "> 1. STRUDELOS: CHIP-RAM & HARDWARE INIT... OK",
+    "> 2. COPPER: 5 OCS BITPLANES & 32-COL PALETTE... OK",
+    "> 3. LEVEL-ENGINE: 197 CHUNKS & BIOMES PARSED... OK",
+    "> 4. PAULA DMA: 4-VOICE REPLAYER SYNCED AT 50HZ... OK",
+    "> 5. CORE SIM: 16.16 FIXED-POINT ZERO-FLOAT... OK"
+};
+
 static void render_loading(int ticks)
 {
-    int i, bw = 220, bh = 18, bx = 50, by = 110;
-    int fill = (bw * ticks) / LOAD_TICKS_TOTAL;
+    int i, bw = 240, bh = 12, bx = 40, by = 186;
+    int phase = ticks / 14; /* 6 Phasen a 14 Ticks = 84 Ticks total (~1.7s) */
     int pct = (ticks * 100) / LOAD_TICKS_TOTAL;
+    int fill;
+    if (pct > 100) pct = 100;
+    fill = (bw * pct) / 100;
 
-    draw_text2x(64, 40, "STRUDELFORCE", C_GOLD, C_HUD_R);
-    draw_text(32, 74, "DISK 1 : STRUDELFORCE.ADF (880K OFS)", C_WHITE);
+    /* Titel */
+    draw_text2x(64, 14, "STRUDELFORCE", C_DARK_RED, C_DARK_RED);
+    draw_text2x(62, 12, "STRUDELFORCE", C_GOLD, C_HUD_R);
+    draw_text(40, 36, "DISK 1 : STRUDELOS.ADF (AMIGA 500 BARE-METAL)", C_CYAN);
 
-    /* Progress-Bar Umrandung & Hintergrund */
-    fill_rect(bx - 3, by - 3, bw + 6, bh + 6, C_HUD_BG);
-    fill_rect(bx, by, bw, bh, C_GR_D);
+    /* Authentisches Amiga Shell-Fenster */
+    draw_line(18, 52, 302, 52, C_HUD_G);
+    draw_line(18, 172, 302, 172, C_HUD_G);
+    draw_line(18, 52, 18, 172, C_HUD_G);
+    draw_line(302, 52, 302, 172, C_HUD_G);
 
-    /* Gefuellter Balken */
+    draw_text(24, 56, "[ AmigaShell - StrudelOS v0.3.1 ]", C_HUD_G);
+    draw_line(18, 66, 302, 66, C_HUD_G);
+
+    /* Verbose Shell Logs (zeilenweiser Aufbau mit echtem Feedback) */
+    draw_text(24, 72, LOAD_CONSOLE_LOGS[0], C_WHITE);
+    if (phase >= 1) draw_text(24, 86, LOAD_CONSOLE_LOGS[1], C_CYAN);
+    if (phase >= 2) draw_text(24, 100, LOAD_CONSOLE_LOGS[2], C_CYAN);
+    if (phase >= 3) draw_text(24, 114, LOAD_CONSOLE_LOGS[3], C_CYAN);
+    if (phase >= 4) draw_text(24, 128, LOAD_CONSOLE_LOGS[4], C_CYAN);
+    if (phase >= 5) draw_text(24, 142, LOAD_CONSOLE_LOGS[5], C_HUD_G);
+    if (phase >= 6) draw_text(24, 156, "> 6. BEREIT: STARTE THE WUG INTRO...", C_GOLD);
+
+    /* Progress-Bar */
+    draw_line(bx - 2, by - 2, bx + bw + 2, by - 2, C_CYAN);
+    draw_line(bx - 2, by + bh + 1, bx + bw + 2, by + bh + 1, C_CYAN);
+    draw_line(bx - 2, by - 2, bx - 2, by + bh + 1, C_CYAN);
+    draw_line(bx + bw + 2, by - 2, bx + bw + 2, by + bh + 1, C_CYAN);
+
     if (fill > 0) {
         fill_rect(bx, by, fill, bh, C_E2_L);
-        /* Animierte weisse Highlight-Lichtblenden */
         for (i = 0; i < 6; i++) {
-            int sx = ((i * 38 + ticks * 4) % (fill + 10)) - 10;
+            int sx = ((i * 42 + ticks * 5) % (fill + 10)) - 10;
             if (sx >= 0 && sx < fill - 4) {
                 fill_rect(bx + sx, by, 4, bh, C_WHITE);
             }
         }
     }
 
-    /* Prozentanzeige */
-    draw_number(144, 138, pct, C_WHITE);
-    draw_text(172, 138, "%", C_WHITE);
+    draw_number(136, 206, pct, C_WHITE);
+    draw_text(164, 206, "% GELADEN", C_WHITE);
 
-    /* Authentische mehrphasige Hardware-Statusmeldungen */
-    if (ticks < 22) {
-        draw_text(32, 170, "INITIALISIERE CHIP-RAM & HARDWARE...", C_CYAN);
-    } else if (ticks < 45) {
-        draw_text(32, 170, "KONFIGURIERE COPPER & 5 BITPLANES...", C_CYAN);
-    } else if (ticks < 68) {
-        draw_text(32, 170, "LADE WELT 1: CHROME TEMPEST...", C_CYAN);
-    } else {
-        draw_text(32, 170, "PAULA 4-KANAL DMA SOUND ENGINE BEREIT...", C_CYAN);
+    draw_text(36, 226, "SYSTEM-CHECK: 512KB CHIP + OCS BLITTER OK", C_PL_L);
+}
+
+static const char * const STORY_CRAWL[] = {
+    "ES HERRSCHT KRIEG IM AMIGA-SEKTOR!",
+    "",
+    "Aus den tiefsten Datenspeichern des",
+    "kybernetischen Universums ist eine",
+    "raetselhafte Spezies erwacht:",
+    "",
+    "           >>> DIE WUGS <<<",
+    "",
+    "Einst als harmloser linguistischer",
+    "Test erschaffen, haben sie ein",
+    "kollektives Bewusstsein entwickelt.",
+    "",
+    "Ihre watschelnden Koerper taeuschen",
+    "ueber ihre toedliche Gefahr hinweg:",
+    "Sobald ihre Augen rot aufgluehen,",
+    "entfesseln sie zerstoererische",
+    "Photonen-Laser!",
+    "",
+    "Die fuenf Biome von Strudelforce",
+    "stehen kurz vor dem Kollaps:",
+    "Chrome Tempest, The Great Bath und",
+    "der gluehende Mechanical Hive.",
+    "",
+    "Du bist Bren McGuire (Unit-7).",
+    "Ausgeruestet mit 16.16-Fixed-Point",
+    "Physik, dem 360-Grad Blitz-Laser",
+    "und dem rotierenden Morph-Kreisel",
+    "bist du die letzte Hoffnung!",
+    "",
+    "Kaempfe dich durch die Wellen,",
+    "zerstoere die feindlichen Titanen,",
+    "und befreie das Turrican-Reich!",
+    "",
+    "      MOEGE DER COPPER MIT DIR SEIN!",
+    "",
+    ""
+};
+#define STORY_CRAWL_COUNT ((int)(sizeof(STORY_CRAWL) / sizeof(STORY_CRAWL[0])))
+
+static void render_story(uint32_t f, uint16_t in)
+{
+    int i;
+    int line_h = 16;
+    int total_scroll = STORY_CRAWL_COUNT * line_h + SCR_H + 40;
+
+    /* 1. Sterne im tiefen Weltraum */
+    if (!s_ami_stars_init) {
+        for (i = 0; i < 24; i++) {
+            s_ami_stars[i].x = (int16_t)((i * 37 + 13) % (SCR_W - 8));
+            s_ami_stars[i].y = (int16_t)((i * 29 + 7) % SCR_H);
+            s_ami_stars[i].sp = (int8_t)(1 + (i % 3));
+            s_ami_stars[i].col = (i % 3 == 0) ? C_WHITE : ((i % 3 == 1) ? C_CYAN : C_PELLET);
+        }
+        s_ami_stars_init = 1;
     }
+    for (i = 0; i < 24; i++) {
+        if (!s_story_paused) {
+            s_ami_stars[i].y += s_ami_stars[i].sp;
+            if (s_ami_stars[i].y >= SCR_H) s_ami_stars[i].y = 0;
+        }
+        draw_glyph(s_ami_stars[i].x, s_ami_stars[i].y, '.', s_ami_stars[i].col);
+    }
+
+    /* 2. Star Wars Scroll-Steuerung */
+    if (in & INPUT_MORPH) { /* Down / S: Schneller */
+        s_story_scroll += 3;
+    } else if (in & INPUT_JUMP) { /* Up / W: Zurueck */
+        s_story_scroll -= 2;
+        if (s_story_scroll < 0) s_story_scroll = 0;
+    } else if (!s_story_paused) {
+        if ((f & 1) == 0) s_story_scroll++; /* Sanfter 25-50Hz Scroll */
+    }
+
+    /* 3. Grosses "THE WUG" Star Wars Intro-Logo */
+    draw_text2x(106, 18, "THE WUG", C_DARK_RED, C_DARK_RED);
+    draw_text2x(104, 16, "THE WUG", C_GOLD, C_HUD_R);
+    draw_text(68, 38, "EPISODE I: DIE INVASION", C_CYAN);
+    draw_line(48, 12, 272, 12, C_GOLD);
+    draw_line(48, 48, 272, 48, C_GOLD);
+
+    /* 4. Star Wars 3D Perspective Crawl */
+    for (i = 0; i < STORY_CRAWL_COUNT; i++) {
+        const char *l = STORY_CRAWL[i];
+        if (!l || l[0] == '\0') continue;
+
+        int wy = SCR_H + 40 - s_story_scroll + i * line_h;
+        int y_horiz = 54;
+        int y_base  = 220;
+
+        if (wy < y_horiz || wy > y_base + 35) continue;
+
+        /* Perspektiv-Skalierung (0 bis 256) */
+        int t = ((wy - y_horiz) * 256) / (y_base - y_horiz);
+        if (t < 24) t = 24;
+        if (t > 256) t = 256;
+
+        int sy = y_horiz + (t * (y_base - y_horiz)) / 256;
+
+        /* Zeichenbreite schrumpft perspektivisch zur Mitte hin */
+        int cw = 4 + (t * 4) / 256;
+        int len = 0;
+        while (l[len]) len++;
+        int line_w = len * cw;
+        int sx = 160 - line_w / 2;
+
+        /* Farbe je nach Tiefe */
+        int col = (sy > 170) ? C_GOLD : ((sy > 115) ? C_PELLET : C_CYAN);
+        if (i == 6) col = C_HUD_R;
+
+        for (int c = 0; c < len; c++) {
+            draw_glyph(sx + c * cw, sy, (unsigned char)l[c], col);
+        }
+    }
+
+    /* 5. Bottom Skip Hinweis */
+    draw_text(28, 240, "FEUER / SPACE / ESC : MISSION STARTEN", C_WHITE);
 }
 
 static void render_gameplay(const GameState *s)
@@ -842,13 +986,7 @@ int main(void)
     mem = (uint8_t *)sys_alloc_chip(chip_bytes);
     if (!mem) return 20;
 
-    /* ThePlayer 6.1a Replayer initialisieren mit Chip-RAM Modul (VOR sys_take) */
-    if (p61_init(module_bin) == 0) {
-        s_p61_active = 1;
-    }
-
     if (!sys_take()) {
-        if (s_p61_active) p61_end();
         sys_free_chip(mem, chip_bytes);
         return 20;
     }
@@ -874,9 +1012,14 @@ int main(void)
     REG32(R_COP1LC) = (uint32_t)(uintptr_t)copper;
     REG16(R_COPJMP1) = 0;
 
-    /* Interrupts und DMA fuer Paula 4-Kanal Audio & Copper/Bitplanes aktivieren */
-    REG16(R_INTENA) = 0x8000 | 0x4000 | 0x2000 | 0x0020; /* SETCLR | INTEN | EXTER | VERTB */
+    /* Hardware DMA fuer Paula Audio & Copper/Bitplanes aktivieren */
+    REG16(R_INTENA) = 0x8000 | 0x4000 | 0x2000;          /* SETCLR | INTEN | EXTER (CIA-B Level 6 fuer P61; kein VERTB da sys_waitvbl gepollt wird) */
     REG16(R_DMACON) = 0x8000 | 0x0200 | 0x0100 | 0x0080 | 0x0040 | 0x000F; /* SETCLR | DMAEN | BPLEN | COPEN | BLTEN | AUD0-3 */
+
+    /* ThePlayer 6.1a Replayer initialisieren mit Chip-RAM Modul (JETZT, wo Hardware aktiv ist!) */
+    if (p61_init(module_bin) == 0) {
+        s_p61_active = 1;
+    }
 
     while (s_running) {
         uint16_t in = read_input();
@@ -952,15 +1095,47 @@ int main(void)
 
         case AMI_STATE_LOADING:
             s_load_tick++;
-            render_loading(s_load_tick);
-            if (s_load_tick >= LOAD_TICKS_TOTAL) {
+            /* Echte Subsystem-Aktionen waehrend der Ladephasen ausfuehren */
+            if (s_load_tick == 35) {
+                if (s_mode == MODE_CAMPAIGN) {
+                    g_state.campaign_level = 1;
+                    level_load_campaign(&g_state);
+                }
+            } else if (s_load_tick == 65) {
                 core_init(&g_state, 0x5EEDCAFEu);
                 g_state.mode = s_mode;
                 if (s_mode == MODE_CAMPAIGN) {
                     g_state.campaign_level = 1;
                     level_load_campaign(&g_state);
                 }
+            }
+
+            render_loading(s_load_tick);
+
+            if (s_load_tick >= LOAD_TICKS_TOTAL) {
+                if (s_mode == MODE_CAMPAIGN) {
+                    s_story_scroll = 0;
+                    s_story_paused = 0;
+                    s_ami_state = AMI_STATE_STORY;
+                } else {
+                    s_ami_state = AMI_STATE_GAME;
+                }
+            }
+            break;
+
+        case AMI_STATE_STORY:
+            if (s_keys[0x40]) { /* Space toggelt Pause */
+                s_story_paused = !s_story_paused;
+                s_keys[0x40] = 0;
+            }
+            render_story(s_frame_cnt, in);
+            /* Feuer, Enter, Space oder ESC startet die Mission */
+            if ((trig & INPUT_FIRE) || s_keys[0x44] || s_keys[0x43] || s_keys[0x45] ||
+                (s_story_scroll >= STORY_CRAWL_COUNT * 16 + SCR_H + 40)) {
                 s_ami_state = AMI_STATE_GAME;
+                s_keys[0x45] = 0;
+                s_keys[0x44] = 0;
+                s_keys[0x43] = 0;
             }
             break;
 

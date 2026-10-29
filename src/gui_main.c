@@ -67,7 +67,8 @@ typedef enum {
     GUI_STATE_STUDIO,
     GUI_STATE_CREDITS,
     GUI_STATE_MANUAL,
-    GUI_STATE_CONTROLS
+    GUI_STATE_CONTROLS,
+    GUI_STATE_STORY
 } GuiState;
 
 static GuiState s_gui_state = GUI_STATE_STUDIO; /* Startet direkt im Amiga Cracktro Intro! */
@@ -78,6 +79,8 @@ static int s_exp_rom_selected = 0;   /* ausgewaehlter Track im ROM-Browser */
 static int s_pad_connected = 0;      /* Gamepad verbunden (XInput oder DirectInput/PS4) */
 static int s_pad_start_prev = 0;     /* Start-Button Edge-Erkennung */
 static int s_loading_ticks = 0;     /* Loading-Screen-Fortschritt (50Hz-Ticks) */
+static int s_story_scroll = 0;      /* Star Wars Story Intro Crawl Scroll */
+static int s_story_paused = 0;      /* Story Intro Pause */
 static int s_manual_page = 0;       /* aktuelle Handbuch-Seite (0..4) */
 static int s_is_fullscreen = 0;     /* Vollbild-Status */
 static WINDOWPLACEMENT s_prev_wp = { sizeof(WINDOWPLACEMENT) };
@@ -1876,6 +1879,17 @@ static void pad_menu_poll(void) {
         if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
             s_gui_state = GUI_STATE_MENU;
         }
+    } else if (s_gui_state == GUI_STATE_STORY) {
+        if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start) || (s_pad.btn_jump && !prev_up)) {
+            s_gui_state = GUI_STATE_GAME;
+        } else if (s_pad.btn_morph && !prev_b) {
+            s_story_paused = !s_story_paused;
+        } else if (s_pad.down) {
+            s_story_scroll += 10;
+        } else if (s_pad.up) {
+            s_story_scroll -= 8;
+            if (s_story_scroll < 0) s_story_scroll = 0;
+        }
     } else if (s_gui_state == GUI_STATE_CREDITS) {
         if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
             s_gui_state = GUI_STATE_MENU;
@@ -2591,6 +2605,111 @@ static void update_and_render_starfield(int speed) {
             }
         }
     }
+}
+
+
+/* ============================================================================
+ * STORY CRAWL: "THE WUG" - Star Wars Perspective Intro (Episode I)
+ * ============================================================================ */
+static const char * const GUI_STORY_CRAWL[] = {
+    "ES HERRSCHT KRIEG IM AMIGA-SEKTOR!",
+    "",
+    "Aus den tiefsten Datenspeichern des",
+    "kybernetischen Universums ist eine",
+    "raetselhafte Spezies erwacht:",
+    "",
+    "           >>> DIE WUGS <<<",
+    "",
+    "Einst als harmloser linguistischer",
+    "Test erschaffen, haben sie ein",
+    "kollektives Bewusstsein entwickelt.",
+    "",
+    "Ihre watschelnden Koerper taeuschen",
+    "ueber ihre toedliche Gefahr hinweg:",
+    "Sobald ihre Augen rot aufgluehen,",
+    "entfesseln sie zerstoererische",
+    "Photonen-Laser!",
+    "",
+    "Die fuenf Biome von Strudelforce",
+    "stehen kurz vor dem Kollaps:",
+    "Chrome Tempest, The Great Bath und",
+    "der gluehende Mechanical Hive.",
+    "",
+    "Du bist Bren McGuire (Unit-7).",
+    "Ausgeruestet mit 16.16-Fixed-Point",
+    "Physik, dem 360-Grad Blitz-Laser",
+    "und dem rotierenden Morph-Kreisel",
+    "bist du die letzte Hoffnung!",
+    "",
+    "Kaempfe dich durch die Wellen,",
+    "zerstoere die feindlichen Titanen,",
+    "und befreie das Turrican-Reich!",
+    "",
+    "      MOEGE DER COPPER MIT DIR SEIN!",
+    "",
+    ""
+};
+#define GUI_STORY_CRAWL_COUNT (int)(sizeof(GUI_STORY_CRAWL)/sizeof(GUI_STORY_CRAWL[0]))
+
+static void render_state_story(void) {
+    update_and_render_starfield(2);
+
+    /* 1. Header: 2-Ton Turrican-2 / Star Wars Titel */
+    draw_title(WIN_W / 2, 54, "THE WUG", 5);
+    {
+        const char *sub = "EPISODE I: DIE INVASION";
+        draw_string(WIN_W / 2 - (int)strlen(sub) * 8, 114, sub, 0xFF60D0FF, 2);
+    }
+    draw_line(WIN_W / 2 - 380, 20, WIN_W / 2 + 380, 20, 0xFFFFD700);
+    draw_line(WIN_W / 2 - 380, 138, WIN_W / 2 + 380, 138, 0xFFFFD700);
+
+    /* 2. Star Wars 3D Perspective Crawl */
+    int y_vanish = 145;
+    int y_base   = 630;
+    int line_h   = 36;
+    int total_h  = GUI_STORY_CRAWL_COUNT * line_h + WIN_H + 60;
+
+    for (int i = 0; i < GUI_STORY_CRAWL_COUNT; i++) {
+        const char *l = GUI_STORY_CRAWL[i];
+        if (!l || l[0] == '\0') continue;
+
+        int wy = WIN_H + 40 - s_story_scroll + i * line_h;
+        if (wy < y_vanish || wy > y_base + 60) continue;
+
+        int t = ((wy - y_vanish) * 256) / (y_base - y_vanish);
+        if (t < 25) t = 25;
+        if (t > 256) t = 256;
+
+        int sy = y_vanish + (t * (y_base - y_vanish)) / 256;
+        int scale = (t > 140) ? 2 : 1;
+        int step = (scale == 2) ? 14 : 8;
+        int len = (int)strlen(l);
+        int line_w = len * step;
+        int sx = (WIN_W - line_w) / 2;
+
+        uint32_t col = (sy > 460) ? 0xFFFFD700 : ((sy > 280) ? 0xFFFFA020 : 0xFF60D0FF);
+        if (i == 6) col = 0xFFFF3333; /* DIE WUGS glühend rot */
+
+        for (int c = 0; c < len; c++) {
+            draw_char(sx + c * step, sy, l[c], col, scale);
+        }
+    }
+
+    /* 3. Sanfter Auto-Scroll bei 50/60Hz */
+    if (!s_story_paused) {
+        if ((s_gui_frame & 1) == 0) s_story_scroll++;
+    }
+    if (s_story_scroll >= total_h) {
+        s_gui_state = GUI_STATE_GAME;
+    }
+
+    /* 4. Bottom Controls / Info Bar */
+    draw_rect(0, 676, WIN_W, 44, 0xD0001020);
+    draw_line(0, 676, WIN_W, 676, 0xFF00FF80);
+    const char *hint = "ENTER / LEERTASTE / FEUER : SPIEL STARTEN    |    PFEILTASTEN / S / W : TEMPO    |    P : PAUSE";
+    draw_string(WIN_W / 2 - (int)strlen(hint) * 4, 692, hint, 0xFFFFFFFF, 1);
+
+    render_status_bar();
 }
 
 /* 384 Zeilen reichen fuer das kompakte In-EXE-Archiv (103 eingebettete +
@@ -4751,6 +4870,20 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 else if (wParam == VK_RETURN) menu_activate();
                 return 0;
             }
+            /* --- Story Crawl: Steuerung --- */
+            if (s_gui_state == GUI_STATE_STORY) {
+                if (wParam == VK_RETURN || wParam == VK_ESCAPE || wParam == VK_SPACE || wParam == VK_CONTROL || wParam == 'C' || wParam == 'c') {
+                    s_gui_state = GUI_STATE_GAME;
+                } else if (wParam == 'P' || wParam == 'p') {
+                    s_story_paused = !s_story_paused;
+                } else if (wParam == VK_DOWN || wParam == 'S' || wParam == 's') {
+                    s_story_scroll += 12;
+                } else if (wParam == VK_UP || wParam == 'W' || wParam == 'w') {
+                    s_story_scroll -= 10;
+                    if (s_story_scroll < 0) s_story_scroll = 0;
+                }
+                return 0;
+            }
             /* --- Credits: Steuerung (Pause, Speed, Musik, Exit) --- */
             if (s_gui_state == GUI_STATE_CREDITS) {
                 if (wParam == VK_RETURN || wParam == VK_ESCAPE) {
@@ -4778,6 +4911,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             /* --- Studio-Tab (Jukebox / Strudel / Intro) --- */
             if (s_gui_state != GUI_STATE_STUDIO) return 0;
 
+            if (s_gui_state == GUI_STATE_STORY) { s_gui_state = GUI_STATE_GAME; return 0; }
             if (s_current_tab == TAB_EXPLORER) {
                 if (wParam == VK_TAB) {
                     s_exp_mode = !s_exp_mode;
@@ -5628,7 +5762,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     s_loading_ticks = LOAD_DURATION - 10;  /* Loading laeuft im Segment aus -> Game-Frames */
                 }
                 s_loading_ticks++;
-                if (s_loading_ticks >= LOAD_DURATION) s_gui_state = GUI_STATE_GAME;
+                if (s_loading_ticks >= LOAD_DURATION) {
+                        if (s_active_mode == MODE_CAMPAIGN) {
+                            s_story_scroll = 0;
+                            s_story_paused = 0;
+                            s_gui_state = GUI_STATE_STORY;
+                        } else {
+                            s_gui_state = GUI_STATE_GAME;
+                        }
+                    }
                 if (s_gui_state == GUI_STATE_LOADING) {
                     render_state_loading();
                 } else {
@@ -6032,8 +6174,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     render_state_menu();
                 } else if (s_gui_state == GUI_STATE_LOADING) {
                     s_loading_ticks++;
-                    if (s_loading_ticks >= LOAD_DURATION) s_gui_state = GUI_STATE_GAME;
+                    if (s_loading_ticks >= LOAD_DURATION) {
+                        if (s_active_mode == MODE_CAMPAIGN) {
+                            s_story_scroll = 0;
+                            s_story_paused = 0;
+                            s_gui_state = GUI_STATE_STORY;
+                        } else {
+                            s_gui_state = GUI_STATE_GAME;
+                        }
+                    }
                     render_state_loading();
+                } else if (s_gui_state == GUI_STATE_STORY) {
+                    render_state_story();
                 } else if (s_gui_state == GUI_STATE_CREDITS) {
                     render_state_credits();
                 } else if (s_gui_state == GUI_STATE_MANUAL) {

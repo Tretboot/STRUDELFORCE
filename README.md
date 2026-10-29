@@ -61,7 +61,8 @@ STRUDELFORCE bietet 100% Bit-Parität zwischen moderner Windows-Präsentation un
 
 2. **Nativer Amiga 500 Bare-Metal Port (`amiga/` & `strudelforce.adf`):**
    - Echter M68K Bare-Metal Build via `m68k-amiga-elf-gcc` (keine libc-Abhängigkeit, `-nostdlib -ffreestanding`).
-   - **Vollständige State-Machine mit Parität:** Cracktro-Intro (3D-Wireframe-Vektorwürfel, Sinus-Scroller) -> Turrican-2 Hauptmenü -> Amiga-Block Ladebildschirm -> 50Hz Fixed-Point Spiel -> Interaktive Credits (`AMI_STATE_CREDITS`).
+   - **Vollständige State-Machine mit Parität:** Cracktro-Intro (3D-Wireframe-Vektorwürfel, Sinus-Scroller) -> Turrican-2 Hauptmenü -> AmigaShell Ladebildschirm mit echtem Feedback -> "THE WUG" Star Wars 3D Story Crawl (`AMI_STATE_STORY`) -> 50Hz Fixed-Point Spiel -> Interaktive Credits (`AMI_STATE_CREDITS`).
+   - **"THE WUG" Star Wars Story Crawl:** Großer 2-Ton-Titel (Gold über Rubinrot), räumlicher 3D-Perspektiv-Textcrawl in die Tiefe zur Erklärung der Wug-Invasion, sanfte Tiefenfarbverläufe und interaktive Geschwindigkeitssteuerung.
    - **De-Dimmed High-Contrast Visuals:** Keine störenden Abdunklungs-Rechtecke hinter Texten; Menüs und Abspann schweben frei über Sternenfeld, Copper-Verläufen und Spielgrafik mit lebendigen Farb-Tags.
    - **Interaktiver Amiga-Abspann:** 50Hz-Vertikalscroll mit Beschleunigung (Runter/S), Rücklauf (Hoch/W), Pause (Leertaste) und Menü-Rückkehr (Feuer/ESC), 2-Ton Turrican-Überschriften und farbigen Kategorien-Tags.
    - 5 OCS-Bitplanes (320x256 @ 50Hz PAL, 32 Farben, Doppelpuffer) direkt im Chip-RAM.
