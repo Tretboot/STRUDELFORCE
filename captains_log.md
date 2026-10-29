@@ -528,3 +528,27 @@
 - Implementierung des Wug-Gegners nach docs/WUG.md.
 - Ausarbeitung der Blitter-Bobs & Hardware-Sprites.
 
+
+---
+
+## Logbucheintrag — 2026-10-29 (Meilenstein: Amiga 500 ADF-Boot im RetroArch PUAE geloest!)
+
+**Auftrag:** Readme aktualisieren & pushen, ADF Boot-Problem in RetroArch (PUAE / A500) analysieren und loesen.
+
+### 1. Root-Cause-Analyse (Warum bootete die ADF bisher nicht in RetroArch?)
+1. **Dateisystem FFS vs. OFS:** `tools/build_amiga_adf.py` formatierte die Floppy bisher mit `format STRUDELFORCE ffs` (`DOS1:ffs`). Der Amiga 500 mit Kickstart 1.3 (V34) besitzt in ROM **keinen** FastFileSystem-Treiber. Kickstart 1.3 kann Floppies nur im Original Old File System (`DOS0:ofs`) mounten.
+2. **Bootblock-Inkompatibilitaet:** `amitools.tools.xdftool` installierte bei `boot install` standardmaessig `boot2x3x.bin`. Dieser Bootblock ruft `OpenLibrary("dos.library", 37)` auf (Kickstart 2.0+). Unter KS 1.3 schlaegt dies fehl und der Bootloader bricht sofort ab. Die Loesung: `boot install boot1x`.
+3. **RetroArch Config-Kollision:** `tools/retroarch_test.bat` nutzte `--config` statt `--appendconfig`, wodurch RetroArch seine Standardtreiber fuer Video und Eingabe verlor.
+
+### 2. Umsetzung & Verifikation
+- In `tools/build_amiga_adf.py` auf `format STRUDELFORCE ofs` und `boot install boot1x` umgestellt.
+- Neues `strudelforce.adf` (exakt 901.120 Bytes, 880 KB OFS) generiert.
+- `tools/retroarch_test.bat` und `tools/retroarch_amiga.cfg` auf `--appendconfig` umgestellt.
+- **Vollstaendiger Headless Frame-Grab in RetroArch PUAE:**
+  Mit PUAE Core und Kickstart 1.3 (`kick34005.A500`) gebootet. Nach VBlank-Initialisierung wird das Amiga-Display perfekt dargestellt:
+  - Copper-Sky-Gradient (violett/blau)
+  - Ruinen-Saeulen
+  - Spielfeldboden
+  - Spieler-Sprite
+  - HUD: Score (0), Energiebalken (HP), Waffenlevel (LV III), Wave 0.
+- `README.md` auf Version 0.3.1 gehoben (inkl. Amiga Bare-Metal Dokumentation, Tests 44/44, aktualisierte Projektstruktur).

@@ -1,21 +1,23 @@
-# 🚀 STRUDELFORCE 0.3.0 (Consolidated Monolith)
+# 🚀 STRUDELFORCE 0.3.1 (Consolidated Monolith)
 
 [![Amiga 500](https://img.shields.io/badge/Platform-Amiga%20500%20%2F%20PC-blue.svg)](https://en.wikipedia.org/wiki/Amiga_500)
-[![Stable: 0.2.0](https://img.shields.io/badge/Release-v0.2.0-brightgreen.svg)](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
+[![Amiga ADF](https://img.shields.io/badge/ADF-Bootable%20880KB%20OFS-orange.svg)](#)
+[![Stable: 0.3.1](https://img.shields.io/badge/Release-v0.3.1-brightgreen.svg)](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.3.1)
 [![PAL 50Hz](https://img.shields.io/badge/Timing-50Hz%20PAL%20VBlank-green.svg)](#)
 [![Fixed Point](https://img.shields.io/badge/Math-16.16%20Fixed--Point%20Zero--Float-orange.svg)](#)
 [![Audio](https://img.shields.io/badge/Sound-Cyber--Paula%208--Voice%20TFMX%2BMOD-magenta.svg)](#)
 [![Live-Coding](https://img.shields.io/badge/Music-Strudel%20Cleanroom%20AST-yellow.svg)](#)
-[![Tests](https://img.shields.io/badge/Tests-32%2F32%20PASS-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/Tests-44%2F44%20PASS-brightgreen.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 
 > **"Amiga 500 trifft Cyber-Paula & 2.5D-Voxel-Action (Turrican-Hommage)."**  
 > Ein kompromissloser Retro-Action-Shooter auf Amiga-Hardware-Restriktionen (512 KB Chip-RAM, OCS/AGA Bitplanes, Copper-Listen), Chris Hülsbecks legendärer **TFMX Professional Sound-Engine**, ProTracker MOD, TidalCycles/Strudel Live-Coding und richtungsbeschatteten 2.5D-Voxeln.
 
-### 📦 Offizieller Release-Download: [v0.2.0](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.2.0)
-* **Windows x64 Binary-Paket:** [`strudelforce-v0.2.0-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/strudelforce-v0.2.0-windows-x64.zip) (ca. 2.8 MB)
-* **Prüfsummen:** [`SHA256SUMS.txt`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.2.0/SHA256SUMS.txt)
-* **Sofort spielbar (Single-Binary):** Enthält die eigenständige **`strudelforce.exe`** (2.5D Voxel GUI, inklusive integrierter CLI-Optionen `-headless`, `--demo` und `--test`) sowie die originalen Turrican 2 und Apidya TFMX-Soundtracks. Keine verwirrenden Extra-Dateien mehr nötig!
+### 📦 Offizieller Release-Download: [v0.3.1](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.3.1)
+* **Windows x64 Binary-Paket:** [`strudelforce-v0.3.1-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/strudelforce-v0.3.1-windows-x64.zip)
+* **Amiga 500 Floppy Disk:** [`strudelforce.adf`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/strudelforce.adf) (880 KB Standard OFS Floppy Disk Image, bootfähig auf Amiga 500 OCS / Kickstart 1.3)
+* **Prüfsummen:** [`SHA256SUMS.txt`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/SHA256SUMS.txt)
+* **Sofort spielbar (Single-Binary):** Enthält die eigenständige **`strudelforce.exe`** (2.5D Voxel GUI, inklusive integrierter CLI-Optionen `-headless`, `--demo` und `--test`) sowie die originalen Turrican 2 und Apidya TFMX-Soundtracks.
 
 ```text
    _____ _______ _____  _    _ _____  ______ _      ______ ____  _____   _____ ______ 
@@ -24,7 +26,7 @@
   \___ \   | |  |  _  /| |  | | |  | |  __| | |    |  __|| |  | |  _  /| |    |  __|  
   ____) |  | |  | | \ \| |__| | |__| | |____| |____| |   | |__| | | \ \| |____| |____ 
  |_____/   |_|  |_|  \_\____/|_____/|______|______|_|    \____/|_|  \_\\_____|______|
-                                                                          0.3.0 TURRICAN
+                                                                           0.3.1 TURRICAN
 ```
 
 ---
@@ -41,29 +43,36 @@
    - Turrican-2-inspiriertes Hauptmenü, Ladebildschirm, Sieg- und Game-Over-Overlays.
    - **F5 Soundgodizer:** Analog-Wärme, Bass-Boost, tanh-Soft-Drive und Haas-Stereo-Wide.
 
-2. **Konsolidierte Monolithische Architektur:**
+2. **Nativer Amiga 500 Bare-Metal Port (`amiga/` & `strudelforce.adf`):**
+   - Echter M68K Bare-Metal Build via `m68k-amiga-elf-gcc` (keine libc-Abhängigkeit, `-nostdlib -ffreestanding`).
+   - 5 OCS-Bitplanes (320x256 @ 50Hz PAL, 32 Farben, Doppelpuffer) direkt im Chip-RAM.
+   - Dynamischer Copper-Farbverlauf-Himmel (Amiga Raster-Bänder).
+   - 100% Smith-Kern-Gameplay-Kopplung: 1 `core_tick` pro VBlank (50Hz), Joystick Port 2, Linke Maustaste für OS-Rückkehr.
+   - Bootfähiges 880 KB Floppy Image (`strudelforce.adf`) im Standard Amiga OFS-Format mit Kickstart 1.3 Bootblock (`boot1x`) und `s/startup-sequence`. Lauffähig auf jedem Amiga 500 (Kickstart 1.3, RetroArch PUAE, WinUAE, echte Hardware).
+
+3. **Konsolidierte Monolithische Architektur:**
    - **`src/game_logic.c`**: 16.16 Fixed-Point Physik, 3-Leben-System, Respawn-Schutz, 3 Waffen (Spread, Laser, Bounce 2.0 mit Eck-Clamp-Fix), Gegner, Endlos-Roguelike & Kampagnen-Modus.
    - **`src/soundengine_core.c`**: Universeller Hub für TFMX 1.5/Pro Replay, ProTracker MOD (4/6/8 Kanäle), Strudel-Cleanroom AST, Game-SFX, Cyber-Paula 8-Stimmen Mixer, Soundgodizer und Win32 waveOut.
    - **`src/engine_core.c`**: 2.5D Voxel-Szenen-Planer, Amiga OCS/AGA Hardware-Shims, Zero-Float Sinus-Scroller & Copper-Intro.
-   - **`src/strudelforce.h`**: Zentraler Master-Header für alle Module.
+   - **`src/strudelforce.h`**: Zentraler Master-Header für alle Module (mit M68K `amiga_crt.h`-Shims).
 
-3. **Spielmodi:**
+4. **Spielmodi:**
    - **Kampagne:** 5 Level à 3 Wellen mit fester Biom-Progression (*Chrome Tempest*, *The Great Bath*, *Mechanical Hive*), Level-Clear Boni und epischem Sieg-Screen.
    - **Endlos-Roguelike:** Fortlaufende Wellen, kontinuierliche Steigerung und deterministische Highscore-Jagd.
 
-4. **TFMX Explorer & Jukebox ([F2]):**
+5. **TFMX Explorer & Jukebox ([F2]):**
    - Integrierter Dateibrowser mit freier Pfadeingabe für TFMX-Module und ProTracker MODs.
    - Live-Analyse aller Stimmen mit animierten Pegelanzeigen, Frequenz- und Notenanzeige.
 
-5. **Strudel Live-Code Studio ([F3]):**
+6. **Strudel Live-Code Studio ([F3]):**
    - Interaktiver Mini-Notation Editor (`"<c3 eb3 g3 f3> [g3 c4 eb4 g4]*2 <ab2 bb2 c3 d3>"`).
    - Glitchless-Tausch am 16-Step-Zyklusrand.
    - Windows-Clipboard-Support (Strg+V / Rechtsklick), Preset-Speicherung (`user_pattern.strudel`).
 
-6. **50Hz ANSI/ASCII Terminal-Spiel (`strudelforce_game.exe`):**
+7. **50Hz ANSI/ASCII Terminal-Spiel (`strudelforce_game.exe`):**
    - Vollständig autark im Terminal spielbar (inkl. Headless Bot-Modus `--demo 2500` und `--campaign`).
 
-7. **Kiwi Cloud Asset & Lokalisierungs-Pipeline:**
+8. **Kiwi Cloud Asset & Lokalisierungs-Pipeline:**
    - `assets/lang.json` & `tools/build_lang.py`: Erzeugt `src/localization.h` mit Zero-Malloc $O(1)$-Text-Lookups (DE/EN).
    - `assets/balancing.json`: Exakte Physik- und Level-Balancing-Werte pro Biom.
    - `assets/story.json`: 4-Kapitel Cyber-Odyssey-Story mit Dialogen.
@@ -135,24 +144,41 @@ Jede Zeile Code gehorcht ausnahmslos diesen Grundsätzen (siehe [PROJECT_BIBLE.m
 | **Rechter Schulterbutton (RB/RS)** | Waffe wechseln |
 | **Start-Taste** | Hauptmenü / Pause |
 
-### ⚔️ Turrican-2 Waffengrafiken & Holding Beam (0.3.0)
-Die Waffen und Spezialfaehigkeiten verfuegen nun ueber authentische 2.5D Retro-Grafiken nach Turrican-2-Vorbild:
+### Amiga 500 Steuerung
+| Amiga Port | Aktion |
+|---|---|
+| **Joystick Port 2 Links / Rechts** | Raumschiff bewegen |
+| **Joystick Port 2 Oben** | Sprung |
+| **Joystick Port 2 Feuer** | Primärfeuer |
+| **Joystick Port 2 Unten** | Morph-Ball |
+| **Joystick Port 2 Taste 2 (Pot-Line)** | 360° Halt-Strahl |
+| **Maus Port 1 (Linke Maustaste)** | Spiel beenden (Rückkehr zu AmigaOS/Kickstart) |
+
+---
+
+## ⚔️ Turrican-2 Waffengrafiken & Holding Beam
+
+Die Waffen und Spezialfähigkeiten verfügen über authentische 2.5D Retro-Grafiken nach Turrican-2-Vorbild:
 * **360° Surround Holding Beam (ALT / Controller X):** Ein rotierender, elektrisch knisternder Blitzstrahl mit Emitter-Ring um das Schiff, dynamischem Jitter und Treffer-Funkenstern.
-* **Laser (WEAPON_LASER):** Hochenergetische Twin-Laser-Bolzen mit blau-cyanem Voxel-Koerper, weissem Kern und Schweif-Nachleuchten.
+* **Laser (WEAPON_LASER):** Hochenergetische Twin-Laser-Bolzen mit blau-cyanem Voxel-Körper, weißem Kern und Schweif-Nachleuchten.
 * **Spread-Shot (WEAPON_SPREAD):** Aerodynamische Plasma-Keile mit goldenem Kern und Funkenschweif.
-* **Bounce (WEAPON_BOUNCE):** Hochglanz-Smaragd-Voxelkugeln mit weissem Glanzpunkt und Rebound-Schwung.
-* **Muzzle-Flash:** Dynamisches Muendungsfeuer am Raumschiffbug beim Abfeuern.
+* **Bounce (WEAPON_BOUNCE):** Hochglanz-Smaragd-Voxelkugeln mit weißem Glanzpunkt und Rebound-Schwung.
+* **Muzzle-Flash:** Dynamisches Mündungsfeuer am Raumschiffbug beim Abfeuern.
 * **HUD Retro-Waffen-Badge:** Bevel-Badge im HUD mit visuellem Waffen-Icon und 5-Stufen-Power-LED-Meter.
 
-### 🏛️ Turrican-2 Benchmark Level-System
-Das Levelsystem umfasst nun 17 Chunks und 9 Kampagnen-Welten inklusive der legendaeren Turrican-2-Welten:
+---
+
+## 🏛️ Turrican-2 Benchmark Level-System
+Das Levelsystem umfasst nun 17 Chunks und 9 Kampagnen-Welten inklusive der legendären Turrican-2-Welten:
 1. **Turrican 2 - World 1:** Desert Outpost (Original TFMX 'World 1 - Dessert')
 2. **Turrican 2 - World 2:** Cave Depths (Original TFMX 'World 2 - Cave')
 3. **Turrican 2 - World 3:** Magma Flight (Original TFMX 'World 3 - Flight')
 4. **Turrican 2 - World 5:** Alien Citadel (Original TFMX 'World 5 - Aliens')
-5. **Erweitertes Kiwi-Archiv:** Vollstaendiges 22-Chunk 32x32 Set in levels/levels_kiwi_extended.json.
+5. **Erweitertes Kiwi-Archiv:** Vollständiges Set in `levels/levels_v2.json` (197 Chunks, 37 Levels via `levelkit/lv2.py`).
 
-### 💻 Befehlszeilen-Optionen (Single-Binary CLI)
+---
+
+## 💻 Befehlszeilen-Optionen (Single-Binary CLI)
 `strudelforce.exe` kann sowohl interaktiv mit vollständiger 2.5D GUI als auch headless im Terminal ausgeführt werden:
 
 | Parameter | Funktion |
@@ -162,7 +188,7 @@ Das Levelsystem umfasst nun 17 Chunks und 9 Kampagnen-Welten inklusive der legen
 | `strudelforce.exe --demo [ticks]` | Autonomer Demo-Bot mit Live-Status |
 | `strudelforce.exe --campaign` | Aktiviert den 5-Level Kampagnen-Modus |
 | `strudelforce.exe --test` | Führt interne Integrationstests headless aus |
-| `strudelforce.exe --dump [N] [basis]` | Erzeugt N Headless-PPM Frame Dumps |
+| `strudelforce.exe --dump [N] [basis]` | Erzeugt N Headless-PPM Frame Dumps in `tmp/dump/` |
 | `strudelforce.exe --help` | Zeigt die Befehlszeilen-Hilfe an |
 
 ---
@@ -174,28 +200,38 @@ Erfordert Visual Studio / Build Tools (automatische vcvars-Erkennung):
 ```cmd
 build_msvc.bat
 ```
-Baut alle drei Kern-Executables (v0.2.0):
-- `strudelforce.exe` (bzw. `strudelforce_v0.2.exe`): Haupt-Spiel (2.5D Voxel GUI, Jukebox, Studio)
+Baut alle drei Kern-Executables (v0.3.1):
+- `strudelforce.exe` (und Alias `strudelforce_0.3.1.exe`): Haupt-Spiel (2.5D Voxel GUI, Jukebox, Studio)
 - `strudelforce_game.exe`: 50Hz ANSI/ASCII Terminal-Spiel (`--demo 2500`, `--campaign`)
-- `test_suite.exe`: Konsolidierte Testsuite (32 automatische Checks)
+- `test_suite.exe`: Konsolidierte Testsuite (**44/44 automatische Checks PASS**)
+
+### Amiga 500 (M68K Bare-Metal)
+Erfordert `m68k-amiga-elf-gcc` (z. B. aus der VS Code Extension *Amiga C/C++ Compile, Debug & Profile*):
+```bash
+make -C amiga                   # Kompiliert amiga/out/a.exe (57 KB Amiga-Hunk)
+python tools/build_amiga_adf.py # Erstellt bootfaehiges strudelforce.adf (880 KB OFS)
+tools/retroarch_test.bat        # Startet das ADF direkt in RetroArch (PUAE A500)
+```
+In VS Code: Einfach **F5** drücken (*Amiga 500 (STRUDELFORCE)*) startet den integrierten WinUAE-GDB-Debug-Flow.
 
 ### GCC / Linux / Make
 ```bash
 make all        # Baut Spiel, GUI und Testsuite
 make game       # Baut strudelforce_game
 make gui        # Baut strudelforce (2.5D GUI)
-make test       # Baut und führt die Testsuite aus
-make c89_check  # Strict C89-Syntaxprüfung
-make verify     # Führt Python-Oracles und Selftests aus
+make test       # Baut und fuehrt die Testsuite aus
+make c89_check  # Strict C89-Syntaxpruefung
+make verify     # Fuehrt Python-Oracles und Selftests aus
 ```
 
 ### Python-Verifikation & Oracles (Zero-GCC)
 ```bash
-python tools/selftest.py          # 32-Check Selftest (Linter, MOD, TFMX, Parser, Level)
-python verify_core_sim.py         # Bit-identischer LCG-Determinismus-Check
+python tools/selftest.py          # Umfassender Selftest (Linter, MOD, TFMX, Parser, Level)
+python verify_core_sim.py         # Bit-identischer LCG-Determinismus-Check (Endlos & Kampagne)
 python verify_audio_matrix.py     # Reaktive Audio-Filter & SFX-Check
 python verify_headless.py         # Strudel-AST & Macro-Engine Test
 python verify_livecode.py         # Live-Coding & Truhen-Tribute Check
+python tools/make_release.py      # Erstellt saubere Source-, Windows- und Amiga-Release-ZIPs
 ```
 
 ---
@@ -204,40 +240,50 @@ python verify_livecode.py         # Live-Coding & Truhen-Tribute Check
 
 ```text
 STRUDELFORCE_Master/
+├── amiga/                      # Amiga 500 Bare-Metal Target (m68k-amiga-elf-gcc)
+│   ├── main.c                  # OCS 5-Bitplane Renderer, Copper-Sky, 50Hz VBlank Loop
+│   ├── sys.c                   # Hardware Takeover/Restore (LoadView, DMACON, Interrupts)
+│   ├── rt.c                    # Freestanding 64-Bit Arithmetik (__muldi3 fuer fix16_mul)
+│   ├── Makefile                # Bare-Metal Build zu out/a.exe
+│   └── support/                # GCC8 CRT & VBR Helpers
 ├── src/
-│   ├── strudelforce.h          # Zentraler Master-Header für alle Subsysteme
+│   ├── strudelforce.h          # Zentraler Master-Header fuer alle Subsysteme
 │   ├── game_logic.c            # 16.16 Fixed-Point Physik, 3-Leben, Waffen, Kampagne/Endlos
 │   ├── soundengine_core.c      # Universal Audio Hub: TFMX, MOD, Strudel AST, Paula, Win-Audio
 │   ├── engine_core.c           # 2.5D Voxel-Planer, Zero-Float Amiga-Shims, Retro-Intro
-│   ├── gui_main.c              # Win32/GDI 2.5D Voxel-GUI (strudelforce.exe / strudelforce_v0.2.exe)
+│   ├── gui_main.c              # Win32/GDI 2.5D Voxel-GUI (strudelforce.exe / strudelforce_0.3.1.exe)
 │   ├── game_main.c             # 50Hz ANSI Terminal-Spiel Frontend (strudelforce_game.exe)
-│   ├── main_pc.c               # Raylib 2.5D Frontend
-│   ├── test_suite.c            # Konsolidierte Integrationstest-Suite (32 Checks)
+│   ├── level_engine.c          # Level-Chunk Loader & Generator
+│   ├── sprite_data.h           # Indizierte 16-Farben-Sprite-Matrizen
+│   ├── test_suite.c            # Konsolidierte Integrationstest-Suite (44 Checks)
 │   ├── localization.h          # (generiert) Statische Mehrsprachen-Tabellen
 │   ├── assets_index.h          # (generiert) Asset-IDs und Blob-Index
 │   └── embedded_music.h        # Integrierte Soundtrack-Daten (Apidya Meadow u.a.)
+├── levels/                     # Level-Definitionen & Chunks (levels_v2.json)
+├── levelkit/                   # Level-Editor & Generierungs-Toolkit (lv2.py)
 ├── assets/                     # Game-Assets & Spezifikationen
 │   ├── story.json              # 4-Kapitel-Story-Script & Dialoge
 │   ├── balancing.json          # Physik- & Level-Balancing pro Biom
 │   ├── lang.json               # Lokalisierung (DE/EN)
-│   ├── level_01.json           # Plattform- & Gegner-Layout Level 01
 │   ├── audio_reference/        # Referenz-MODs, TFMX-Tracks und Strudel-Sketche
-│   ├── strudel_tracks/         # Live-Coding Kompositionen
 │   └── *.tfmx.json             # Soundtrack- und Album-Spezifikationen
 ├── tools/                      # Tooling, Generatoren & Packer
-│   ├── build_lang.py           # Generiert src/localization.h aus assets/lang.json
-│   ├── asset_packer.py         # Packt assets.dat & erzeugt src/assets_index.h
-│   ├── github_exporter.py      # Erstellt saubere Release-Exporte
+│   ├── build_amiga_adf.py      # Erstellt 880 KB Standard OFS Floppy Disk Image (strudelforce.adf)
+│   ├── make_release.py         # Deterministischer Release-Packer (Source, Windows, Amiga)
 │   ├── selftest.py             # Konsolidierter Syntax- & Modultester
+│   ├── curate_audio.py         # Audio-Kuratierung fuer M68K- & PC-Soundtracks
+│   ├── stage_amiga_music.py    # Staged TFMX-Dateien fuer Amiga-Floppy
 │   └── ...                     # Oracles & Hilfswerkzeuge
-├── PROJECT_BIBLE.md            # Single Source of Truth für Architektur, Gesetze & APIs
-├── KIWI_SURVIVAL_GUIDE.md      # Best Practices für Cloud-Sandboxen
+├── Kickstart/                  # ROM-Dateien fuer Emulator-Tests (kick34005.A500)
+├── PROJECT_BIBLE.md            # Single Source of Truth fuer Architektur, Gesetze & APIs
+├── TODO.md                     # Aktueller Aufgaben-Backlog & Meilensteine
 ├── WORKFLOW_ESSAY.md           # Chronologische Entwicklungs-Historie
-└── AGENTS.md                   # Entwickler- und Agenten-Briefing
+├── AGENTS.md                   # Entwickler- und Agenten-Briefing
+└── strudelforce.adf            # Bootfaehiges 880 KB Amiga 500 Floppy Disk Image
 ```
 
 ---
 
 ## ⚖️ Lizenz
-MIT License (Clean Room Implementierung ohne GPL/AGPL-Abhängigkeiten), siehe [LICENSE](LICENSE).
+MIT License (Clean Room Implementierung ohne GPL/AGPL-Abhängigkeiten), siehe [LICENSE](LICENSE).  
 TFMX-Referenz-Dateien unter ihren jeweiligen Original-Rechten.

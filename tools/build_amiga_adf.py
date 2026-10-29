@@ -80,12 +80,12 @@ def build_adf() -> int:
     with open(os.path.join(DIST, "s", "startup-sequence"), "w", newline="\n") as f:
         f.write(STARTUP)
 
-    # 3. Format and pack via xdftool
+    # 3. Format and pack via xdftool (OFS + boot1x fuer maximale KS 1.3 / A500-Kompatibilitaet)
     cmd = [
         sys.executable, "-m", "amitools.tools.xdftool",
         "-f", ADF_PATH,
-        "format", "STRUDELFORCE", "ffs",
-        "+", "boot", "install",
+        "format", "STRUDELFORCE", "ofs",
+        "+", "boot", "install", "boot1x",
         "+", "pack", DIST,
         "+", "list"
     ]

@@ -33,5 +33,5 @@ if not exist "%ADF%" (
 )
 
 echo [OK] RetroArch (PUAE A500) + Kickstart + ADF starten...
-"%RA%" --config "%ROOT%\tools\retroarch_amiga.cfg" -L "%CORE%" "%ADF%"
+"%RA%" --appendconfig "%ROOT%\tools\retroarch_amiga.cfg" -L "%CORE%" "%ADF%"
 endlocal

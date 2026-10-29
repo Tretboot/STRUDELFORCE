@@ -11,10 +11,11 @@
 - CI: eine Datei `.github/workflows/build.yml` (windows, linux, amiga, release bei Tag `v*`).
 
 ## 1. P0 — Amiga-Port im Emulator zum Laufen bringen
-Stand: `amiga/` baut (`make -C amiga` → `amiga/out/a.exe`, 57 KB). `tools/build_amiga_adf.py` packt das **echte** Binary. **Noch nie auf Emulator/Hardware gelaufen.**
+Stand: `amiga/` baut (`make -C amiga` → `amiga/out/a.exe`, 57 KB). `tools/build_amiga_adf.py` erzeugt voll bootfaehiges OFS-Floppy-Image (`strudelforce.adf`). **Erfolgreich in RetroArch PUAE (A500 / Kickstart 1.3) getestet & per Screenshot verifiziert!**
 - [x] Ursache „nur Workbench“ im RetroArch gefunden: `strudelforce.amiga` auf der ADF war ein 40-Byte-Stub (`moveq #0,d0; rts`), und die startup-sequence nutzte `echo`/`run` ohne `C:` auf der Disk. → Stub entfernt, startup-sequence = nur `strudelforce.amiga`.
-- [ ] **Neue ADF testen** (`python tools/build_amiga_adf.py`; RetroArch/PUAE mit Kickstart 1.3 A500, `tools/retroarch_test.bat`). Erwartung: Himmel-Verlauf, Boden, Spieler, HUD, Joystick-Port 2.
-- [ ] Falls weiter Workbench: (a) Kickstart ≥2.0 in PUAE gewählt? ROM-Pfad `Kickstart/kick34005.A500` (1.3) verwenden; (b) KS 1.3 führt startup-sequence evtl. nur mit `C:Execute`/`C:Run` aus → eigenen **Bootblock** schreiben, der das Programm direkt startet (xdftool `boot install` setzt nur den Standard-Bootblock); (c) Alternative: `exe2adf.exe` (liegt in der Extension) verwenden.
+- [x] **ADF-Dateisystem & Bootblock gefixt:** `tools/build_amiga_adf.py` nutzte fälschlicherweise FFS (`DOS1:ffs`) und `boot2x3x.bin` (prüft auf KS 2.0+). Kickstart 1.3 unterstützt auf Floppy nur OFS (`DOS0:ofs`) und benötigt `boot1x`. Auf `ofs` + `boot1x` umgestellt.
+- [x] **Emulator-Test verifiziert:** `strudelforce.adf` bootet in RetroArch (PUAE A500 Kickstart 1.3) fehlerfrei durch: Himmel-Verlauf (Copper), Ruinen-Säulen, Boden, Spieler-Sprite und HUD (Score, HP, LV, Wave 0) werden korrekt gerendert.
+- [x] **RetroArch-Testskripte optimiert:** `tools/retroarch_test.bat` nutzt nun `--appendconfig` statt `--config` mit `tools/retroarch_amiga.cfg`, damit Core- und Treibereinstellungen nicht überschrieben werden.
 - [ ] **VS-Code-Debug-Flow:** F5 *Amiga 500* (WinUAE via Extension, `.vscode/launch.json`, `amiga.program = amiga/out/a.exe`). Task `compile` ruft `make program=…` (Root-Makefile delegiert an `amiga/`).
 - [ ] Framerate messen (68000 @ 7 MHz, aktuell CPU-Rects, 1 `core_tick`/VBlank, Poll statt Interrupt): Bei Unterschreiten 50 fps → VBlank-Interrupt + Tick-Zähler, Blitter für Fills/Bobs, Dirty-Rects.
 - [ ] Eingabe: Tastatur (CIA-SDR) zusätzlich zum Joystick; Waffenwechsel (`INPUT_WEAPSW`), Morph, Pause, Menü/Titelscreen.
