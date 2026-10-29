@@ -16,13 +16,17 @@
 
 #include "strudelforce.h"
 
-/* ================= 16.16 Konstanten ================= */
-#define GRAVITY_FP       FIX(0.5)
+/* ================= 16.16 Konstanten =================
+ * Balance 2026-10-28 (v0.3.0 Feinschliff): entspannteres, weniger hektisches
+ * Laufgefuehl. Acc/Speed 25% runter, Spruenge etwas flacher (v^2/2g),
+ * Friction auf 0.80 = weicheres Ausrollen. verify_core_sim.py muss
+ * die Werte 1:1 spiegeln (Oracle-Regel!). */
+#define GRAVITY_FP       FIX(0.45)
 #define MAX_FALL_FP      FIX(8.0)
-#define JUMP_V_FP        FIX(3.0)
-#define MOVE_ACC_FP      FIX(0.35)
-#define MAX_SPEED_FP     FIX(3.0)
-#define FRICTION_FP      FIX(0.75)
+#define JUMP_V_FP        FIX(2.6)
+#define MOVE_ACC_FP      FIX(0.25)
+#define MAX_SPEED_FP     FIX(2.4)
+#define FRICTION_FP      FIX(0.80)
 #define STOP_EPSILON     FIX(0.02)
 
 #define PLAYER_HALF_W    FIX(1.0)

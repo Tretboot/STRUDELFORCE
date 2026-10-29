@@ -69,4 +69,5 @@ __pycache__/
 # --- IDE ---
 .idea/
 # .vscode/ wird GENERIERT (gen_sources.py: tasks/launch/settings/amiga/extensions)
-# und ist Teil der GitHub-Baseline — bewusst NICHT ignoriert.
+# und ist Teil der GitHub-Baseline — bewusst NICHT ignoriert.# Agent/Build-Tempdateien
+build_out.txt

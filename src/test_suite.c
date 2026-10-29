@@ -183,8 +183,8 @@ static void test_mod_playback(void) {
     int i, peak = 0;
     printf("\n--- [8] ProTracker MOD Replay ---\n");
     mod_player_init(&mod);
-    CHECK(mod_player_load_mem(&mod, EMB_MOD_WC_REGULARCOMBAT, EMB_MOD_WC_REGULARCOMBAT_LEN),
-          "Regular Combat MOD mem load");
+    CHECK(mod_player_load_mem(&mod, EMB_MOD_WC_OFFICE, EMB_MOD_WC_OFFICE_LEN),
+          "Commander Office MOD mem load");
     CHECK(mod.loaded == 1 && mod.nch == 4, "MOD 4-Kanal geladen");
     mod_player_start(&mod, GAME_AUDIO_RATE);
     CHECK(mod.playing == 1, "MOD gestartet");

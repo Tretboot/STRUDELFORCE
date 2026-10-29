@@ -3,11 +3,13 @@
 gen_embedded_music.py - Erzeugt src/embedded_music.h (GENERIERT, nicht handeditieren!)
 
 Packt ausgewaehlte Chris Huelsbeck TFMX/MOD-Tracks IN die EXE (static const Arrays):
-  1. Turrican 2: "Load" (Fanfare), "World 1 - Desert", "World 2 - Cave" (Multi-Subsongs!)
+  1. Turrican 2: "World 1 - Desert", "World 2 - Cave" (Multi-Subsongs!)
   2. Apidya: "Ongame 1 - Meadow" (Chris Huelsbeck Amiga Anthem)
-  3. Software Manager: Multi-Subsongs (22 Subsongs!) fuer dynamische Abspann-Phasen & Gameplay
+  3. Software Manager: "Titel" — Multi-Subsongs (22 Subsongs!) fuer Abspann-Phasen & Gameplay
+     (v0.3.0: Msx-Variante durch Titel ersetzt — die Demo-Effekte des Msx-Tracks stoeren;
+      Turrican 2 "Load" entfaellt wegen Platz- & Stoppelfaktoren)
   4. 3 Amiga Cracktros: Fairlight, Skidrow, Paradox (fuer das zufaellige Amiga-Start-Intro!)
-  5. 8-Bit & MOD Klassiker: Blue Monday Chiptune, Wing Commander Combat, Lost Patrol
+  5. 8-Bit & MOD Klassiker: Blue Monday Chiptune, Wing Commander Commander Office, Lost Patrol
 
 Total Audio-Budget: ~450 KB -> strudelforce.exe bleibt strikt UNTER 1 MB!
 
@@ -22,17 +24,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACKS = [
     ("TFMX_APIDYA_MEADOW",   "tfmx", "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.tfx"),
     ("SAM_APIDYA_MEADOW",    "sam",  "TFMX Professional/Apidya/Apidya - Ongame 1 - Meadow.sam"),
-    ("TFMX_T2_LOAD",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - Load.tfx"),
-    ("SAM_T2_LOAD",          "sam",  "TFMX Professional/Turrican 2/Turrican 2 - Load.sam"),
     ("TFMX_T2_DESERT",       "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.tfx"),
     ("SAM_T2_DESERT",        "sam",  "TFMX Professional/Turrican 2/Turrican 2 - World 1 - Dessert.sam"),
     ("TFMX_T2_CAVE",         "tfmx", "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.tfx"),
     ("SAM_T2_CAVE",          "sam",  "TFMX Professional/Turrican 2/Turrican 2 - World 2 - Cave.sam"),
-    ("TFMX_SOFTMAN",         "tfmx", "TFMX Professional/Software Manager/Software Manager - Msx.tfx"),
-    ("SAM_SOFTMAN",          "sam",  "TFMX Professional/Software Manager/Software Manager - Msx.sam"),
+    ("TFMX_SOFTMAN",         "tfmx", "TFMX Professional/Software Manager/Software Manager - Titel.tfx"),
+    ("SAM_SOFTMAN",          "sam",  "TFMX Professional/Software Manager/Software Manager - Titel.sam"),
     ("MOD_LOST_PATROL",      "mod",  "MOD/Lost_Patrol/tunev1.mod"),
     ("MOD_BLUE_MONDAY_CHIP", "mod",  "MOD/Pop Songs/- Dance and Pop/1980s/New Order/blue-monday (chip tune).mod"),
-    ("MOD_WC_REGULARCOMBAT", "mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_regularcombat.mod"),
+    ("MOD_WC_OFFICE",        "mod",  "MOD/Mark_TDK_Knight_Wing_Commander_Amiga/wing_commander_commanderoffice.mod"),
     ("MOD_FAIRLIGHT",        "mod",  "MOD/Cracktro/Mod.Fairlight.Mod"),
     ("MOD_SKIDROW",          "mod",  "MOD/Cracktro/Mod.Skidrow Crack10.Mod"),
     ("MOD_PARADOX",          "mod",  "MOD/Cracktro/Mod.Paradox Crack 12.Mod"),
@@ -41,17 +41,15 @@ TRACKS = [
 NAMES = {
     "TFMX_APIDYA_MEADOW":    "Apidya - Ongame 1 - Meadow (TFMX)",
     "SAM_APIDYA_MEADOW":     "Apidya - Ongame 1 - Meadow (Samples .sam)",
-    "TFMX_T2_LOAD":          "Turrican 2 - Load (TFMX)",
-    "SAM_T2_LOAD":           "Turrican 2 - Load (Samples .sam)",
     "TFMX_T2_DESERT":        "Turrican 2 - World 1 - Desert (TFMX)",
     "SAM_T2_DESERT":         "Turrican 2 - World 1 - Desert (Samples .sam)",
     "TFMX_T2_CAVE":          "Turrican 2 - World 2 - Cave (TFMX)",
     "SAM_T2_CAVE":           "Turrican 2 - World 2 - Cave (Samples .sam)",
-    "TFMX_SOFTMAN":          "Software Manager - Msx (TFMX)",
-    "SAM_SOFTMAN":           "Software Manager - Msx (Samples .sam)",
+    "TFMX_SOFTMAN":          "Software Manager - Titel (TFMX)",
+    "SAM_SOFTMAN":           "Software Manager - Titel (Samples .sam)",
     "MOD_LOST_PATROL":       "Lost Patrol - tunev1 (MOD)",
-    "MOD_BLUE_MONDAY_CHIP":  "New Order - blue-monday (chip tune) (MOD)",
-    "MOD_WC_REGULARCOMBAT":  "Wing Commander - Regular Combat (MOD)",
+    "MOD_BLUE_MONDAY_CHIP":  "New Order - Blue Monday (Chiptune MOD)",
+    "MOD_WC_OFFICE":         "Wing Commander - Commander Office (MOD)",
     "MOD_FAIRLIGHT":         "Fairlight - Amiga Cracktro (MOD)",
     "MOD_SKIDROW":           "Skidrow - Cracktro 10 (MOD)",
     "MOD_PARADOX":           "Paradox - Cracktro 12 (MOD)",

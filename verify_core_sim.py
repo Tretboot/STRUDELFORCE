@@ -18,12 +18,12 @@ hier synchronisiert werden, sonst verliert das Oracle seine Gueltigkeit.
 WORLD_W_UNITS = 72
 WORLD_H_UNITS = 30
 
-GRAVITY_FP = int(0.5 * 65536)
+GRAVITY_FP = int(0.45 * 65536)
 MAX_FALL_FP = int(8.0 * 65536)
-JUMP_V_FP = int(3.0 * 65536)
-MOVE_ACC_FP = int(0.35 * 65536)
-MAX_SPEED_FP = int(3.0 * 65536)
-FRICTION_FP = int(0.75 * 65536)
+JUMP_V_FP = int(2.6 * 65536)
+MOVE_ACC_FP = int(0.25 * 65536)
+MAX_SPEED_FP = int(2.4 * 65536)
+FRICTION_FP = int(0.80 * 65536)
 STOP_EPSILON = int(0.02 * 65536)
 
 PLAYER_HALF_W = 1 * 65536

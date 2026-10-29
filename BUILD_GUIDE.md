@@ -107,3 +107,4 @@ Für Version 0.4.0 sind folgende Erweiterungen geplant:
 1. **Nativer Linux 2.5D GUI Client**: Portierung des Renderers von Win32/GDI auf **SDL2** (mit ALSA/PulseAudio-Soundbackend), um das grafische Fenster und alle RetroArch-Shader nativ unter Linux auszuführen.
 2. **Direkter ADF/LHA-Release-Download**: Bereitstellung vorkompilierter `.adf`-Floppy-Disks und `.lha`-Pakete direkt im GitHub Release für Emulatoren (WinUAE, FS-UAE, Amiberry) und Original-Hardware.
 3. **M68K Hardware Blitter & Copper Listen**: Native Amiga-Bitplane-Generierung direkt auf den OCS/AGA-Chipsatz ohne CPU-Software-Shims.
+

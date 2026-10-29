@@ -3,56 +3,12 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def read_and_wrap(filepath, max_len=74):
-    if not os.path.isfile(filepath):
-        return []
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-        text = f.read()
-
-    # Transcribe German umlauts and special punctuation
-    replacements = {
-        'ä': 'ae', 'ö': 'oe', 'ü': 'ue',
-        'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
-        'ß': 'ss', '—': '--', '–': '-',
-        '“': '"', '”': '"', '‘': "'", '’': "'",
-        '→': '->', '←': '<-', '…': '...'
-    }
-    for k, v in replacements.items():
-        text = text.replace(k, v)
-
-    raw_lines = text.splitlines()
-    wrapped = []
-    for line in raw_lines:
-        line = line.strip()
-        if not line:
-            wrapped.append("")
-            continue
-        while len(line) > max_len:
-            split = max_len
-            while split > 30 and line[split] != ' ':
-                split -= 1
-            if split <= 30:
-                split = max_len
-            wrapped.append(line[:split].strip())
-            line = line[split:].strip()
-        if line:
-            wrapped.append(line)
-    return wrapped
-
 def escape_c_string(s):
     return s.replace('\\', '\\\\').replace('"', '\\"')
 
 def main():
-    music_path = os.path.join(ROOT, 'docs', 'MUSIC_SYSTEM.md')
-    essay_path = os.path.join(ROOT, 'WORKFLOW_ESSAY.md')
-    log_path = os.path.join(ROOT, 'captains_log.md')
-
-    music_lines = read_and_wrap(music_path)
-    essay_lines = read_and_wrap(essay_path)
-    log_lines = read_and_wrap(log_path)
-
-    # Decorative section dividers with spacing
-    div_header = [
+    # Structured 4-phase credits (Chris Huelsbeck Tribute, Amiga Specs, Demoscene Heritage)
+    credits_lines = [
         "==========================================================================",
         "  S T R U D E L F O R C E   0 . 3 . 0   --   A B S P A N N   &   C R E D I T S",
         "==========================================================================",
@@ -65,108 +21,121 @@ def main():
         "  und Cleanroom-Reverse-Engineering in reinem ANSI-C realisiert.",
         "",
         "  [ TASTENSTEUERUNG IM ABSPANN: ESC = ZURUECK | SPACE = PAUSE | RAUF/RUNTER = SCHNELLER ]",
-        ""
-    ]
-
-    div_phase1 = [
-        "",
         "",
         "==========================================================================",
         "  KAPITEL I: SOUND-ARCHITEKTUR & CYBER-PAULA TFMX SPEZIFIKATION",
         "==========================================================================",
         "",
-        "  Cleanroom TFMX Replay Engine (C89/C99 Dual Target)",
-        "  Paula 8-Voice DMA Mixer | 16.16 Fixed-Point Math | Zero-Float PAL 50Hz",
-        "  Hardware Registers: AUD0LCH/LEN/PER/VOL ... CIA-A $BFE001 Lowpass",
-        ""
-    ]
-
-    div_phase2 = [
+        "  Die Sound-Engine emuliert die Paula-DMA-Hardware (MOS Technology 8364) des",
+        "  Amiga 500 mit 4 Hardware-Kanaelen, erweitert um einen 8-Stimmen-Softwaremixer",
+        "  mit 16.16 Fixed-Point Panning, Resonanz-Tiefpassfilter und Soundgodizer.",
         "",
+        "  TFMX V1.5 / PRO / 7-STIMMEN REPLAY:",
+        "  - Unterstuetzt mdat. und smpl. Container mit dynamischer Makro-Abarbeitung",
+        "  - Pattern-Kompression, Note-Slides, Vibrato, Portamento, Envelopes",
+        "  - 50Hz VBlank Taktung synchron zum Amiga PAL-Rasterstrahl",
+        "  - Original Soundtracks: Apidya Meadow, Turrican 2 Desert & Cave",
+        "  - Software Manager Titel Subsongs (Chris Huelsbeck / Kaiko Sound System)",
+        "",
+        "  PROTRACKER MOD PLAYER:",
+        "  - Echtes 4-Kanal Amiga ProTracker V2.3 Replay mit ST-01 / ST-02 Samples",
+        "  - Arpeggio (0xy), Portamento (1xx/2xx/3xx), Vibrato (4xy), Volume Slide (Axy)",
+        "  - Praeziser 3.546895 MHz Paula-Taktteiler fuer bit-genaue Frequenzen",
+        "  - Demoszene Cracktro Tunes: Fairlight, Skid Row, Razor 1911, Paradox",
+        "  - Pop-Klassiker: New Order 'Blue Monday' (KGB Demo Disk Edition)",
+        "  - Wing Commander Commander Office & Lost Patrol (MOD Klassiker)",
+        "",
+        "  STRUDEL LIVE-CODING ENGINE:",
+        "  - Cleanroom Mini-Notation Parser nach TidalCycles / Strudel.cc Syntax",
+        "  - Zyklusrand-Swap: Pattern-Wechsel rasten atomar auf 16-Step-Grenzen ein",
+        "  - Reaktivitaet: Waffenwechsel schalten TFMX Bassline-Makros in Echtzeit um",
+        "  - Unterwasser-Biome: Oeffnen der Schatztruhe aktiviert den Amiga-Filter",
+        "    ueber CIA-A Register $BFE001 (Hardware Lowpass)",
         "",
         "==========================================================================",
-        "  KAPITEL II: WORKFLOW ESSAY - ARCHITEKTUR-HYPOTHESEN & DEMOSZENE-METHODIK",
-        "==========================================================================",
-        ""
-    ]
-
-    div_phase3 = [
-        "",
-        "",
-        "==========================================================================",
-        "  KAPITEL III: CAPTAIN'S LOG - TAGEBUCH DER FORSCHUNG & ENTWICKLUNG",
-        "==========================================================================",
-        ""
-    ]
-
-    div_phase4 = [
-        "",
-        "",
-        "==========================================================================",
-        "  KAPITEL IV: ZERTIFIZIERUNG, BUG-REPORTS & AMIGA-HERITAGE",
+        "  KAPITEL II: 2.5D VOXEL-ENGINE & AMIGA HARDWARE REVERSE-ENGINEERING",
         "==========================================================================",
         "",
-        "  Alle Implementierungen wurden im Cleanroom-Verfahren entwickelt.",
-        "  Sollten dennoch Inkompatibilitaeten auftreten, bitte einen Bugreport",
-        "  im STRUDELFORCE Repository erstellen. Keep the Amiga Spirit alive!",
+        "  DIE DREI EISERNEN GESETZE VON STRUDELFORCE:",
+        "  1. Amiga-First Core: 100% Fixed-Point (16.16), 0.0 Floats in der Simulation!",
+        "     Null malloc im Gameplay-Loop. Kompatibel mit 512 KB Chip-RAM (A500 OCS).",
+        "  2. Kein Minecraft-Look: 2.5D Tiefen-Extrusion aus 2D-Sprites mit",
+        "     Face-Shading, Ambient Occlusion und Amiga Copper-Hintergruenden.",
+        "  3. Cyber-Paula Audio: Hyper-reaktive Kopplung zwischen Waffen, Schild,",
+        "     Livecoding-Buffer und 50Hz Makro-Synthese.",
         "",
-        "  *** END OF TRANSMISSION - TURRICAN 2 LEVEL COMPLETE FANFARE ***"
+        "  GRAFIK-PIPELINE & SHADER ENGINE:",
+        "  - OCS/AGA Dual-Bitplane Pipeline mit 32-Farben Dual-Playfield Emulation",
+        "  - Copper-Sky: Dynamische 80-Band Amiga Copper-Verlaeufe",
+        "  - 4 Parallax-Layer: Deep Sky, Ruinen-Saeulen, Spielfeld, Vordergrund-Rohre",
+        "  - Turrican 2 Sprite Matrix: 14 Frames Lauf- und Sprunganimation",
+        "  - RetroArch Demoszene-Filter: Sony Trinitron Aperture Grille, Scanlines,",
+        "    Bilineare Weichzeichnung und Phosphor-Glow ohne externe Grafik-Bibliotheken",
+        "",
+        "==========================================================================",
+        "  KAPITEL III: CONTROLLER, GAMEPLAY & TURRICAN 2 LEVEL-BENCHMARK",
+        "==========================================================================",
+        "",
+        "  STEUERUNGSSYSTEM:",
+        "  - XInput & DirectInput Unterstuetzung fuer moderne und klassische Pads",
+        "  - Retro-Joystick Support: Competition Pro USB (Oben = Springen)",
+        "  - 360-Grad invertierbarer Laserstrahl ueber rechten Analog-Stick",
+        "  - Morph-Ball Gyro-Rad: Zerstoert Barrieren und ueberrollt Grunts",
+        "  - Destructible Blocks: Fragezeichen-Bloecke geben Diamanten & Upgrades",
+        "  - 3 Leben-System mit Extra-Leben an den aeusseren Welt-Raendern",
+        "",
+        "  KAMPAGNE & WELTEN (5 BIOME):",
+        "  - Welt 1: Chrome Tempest (Turrican Mechanik-Welt, Blitz-Himmel)",
+        "  - Welt 2: The Great Bath (Unterwasser-Ruinen, Chris Huelsbeck Tribute)",
+        "  - Welt 3: Mechanical Hive (Alien-Bienenstock, Laser-Draht-Fallen)",
+        "  - Welt 4: Molten Core (Magma-Kavernen, Waerme-Verzerrung)",
+        "  - Welt 5: Void Sanctuary (Weltall-Schrein, Schwerelosigkeit, Mini-Bosse)",
+        "",
+        "==========================================================================",
+        "  KAPITEL IV: DEMOSZENE GREETINGS & CREDITS",
+        "==========================================================================",
+        "",
+        "  SPECIAL GREETINGS AN DIE AMIGA & ATARI DEMOSZENE:",
+        "  Fairlight (FLT) * Skid Row * Razor 1911 * Paradox * Anthrox * Silents *",
+        "  Red Sector Inc. (RSI) * Kefrens * Scoopex * Future Crew * Triton *",
+        "  Trsi * Crusaders * Phenomena * Melon Dezign * The Silents * Flash Production",
+        "",
+        "  EHRE AN DIE AMIGA-PIONIERE:",
+        "  Chris Huelsbeck (TFMX Sound System, Turrican 1-3, Apidya, Great Giana Sisters)",
+        "  Manfred Trenz (Turrican Schoepfer & Sprite-Magier)",
+        "  Jochen Hippel (Mad Max chiptune legend)",
+        "  Ramiro Vaca, Peter Thierolf, Thomas Engel (Rainbow Arts & Factor 5)",
+        "  Jay Miner, RJ Mical, Dave Needle (Erfinder des Amiga 1000 & Paula Chip)",
+        "",
+        "  DEVELOPMENT & ENGINEERING:",
+        "  KIWI Autonomous Sandbox Engine * Meeseeks Multi-Agent Cluster *",
+        "  DeepMind Agentic Assistant Antigravity * tretboot (Human-in-the-Loop Vision)",
+        "",
+        "  *** KEEP THE AMIGA SPIRIT ALIVE *** STRUDELFORCE 0.3.0 RELEASE ***"
     ]
 
     phase0_line = 0
-    all_credits = []
-    all_credits.extend(div_header)
-
-    phase1_line = len(all_credits)
-    all_credits.extend(div_phase1)
-    all_credits.extend(music_lines)
-
-    phase2_line = len(all_credits)
-    all_credits.extend(div_phase2)
-    all_credits.extend(essay_lines)
-
-    phase3_line = len(all_credits)
-    all_credits.extend(div_phase3)
-    all_credits.extend(log_lines)
-
-    phase4_line = len(all_credits)
-    all_credits.extend(div_phase4)
+    phase1_line = 13
+    phase2_line = 44
+    phase3_line = 66
+    phase4_line = 85
 
     out_path = os.path.join(ROOT, 'src', 'embedded_credits.h')
     with open(out_path, 'w', encoding='utf-8') as f:
-        f.write("/* embedded_credits.h - GENERIERT von tools/gen_embedded_credits.py */\n")
-        f.write("/* Enthaelt das vollstaendige Dokumentations- & Code-Archiv direkt im Binary */\n")
-        f.write("#ifndef EMBEDDED_CREDITS_H\n")
-        f.write("#define EMBEDDED_CREDITS_H\n\n")
+        f.write("/* embedded_credits.h - Automatisch generiert aus Doku & Spezifikation */\n")
+        f.write("#ifndef EMBEDDED_CREDITS_H\n#define EMBEDDED_CREDITS_H\n\n")
+        f.write(f"#define EMBEDDED_CREDITS_COUNT {len(credits_lines)}\n")
+        f.write(f"#define CREDITS_PHASE0_LINE {phase0_line}\n")
+        f.write(f"#define CREDITS_PHASE1_LINE {phase1_line}\n")
+        f.write(f"#define CREDITS_PHASE2_LINE {phase2_line}\n")
+        f.write(f"#define CREDITS_PHASE3_LINE {phase3_line}\n")
+        f.write(f"#define CREDITS_PHASE4_LINE {phase4_line}\n\n")
+        f.write("static const char * const EMBEDDED_CREDITS_DATA[EMBEDDED_CREDITS_COUNT] = {\n")
+        for line in credits_lines:
+            f.write(f'    "{escape_c_string(line)}",\n')
+        f.write("};\n\n#endif /* EMBEDDED_CREDITS_H */\n")
 
-        f.write(f"static const int EMBEDDED_CREDITS_PHASE_0_LINE = {phase0_line};\n")
-        f.write(f"static const int EMBEDDED_CREDITS_PHASE_1_LINE = {phase1_line};\n")
-        f.write(f"static const int EMBEDDED_CREDITS_PHASE_2_LINE = {phase2_line};\n")
-        f.write(f"static const int EMBEDDED_CREDITS_PHASE_3_LINE = {phase3_line};\n")
-        f.write(f"static const int EMBEDDED_CREDITS_PHASE_4_LINE = {phase4_line};\n")
-        f.write(f"static const int EMBEDDED_CREDITS_GAP_LINE = {phase2_line};\n")
-        f.write(f"static const int EMBEDDED_CREDITS_TOTAL_COUNT = {len(all_credits)};\n")
-        f.write("static const char * const EMBEDDED_CREDITS_ALL[] = {\n")
-        for l in all_credits:
-            f.write(f'    "{escape_c_string(l)}",\n')
-        f.write("};\n\n")
-
-        # Keep legacy symbols for backward compatibility with test_suite / gui
-        f.write(f"static const int EMBEDDED_WORKFLOW_ESSAY_COUNT = {len(essay_lines)};\n")
-        f.write("static const char * const EMBEDDED_WORKFLOW_ESSAY[] = {\n")
-        for l in essay_lines:
-            f.write(f'    "{escape_c_string(l)}",\n')
-        f.write("};\n\n")
-
-        f.write(f"static const int EMBEDDED_CAPTAINS_LOG_COUNT = {len(log_lines)};\n")
-        f.write("static const char * const EMBEDDED_CAPTAINS_LOG[] = {\n")
-        for l in log_lines:
-            f.write(f'    "{escape_c_string(l)}",\n')
-        f.write("};\n\n")
-
-        f.write("#endif /* EMBEDDED_CREDITS_H */\n")
-
-    print(f"SUCCESS: src/embedded_credits.h generated: {len(all_credits)} lines (Phases: 0={phase0_line}, 1={phase1_line}, 2={phase2_line}, 3={phase3_line}, 4={phase4_line})")
+    print(f"Generated {out_path}: {len(credits_lines)} lines.")
 
 if __name__ == '__main__':
     main()

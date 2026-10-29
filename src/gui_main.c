@@ -66,7 +66,8 @@ typedef enum {
     GUI_STATE_GAMEOVER,
     GUI_STATE_STUDIO,
     GUI_STATE_CREDITS,
-    GUI_STATE_MANUAL
+    GUI_STATE_MANUAL,
+    GUI_STATE_CONTROLS
 } GuiState;
 
 static GuiState s_gui_state = GUI_STATE_STUDIO; /* Startet direkt im Amiga Cracktro Intro! */
@@ -81,6 +82,21 @@ static int s_manual_page = 0;       /* aktuelle Handbuch-Seite (0..4) */
 static int s_is_fullscreen = 0;     /* Vollbild-Status */
 static WINDOWPLACEMENT s_prev_wp = { sizeof(WINDOWPLACEMENT) };
 
+/* --- Controller-Konfiguration & Presets --- */
+typedef enum {
+    PAD_PRESET_MODERN = 0,             /* Xbox / PS4: A=Feuer, B=Morph, X=Laser, Y=Waffe, Stick=Springen */
+    PAD_PRESET_RETRO_COMPETITION_PRO,  /* Retro: Stick UP=Springen, Button 1=Feuer, Button 2=Laser */
+    PAD_PRESET_PLATFORMER              /* Classic Jump'n'Run: A=Springen, X=Feuer, B=Morph, Y=Laser */
+} PadPreset;
+
+static int s_pad_preset = PAD_PRESET_MODERN;
+static int s_pad_laser_invert_y = 1;   /* 1 = Invertiert (Stick Oben = zielt nach Oben), 0 = Normal */
+static int s_ctrl_setting_cursor = 0;  /* Cursor im Tastenbelegungs-Menue */
+
+/* Song Pacing & Looping State */
+static int      s_song_start_wave = 0;
+static uint32_t s_song_start_tick = 0;
+
 /* --- RetroArch-Grade Grafik-Einstellungen --- */
 static int s_filter_mode = 4;       /* 0=AUS, 1=BILINEAR, 2=TRINITRON, 3=1084S, 4=RETROARCH CRT, 5=ARCADE VIGNETTE */
 static int s_scanline_strength = 2; /* 0=25%, 1=50%, 2=75%, 3=100% */
@@ -90,11 +106,12 @@ static int s_bilinear = 1;          /* Bilineare Glaettung */
 static int s_color_mode = 0;        /* 0=OCS 32, 1=AGA 256, 2=CYBER, 3=GREEN MONO */
 static int s_gfx_setting_cursor = 0;/* Cursor im Grafik-Studio */
 
-#define MENU_ITEM_COUNT 9
+#define MENU_ITEM_COUNT 10
 static const char *menu_labels[MENU_ITEM_COUNT] = {
     "KAMPAGNE (5 LEVELS)",
     "ENDLOS ROGUELIKE",
     "PILOTEN-HANDBUCH",
+    "CONTROLLER & TASTEN",
     "GRAFIK-STUDIO (CRT/SHADER)",
     "TFMX JUKEBOX",
     "STRUDEL STUDIO",
@@ -107,13 +124,14 @@ static const char *menu_labels[MENU_ITEM_COUNT] = {
 typedef struct {
     int connected;
     int up, down, left, right;
-    int btn_fire;    /* Cross / A */
-    int btn_jump;    /* A / Space */
+    int btn_fire;    /* Primär-Feuer */
+    int btn_jump;    /* Sprung-Button */
     int btn_morph;   /* Circle / B */
     int btn_weapsw;  /* Triangle / Y / R1 */
     int btn_beam;    /* Square / X / L1 / R2 */
     int btn_start;   /* Options / Start */
     int btn_lb, btn_rb;
+    uint32_t raw_buttons;     /* Roh-Bitmaske der Tasten fuers Testfeld */
     float stick_rx, stick_ry; /* Rechter Analogstick fuer 360-Grad Laser */
     char name[32];
 } UnifiedGamepad;
@@ -122,8 +140,12 @@ static UnifiedGamepad s_pad = {0};
 
 static void poll_gamepad(void) {
     memset(&s_pad, 0, sizeof(s_pad));
+    uint32_t raw_b = 0;
+    int raw_b1 = 0, raw_b2 = 0, raw_b3 = 0, raw_b4 = 0;
+    int raw_lb = 0, raw_rb = 0, raw_r2 = 0, raw_start = 0;
+    int di_present = 0;
 
-    /* 1. WinMM DirectInput (PS4 DualShock 4, PS5, USB-Pads ueber alle Joystick-IDs 0..15) */
+    /* 1. WinMM DirectInput (PS4 DualShock 4, PS5, Competition Pro USB, Arcade-Sticks 0..15) */
     UINT num_devs = joyGetNumDevs();
     if (num_devs > 16) num_devs = 16;
     for (UINT id = 0; id < num_devs; id++) {
@@ -134,11 +156,16 @@ static void poll_gamepad(void) {
 
         if (joyGetPosEx(id, &jex) == JOYERR_NOERROR) {
             s_pad.connected = 1;
+            di_present = 1;
             JOYCAPSW caps;
-            if (joyGetDevCapsW(id, &caps, sizeof(caps)) == JOYERR_NOERROR && caps.wNumButtons >= 14) {
-                strncpy(s_pad.name, "PS4 DUALSHOCK 4", sizeof(s_pad.name) - 1);
-            } else if (s_pad.name[0] == '\0') {
-                strncpy(s_pad.name, "USB GAMEPAD", sizeof(s_pad.name) - 1);
+            if (joyGetDevCapsW(id, &caps, sizeof(caps)) == JOYERR_NOERROR) {
+                if (caps.wMid == 0x054c || caps.wPid == 0x09cc || caps.wNumButtons >= 14) {
+                    strncpy(s_pad.name, "PS4 DUALSHOCK 4", sizeof(s_pad.name) - 1);
+                } else if (caps.wNumButtons <= 4) {
+                    strncpy(s_pad.name, "COMPETITION PRO USB", sizeof(s_pad.name) - 1);
+                } else if (s_pad.name[0] == '\0') {
+                    strncpy(s_pad.name, "USB GAMEPAD", sizeof(s_pad.name) - 1);
+                }
             }
 
             int lx = (int)jex.dwXpos - 32768;
@@ -156,14 +183,15 @@ static void poll_gamepad(void) {
             }
 
             DWORD b = jex.dwButtons;
-            if (b & 0x0002) s_pad.btn_fire = 1;   /* Cross / X (Feuer / OK) */
-            if (b & 0x0001) s_pad.btn_beam = 1;   /* Square (Drehlaser / Blitzstrahl) */
-            if (b & 0x0004) s_pad.btn_morph = 1;  /* Circle (Morph / Ducken) */
-            if (b & 0x0008) s_pad.btn_weapsw = 1; /* Triangle (Waffe) */
-            if (b & 0x0010) s_pad.btn_lb = 1;     /* L1 (Sekundaer / Prev) */
-            if (b & 0x0020) s_pad.btn_rb = 1;     /* R1 (Waffe / Next) */
-            if (b & 0x0080) s_pad.btn_beam = 1;   /* R2 (Drehlaser / Blitzstrahl) */
-            if (b & 0x0200) s_pad.btn_start = 1;  /* Options / Start (Menue) */
+            raw_b |= b;
+            if (b & 0x0001) raw_b1 = 1; /* Button 1 (Square / Retro Fire 1) */
+            if (b & 0x0002) raw_b2 = 1; /* Button 2 (Cross / Retro Fire 2) */
+            if (b & 0x0004) raw_b3 = 1; /* Button 3 (Circle) */
+            if (b & 0x0008) raw_b4 = 1; /* Button 4 (Triangle) */
+            if (b & 0x0010) raw_lb = 1; /* L1 */
+            if (b & 0x0020) raw_rb = 1; /* R1 */
+            if (b & 0x0080) raw_r2 = 1; /* R2 */
+            if (b & 0x0200) raw_start = 1; /* Options / Start */
 
             /* Rechter Analogstick: Z-Achse = X, R-Achse = Y */
             int rx = (int)jex.dwZpos - 32768;
@@ -188,14 +216,14 @@ static void poll_gamepad(void) {
             if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) || xs.Gamepad.sThumbLX < -5000) s_pad.left = 1;
             if ((xs.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) || xs.Gamepad.sThumbLX > 5000) s_pad.right = 1;
 
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) s_pad.btn_fire = 1;
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) s_pad.btn_beam = 1;
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_B) s_pad.btn_morph = 1;
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) s_pad.btn_weapsw = 1;
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) s_pad.btn_lb = 1;
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) s_pad.btn_rb = 1;
-            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_START) s_pad.btn_start = 1;
-            if (xs.Gamepad.bRightTrigger > 30) s_pad.btn_beam = 1;
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_A) { raw_b2 = 1; raw_b |= 0x0002; }
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_X) { raw_b1 = 1; raw_b |= 0x0001; }
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_B) { raw_b3 = 1; raw_b |= 0x0004; }
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_Y) { raw_b4 = 1; raw_b |= 0x0008; }
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER)  { raw_lb = 1; raw_b |= 0x0010; }
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) { raw_rb = 1; raw_b |= 0x0020; }
+            if (xs.Gamepad.wButtons & XINPUT_GAMEPAD_START)          { raw_start = 1; raw_b |= 0x0200; }
+            if (xs.Gamepad.bRightTrigger > 30)                      { raw_r2 = 1; raw_b |= 0x0080; }
 
             if (abs(xs.Gamepad.sThumbRX) > 4000 || abs(xs.Gamepad.sThumbRY) > 4000) {
                 s_pad.stick_rx = (float)xs.Gamepad.sThumbRX / 32768.0f;
@@ -203,6 +231,41 @@ static void poll_gamepad(void) {
             }
         }
     }
+
+    s_pad.raw_buttons = raw_b;
+    s_pad.btn_lb = raw_lb;
+    s_pad.btn_rb = raw_rb;
+    s_pad.btn_start = raw_start;
+
+    /* Preset-Belegungs-Mapping (getrennte Quellen-Pruefung: XInput-Buttons
+     * duerfen DirectInput-Mappings NICHT ueberschreiben, wenn kein
+     * DirectInput-Pad angeschlossen ist — sonst toetet ein Xbox-Controller
+     * die Belegung eines gleichzeitig verbundenen USB-Pads). */
+    if (s_pad_preset == PAD_PRESET_RETRO_COMPETITION_PRO) {
+        /* Competition Pro USB: Button 1 = Feuer, Button 2 = Drehlaser,
+         * Button 3 = Morph, Button 4 = Waffe, Stick/D-Pad OBEN = Sprung */
+        s_pad.btn_fire   = di_present ? raw_b1 : 0;
+        s_pad.btn_beam   = di_present ? raw_b2 : 0;
+        s_pad.btn_morph  = di_present ? raw_b3 : 0;
+        s_pad.btn_weapsw = di_present ? raw_b4 : 0;
+        s_pad.btn_jump   = s_pad.up; /* Sprung laeuft rein ueber Stick/D-Pad UP */
+    } else if (s_pad_preset == PAD_PRESET_PLATFORMER) {
+        /* Classic Platformer: A = Jump, X = Feuer, B = Morph, Y = Laser */
+        s_pad.btn_jump   = raw_b2;
+        s_pad.btn_fire   = raw_b1;
+        s_pad.btn_morph  = raw_b3;
+        s_pad.btn_beam   = raw_b4;
+        s_pad.btn_weapsw = raw_rb;
+    } else {
+        /* PAD_PRESET_MODERN (Standard): A = Feuer, B = Morph, X/R2 = Laser,
+         * Y/R1 = Waffe, LB = Sprung */
+        s_pad.btn_fire   = raw_b2;
+        s_pad.btn_beam   = raw_b1 | raw_r2;
+        s_pad.btn_morph  = raw_b3;
+        s_pad.btn_weapsw = raw_b4 | raw_rb;
+        s_pad.btn_jump   = raw_lb;
+    }
+
     s_pad_connected = s_pad.connected;
 }
 
@@ -373,8 +436,8 @@ static void init_level_boxes(void) {
     for (int gi = 0; gi < 8 && s_box_count < MAX_BLOCKS; gi++) {
         DestructibleBox *b = &s_boxes[s_box_count++];
         b->active = 1;
-        b->hp = 4;
-        b->max_hp = 4;
+        b->hp = 2;
+        b->max_hp = 2;
         b->hit_flash = 0;
         b->plat_idx = -1;
         b->world_x = ground_box_x[gi];
@@ -388,8 +451,8 @@ static void init_level_boxes(void) {
         if (pi % 2 == 1) {
             DestructibleBox *b = &s_boxes[s_box_count++];
             b->active = 1;
-            b->hp = 4;
-            b->max_hp = 4;
+            b->hp = 2;
+            b->max_hp = 2;
             b->hit_flash = 0;
             b->plat_idx = pi;
             b->world_x = (int)(s_game.platforms[pi].x >> 16) + (int)(s_game.platforms[pi].w >> 17);
@@ -485,6 +548,30 @@ static void draw_rect_outline(int x, int y, int w, int h, uint32_t c) {
     for (int cy = y; cy < y + h; cy++) {
         set_pixel(x, cy, c);
         set_pixel(x + w - 1, cy, c);
+    }
+}
+
+/* --- Performance: LUT-basiertes Integer-Dimmen (kein Float!) ---
+ * Ersetzt die teure rgb_mod()-Pixel-Schleife in Fullscreen-Overlays
+ * (Game Over / Sieg / Credits-Panel) mit 3 Lookup-Reads pro Pixel.
+ * f8 = Helligkeitsfaktor * 256 / 255 (z.B. 0.22 -> 56, 0.28 -> 71). */
+static uint8_t s_dim_lut[256];
+static void dim_lut_init(uint32_t f8) {
+    for (int i = 0; i < 256; i++) s_dim_lut[i] = (uint8_t)(((uint32_t)i * f8) >> 8);
+}
+static void dim_screen_rect(int x0, int y0, int x1, int y1) {
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > WIN_W) x1 = WIN_W;
+    if (y1 > WIN_H) y1 = WIN_H;
+    for (int y = y0; y < y1; y++) {
+        uint32_t *row = &s_pixels[y * WIN_W];
+        for (int x = x0; x < x1; x++) {
+            uint32_t c = row[x];
+            row[x] = ((uint32_t)s_dim_lut[(c >> 16) & 0xFF] << 16) |
+                     ((uint32_t)s_dim_lut[(c >> 8) & 0xFF] << 8) |
+                     (uint32_t)s_dim_lut[c & 0xFF];
+        }
     }
 }
 
@@ -1113,56 +1200,63 @@ static void apply_demoscene_postprocess(void) {
     }
 }
 
+/* v0.3.0 Feinschliff: T2 Load raus, Software Manager Msx -> Titel (sauberere
+ * Effekte), Wing Commander Regular Combat -> Commander Office. Indizes 0-9. */
 static const EmbeddedTrack EMBEDDED_TRACKS[] = {
     { EMB_TFMX_APIDYA_MEADOW_NAME,    EMB_TFMX_APIDYA_MEADOW,    sizeof(EMB_TFMX_APIDYA_MEADOW),    EMB_SAM_APIDYA_MEADOW,    sizeof(EMB_SAM_APIDYA_MEADOW),    0 }, /* 0: Apidya Meadow (Intro) */
-    { EMB_TFMX_T2_LOAD_NAME,          EMB_TFMX_T2_LOAD,          sizeof(EMB_TFMX_T2_LOAD),          EMB_SAM_T2_LOAD,          sizeof(EMB_SAM_T2_LOAD),          0 }, /* 1: Turrican 2 Loader & Fanfare */
-    { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 2: Turrican 2 Desert */
-    { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 3: Turrican 2 Cave */
-    { EMB_TFMX_SOFTMAN_NAME,          EMB_TFMX_SOFTMAN,          sizeof(EMB_TFMX_SOFTMAN),          EMB_SAM_SOFTMAN,          sizeof(EMB_SAM_SOFTMAN),          0 }, /* 4: Software Manager (22 Subsongs!) */
-    { EMB_MOD_LOST_PATROL_NAME,       EMB_MOD_LOST_PATROL,       sizeof(EMB_MOD_LOST_PATROL),       NULL,                     0,                                1 }, /* 5: Lost Patrol (15-Sample MOD) */
-    { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 6: Blue Monday Chiptune (8-Bit MOD) */
-    { EMB_MOD_WC_REGULARCOMBAT_NAME,  EMB_MOD_WC_REGULARCOMBAT,  sizeof(EMB_MOD_WC_REGULARCOMBAT),  NULL,                     0,                                1 }, /* 7: Wing Commander Combat (MOD) */
-    { EMB_MOD_FAIRLIGHT_NAME,         EMB_MOD_FAIRLIGHT,         sizeof(EMB_MOD_FAIRLIGHT),         NULL,                     0,                                1 }, /* 8: Fairlight Cracktro (MOD) */
-    { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 9: Skidrow Cracktro (MOD) */
-    { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 10: Paradox Cracktro (MOD) */
+    { EMB_TFMX_T2_DESERT_NAME,        EMB_TFMX_T2_DESERT,        sizeof(EMB_TFMX_T2_DESERT),        EMB_SAM_T2_DESERT,        sizeof(EMB_SAM_T2_DESERT),        0 }, /* 1: Turrican 2 Desert */
+    { EMB_TFMX_T2_CAVE_NAME,          EMB_TFMX_T2_CAVE,          sizeof(EMB_TFMX_T2_CAVE),          EMB_SAM_T2_CAVE,          sizeof(EMB_SAM_T2_CAVE),          0 }, /* 2: Turrican 2 Cave */
+    { EMB_TFMX_SOFTMAN_NAME,          EMB_TFMX_SOFTMAN,          sizeof(EMB_TFMX_SOFTMAN),          EMB_SAM_SOFTMAN,          sizeof(EMB_SAM_SOFTMAN),          0 }, /* 3: Software Manager Titel (22 Subsongs!) */
+    { EMB_MOD_LOST_PATROL_NAME,       EMB_MOD_LOST_PATROL,       sizeof(EMB_MOD_LOST_PATROL),       NULL,                     0,                                1 }, /* 4: Lost Patrol (15-Sample MOD) */
+    { EMB_MOD_BLUE_MONDAY_CHIP_NAME,  EMB_MOD_BLUE_MONDAY_CHIP,  sizeof(EMB_MOD_BLUE_MONDAY_CHIP),  NULL,                     0,                                1 }, /* 5: Blue Monday Chiptune (8-Bit MOD) */
+    { EMB_MOD_WC_OFFICE_NAME,         EMB_MOD_WC_OFFICE,         sizeof(EMB_MOD_WC_OFFICE),         NULL,                     0,                                1 }, /* 6: Wing Commander Commander Office (MOD) */
+    { EMB_MOD_FAIRLIGHT_NAME,         EMB_MOD_FAIRLIGHT,         sizeof(EMB_MOD_FAIRLIGHT),         NULL,                     0,                                1 }, /* 7: Fairlight Cracktro (MOD) */
+    { EMB_MOD_SKIDROW_NAME,           EMB_MOD_SKIDROW,           sizeof(EMB_MOD_SKIDROW),           NULL,                     0,                                1 }, /* 8: Skidrow Cracktro (MOD) */
+    { EMB_MOD_PARADOX_NAME,           EMB_MOD_PARADOX,           sizeof(EMB_MOD_PARADOX),           NULL,                     0,                                1 }, /* 9: Paradox Cracktro (MOD) */
 };
-#define TRACK_IDX_BLUE_MONDAY 6
-#define TRACK_IDX_FAIRLIGHT 8
-#define TRACK_IDX_SKIDROW   9
-#define TRACK_IDX_PARADOX   10
+#define TRACK_IDX_BLUE_MONDAY 5
+#define TRACK_IDX_FAIRLIGHT 7
+#define TRACK_IDX_SKIDROW   8
+#define TRACK_IDX_PARADOX   9
+#define TRACK_IDX_WC_OFFICE 6
 
 /* ============================================================================
- * DJ CROSSFADE ENGINE (Weiches Amiga DJ-Ineinander-Ueberblenden)
+ * DJ FADE ENGINE (Pop-freier Studio Gain-Crossfade)
  * ============================================================================ */
-#define DJ_XFADE_FRAMES 28 /* ca. 560ms butterweicher PAL-Crossfade */
-static int16_t s_xfade_tail[WIN_AUDIO_BUF_SAMPLES] = {0};
-static int     s_xfade_active = 0;
-static int     s_xfade_frame = 0;
-static int16_t s_last_audio_frame[WIN_AUDIO_BUF_SAMPLES] = {0};
+#define DJ_FADE_FRAMES 12 /* 240ms butterweiches Fade-Out / Fade-In */
+static int s_pending_track_idx = -1;
+static int s_pending_subsong = 0;
+static int s_fade_state = 0; /* 0 = none, 1 = fading out, 2 = fading in */
+static int s_fade_frame = 0;
 
-static void trigger_dj_crossfade(void) {
-    memcpy(s_xfade_tail, s_last_audio_frame, sizeof(s_xfade_tail));
-    s_xfade_active = 1;
-    s_xfade_frame = 0;
+static int music_play_embedded_direct(int idx, int subsong);
+
+static void trigger_dj_fade(int idx, int subsong) {
+    s_pending_track_idx = idx;
+    s_pending_subsong = subsong;
+    s_fade_state = 1; /* Fade-out laeuft */
+    s_fade_frame = 0;
 }
 
-static void apply_dj_crossfade(int16_t *buf, int n) {
-    if (!s_xfade_active) return;
-    float t = (float)s_xfade_frame / (float)DJ_XFADE_FRAMES;
-    if (t > 1.0f) t = 1.0f;
-    float gain_in = sinf(t * 1.5707963f);
-    float gain_out = cosf(t * 1.5707963f);
-
-    for (int i = 0; i < n; i++) {
-        float mixed = (float)buf[i] * gain_in + (float)s_xfade_tail[i] * gain_out;
-        if (mixed > 32767.0f) mixed = 32767.0f;
-        else if (mixed < -32768.0f) mixed = -32768.0f;
-        buf[i] = (int16_t)mixed;
-        s_xfade_tail[i] = (int16_t)((float)s_xfade_tail[i] * 0.92f);
-    }
-    s_xfade_frame++;
-    if (s_xfade_frame >= DJ_XFADE_FRAMES) {
-        s_xfade_active = 0;
+static void apply_dj_fade(int16_t *buf, int n) {
+    if (s_fade_state == 1) {
+        float gain = 1.0f - (float)s_fade_frame / (float)DJ_FADE_FRAMES;
+        if (gain < 0.0f) gain = 0.0f;
+        for (int i = 0; i < n; i++) buf[i] = (int16_t)((float)buf[i] * gain);
+        s_fade_frame++;
+        if (s_fade_frame >= DJ_FADE_FRAMES) {
+            music_play_embedded_direct(s_pending_track_idx, s_pending_subsong);
+            s_fade_state = 2;
+            s_fade_frame = 0;
+        }
+    } else if (s_fade_state == 2) {
+        float gain = (float)s_fade_frame / (float)DJ_FADE_FRAMES;
+        if (gain > 1.0f) gain = 1.0f;
+        for (int i = 0; i < n; i++) buf[i] = (int16_t)((float)buf[i] * gain);
+        s_fade_frame++;
+        if (s_fade_frame >= DJ_FADE_FRAMES) {
+            s_fade_state = 0;
+        }
     }
 }
 
@@ -1219,16 +1313,18 @@ static int s_current_subsong = 0;
 static int s_last_subsong_reason = -1;
 
 /* In-EXE-Track abspielen (ohne Festplatten-/Dateizugriff) */
-static int music_play_embedded(int idx, int subsong) {
+static int music_play_embedded_direct(int idx, int subsong) {
     if (idx < 0 || idx >= EMBEDDED_TRACK_COUNT) idx = 0;
     const EmbeddedTrack *t = &EMBEDDED_TRACKS[idx];
-    trigger_dj_crossfade();
     s_mod_active = 0;
     s_tfmx_active = 0;
+    s_song_start_wave = (int)s_game.wave;
+    s_song_start_tick = s_game.tick;
 
     if (t->is_mod) {
         if (mod_player_load_mem(&s_mod, t->tfx, t->tfx_len)) {
             mod_player_start(&s_mod, GAME_AUDIO_RATE);
+            s_mod.loops = 0;
             s_mod_active = 1;
             s_current_subsong = 0;
             strncpy(s_current_track_name, t->name, sizeof(s_current_track_name) - 1);
@@ -1264,6 +1360,17 @@ static int music_play_embedded(int idx, int subsong) {
     return 0;
 }
 
+static int music_play_embedded(int idx, int subsong) {
+    if (s_mod_active || s_tfmx_active) {
+        trigger_dj_fade(idx, subsong);
+        return 1;
+    }
+    int res = music_play_embedded_direct(idx, subsong);
+    s_fade_state = 2;
+    s_fade_frame = 0;
+    return res;
+}
+
 /* Reaktiver Subsong-Wechsel (z.B. Normal -> Boss -> LevelClear) */
 static void music_subsong_switch(int subsong) {
     if (!s_tfmx_active || !s_tfmx.loaded || s_tfmx.num_subsongs <= 1) return;
@@ -1271,7 +1378,6 @@ static void music_subsong_switch(int subsong) {
     if (subsong >= s_tfmx.num_subsongs) subsong = 0;
     if (s_current_subsong == subsong) return;
 
-    trigger_dj_crossfade();
     s_current_subsong = subsong;
     tfmx_player_start(&s_tfmx, (uint8_t)subsong);
     s_music_toast_timer = 180;
@@ -1607,7 +1713,9 @@ static int music_load_index(int idx) {
 }
 
 static void music_play_campaign_level(int level) {
-    static const int camp_map[5] = { 3, 4, 8, 6, 1 };
+    /* v0.3.0 Indizes: 2=T2 Cave, 3=SoftMan Titel, 7=Fairlight, 5=Blue Monday,
+     * 6=WC Commander Office (ersetzt T2 Load als Endlevel-Thema) */
+    static const int camp_map[5] = { 2, 3, 7, 5, TRACK_IDX_WC_OFFICE };
     int idx = (level >= 1 && level <= 5) ? (level - 1) : 0;
     int emb_id = camp_map[idx];
 
@@ -1705,17 +1813,18 @@ static void menu_activate(void) {
         case 0: start_game(MODE_CAMPAIGN); break;
         case 1: start_game(MODE_ENDLESS);  break;
         case 2: s_gui_state = GUI_STATE_MANUAL; s_manual_page = 0; break;
-        case 3: s_current_tab = TAB_GRAPHICS; s_gui_state = GUI_STATE_STUDIO; music_play_embedded(TRACK_IDX_BLUE_MONDAY, 0); break;
-        case 4: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
-        case 5: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
-        case 6: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
-        case 7: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
-        case 8: PostQuitMessage(0); break;
+        case 3: s_gui_state = GUI_STATE_CONTROLS; break;
+        case 4: s_current_tab = TAB_GRAPHICS; s_gui_state = GUI_STATE_STUDIO; music_play_embedded(TRACK_IDX_BLUE_MONDAY, 0); break;
+        case 5: s_current_tab = TAB_EXPLORER; s_gui_state = GUI_STATE_STUDIO; break;
+        case 6: s_current_tab = TAB_STRUDEL;  s_gui_state = GUI_STATE_STUDIO; break;
+        case 7: s_current_tab = TAB_INTRO;    s_gui_state = GUI_STATE_STUDIO; break;
+        case 8: s_gui_state = GUI_STATE_CREDITS; credits_init(); break;
+        case 9: PostQuitMessage(0); break;
         default: break;
     }
 }
 
-/* --- XInput: Gamepad 0 im Hauptmenue navigieren (Edge-Getriggerung) --- */
+/* --- XInput / DirectInput: Gamepad im Hauptmenue & States navigieren (Edge-Getriggerung) --- */
 static void pad_menu_poll(void) {
     static int prev_up, prev_down, prev_left, prev_right, prev_a, prev_b, prev_start;
     poll_gamepad();
@@ -1728,6 +1837,26 @@ static void pad_menu_poll(void) {
             s_menu_index = (s_menu_index + 1) % MENU_ITEM_COUNT;
         if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start))
             menu_activate();
+    } else if (s_gui_state == GUI_STATE_CONTROLS) {
+        if (s_pad.up && !prev_up) {
+            s_ctrl_setting_cursor = (s_ctrl_setting_cursor + 2 - 1) % 2;
+            sound_sfx_hit(&s_audio, 0);
+        }
+        if (s_pad.down && !prev_down) {
+            s_ctrl_setting_cursor = (s_ctrl_setting_cursor + 1) % 2;
+            sound_sfx_hit(&s_audio, 0);
+        }
+        int dir = 0;
+        if (s_pad.left && !prev_left) dir = -1;
+        if (s_pad.right && !prev_right) dir = 1;
+        if (dir != 0) {
+            if (s_ctrl_setting_cursor == 0) s_pad_preset = (s_pad_preset + 3 + dir) % 3;
+            else if (s_ctrl_setting_cursor == 1) s_pad_laser_invert_y = !s_pad_laser_invert_y;
+            sound_sfx_pickup(&s_audio);
+        }
+        if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
+            s_gui_state = GUI_STATE_MENU;
+        }
     } else if (s_gui_state == GUI_STATE_MANUAL) {
         if ((s_pad.left && !prev_left) || (s_pad.btn_lb)) {
             if (s_manual_page > 0) s_manual_page--;
@@ -1739,9 +1868,13 @@ static void pad_menu_poll(void) {
             s_gui_state = GUI_STATE_MENU;
         }
     } else if (s_gui_state == GUI_STATE_CREDITS) {
-        if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start) || (s_pad.btn_fire && !prev_a)) {
+        if ((s_pad.btn_morph && !prev_b) || (s_pad.btn_start && !prev_start)) {
             s_gui_state = GUI_STATE_MENU;
             music_play_embedded(0, 0);
+        }
+    } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_INTRO) {
+        if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start) || (s_pad.btn_morph && !prev_b)) {
+            s_gui_state = GUI_STATE_MENU;
         }
     } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
         if (s_pad.up && !prev_up) {
@@ -1768,11 +1901,236 @@ static void pad_menu_poll(void) {
             s_gui_state = GUI_STATE_MENU;
             music_play_embedded(0, 0);
         }
+    } else if (s_gui_state == GUI_STATE_GAMEOVER) {
+        if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start)) {
+            start_game(s_active_mode);
+        } else if (s_pad.btn_morph && !prev_b) {
+            s_gui_state = GUI_STATE_MENU;
+        }
     }
     prev_up = s_pad.up; prev_down = s_pad.down;
     prev_left = s_pad.left; prev_right = s_pad.right;
     prev_a = s_pad.btn_fire; prev_b = s_pad.btn_morph;
     prev_start = s_pad.btn_start;
+}
+
+/* --- GUI_STATE_CONTROLS: Tastenbelegung, Controller-Konfiguration & Live-Tester --- */
+
+/* Roh-Tasten-Indexraum (entspricht den Bits in s_pad.raw_buttons):
+ * 0=B1/Square, 1=B2/Cross(A), 2=B3/Circle(B), 3=B4/Triangle(Y),
+ * 4=LB, 5=RB, 6=R2, 7=Start */
+#define RAW_BTN_COUNT 8
+static const char *pad_button_name_di(int bi) {
+    switch (bi) {
+        case 0: return "1";  case 1: return "2";   case 2: return "3";
+        case 3: return "4";  case 4: return "L1";  case 5: return "R1";
+        case 6: return "R2"; case 7: return "OPT";
+    }
+    return "?";
+}
+static const char *pad_button_name_xi(int bi) {
+    switch (bi) {
+        case 0: return "X";  case 1: return "A";   case 2: return "B";
+        case 3: return "Y";  case 4: return "LB";  case 5: return "RB";
+        case 6: return "RT"; case 7: return "ST";
+    }
+    return "?";
+}
+
+/* Aktion-Indexraum: welche Taste ist wo belegt */
+#define PAD_ACT_COUNT 6
+typedef enum {
+    PAD_ACT_FIRE = 0, PAD_ACT_JUMP, PAD_ACT_MORPH, PAD_ACT_WEAPSW, PAD_ACT_BEAM, PAD_ACT_MENU
+} PadAction;
+static const char *pad_action_names[PAD_ACT_COUNT] = {
+    "FEUER (Hauptwaffe)",
+    "SPRUNG",
+    "MORPH-BALL",
+    "WAFFE WECHSELN",
+    "DREHLASER (360 Grad)",
+    "MENUE / PAUSE"
+};
+
+/* Ermittelt die Belegung einer Aktion im aktuellen Preset.
+ * di[]/xi[]: bis zu 2 belegte Roh-Tasten (sonst -1). stick_up = 1 wenn
+ * Stick/D-Pad UP die Aktion triggert. */
+static void pad_action_binding(int act, int preset, int di[2], int xi[2], int *stick_up) {
+    di[0] = di[1] = -1; xi[0] = xi[1] = -1; *stick_up = 0;
+    switch (act) {
+        case PAD_ACT_FIRE:
+            if (preset == PAD_PRESET_RETRO_COMPETITION_PRO) { di[0] = 0; }
+            else if (preset == PAD_PRESET_PLATFORMER)       { di[0] = 0; xi[0] = 0; }
+            else { di[0] = 1; xi[0] = 1; } /* A / Cross */
+            break;
+        case PAD_ACT_JUMP:
+            if (preset == PAD_PRESET_RETRO_COMPETITION_PRO) { *stick_up = 1; }
+            else if (preset == PAD_PRESET_PLATFORMER)       { di[0] = 1; xi[0] = 1; } /* A = Sprung */
+            else { di[0] = 4; xi[0] = 4; } /* LB */
+            break;
+        case PAD_ACT_MORPH:
+            if (preset == PAD_PRESET_RETRO_COMPETITION_PRO) { di[0] = 2; }
+            else { di[0] = 2; xi[0] = 2; } /* B / Circle */
+            break;
+        case PAD_ACT_WEAPSW:
+            if (preset == PAD_PRESET_RETRO_COMPETITION_PRO) { di[0] = 3; }
+            else if (preset == PAD_PRESET_PLATFORMER)       { di[0] = 5; xi[0] = 5; } /* R1 */
+            else { di[0] = 3; di[1] = 5; xi[0] = 3; xi[1] = 5; } /* Y + R1 */
+            break;
+        case PAD_ACT_BEAM:
+            if (preset == PAD_PRESET_RETRO_COMPETITION_PRO) { di[0] = 1; }
+            else if (preset == PAD_PRESET_PLATFORMER)       { di[0] = 3; xi[0] = 3; } /* Y / Triangle */
+            else { di[0] = 0; di[1] = 6; xi[0] = 0; xi[1] = 6; } /* X / Square / R2 */
+            break;
+        case PAD_ACT_MENU:
+            di[0] = 7; xi[0] = 7; /* Options / Start */
+            break;
+    }
+}
+
+static void render_state_controls(void) {
+    clear_screen(0x00040A);
+
+    /* Retro Amiga Header */
+    draw_rect(0, 0, WIN_W, 40, 0x001020);
+    draw_rect_outline(0, 0, WIN_W, 40, 0x0050A0);
+    draw_string(24, 14, ">>> STRUDELFORCE - CONTROLLER-KONFIGURATION & TASTENBELEGUNG <<<", 0x00E0FF, 1);
+    draw_string(WIN_W - 380, 14, "[ESC / BUTTON B] ZURUECK ZUM MENUE", 0xFFE040, 1);
+
+    int mx = 50;
+    int my = 54;
+    int mw = WIN_W - 100;
+    int mh = WIN_H - 106;
+    draw_rect(mx, my, mw, mh, 0x000A14);
+    draw_rect_outline(mx, my, mw, mh, 0x004080);
+    draw_rect_outline(mx + 4, my + 4, mw - 8, mh - 8, 0x002040);
+
+    /* Status-Leiste: Erkanntes Gamepad */
+    draw_rect(mx + 20, my + 16, mw - 40, 32, 0x001428);
+    draw_rect_outline(mx + 20, my + 16, mw - 40, 32, 0x004080);
+    draw_string(mx + 36, my + 26, "AKTIVES GERAET:", 0xFFE040, 1);
+    draw_string(mx + 200, my + 26, s_pad_connected ? s_pad.name : "KEIN GAMEPAD ERKANNT (TASTATUR WASD/PFEILE)", s_pad_connected ? 0x00FF80 : 0xA0A0A0, 1);
+
+    /* Einstellungs-Optionen */
+    int sy = my + 60;
+    const char *preset_names[3] = {
+        "1. STANDARD MODERN (A=Feuer, B=Morph, X=Laser, Y=Waffe, Stick=Springen)",
+        "2. RETRO JOYSTICK (Competition Pro USB: Stick Oben=Springen, 1=Feuer, 2=Laser)",
+        "3. CLASSIC PLATFORMER (A=Springen, X=Feuer, B=Morph, Y=Laser, R1=Waffe)"
+    };
+
+    /* Zeile 1: Profil */
+    int active0 = (s_ctrl_setting_cursor == 0);
+    draw_rect(mx + 20, sy, mw - 40, 34, active0 ? 0x002850 : 0x001020);
+    draw_rect_outline(mx + 20, sy, mw - 40, 34, active0 ? 0x00FFFF : 0x004080);
+    draw_string(mx + 36, sy + 11, "BELEGUNGS-PROFIL:", active0 ? 0xFFFFFF : 0xA0A0A0, 1);
+    draw_string(mx + 220, sy + 11, preset_names[s_pad_preset % 3], active0 ? 0x00FFFF : 0x60D0FF, 1);
+
+    /* Zeile 2: 360-Grad Laser Y-Achse */
+    sy += 40;
+    int active1 = (s_ctrl_setting_cursor == 1);
+    draw_rect(mx + 20, sy, mw - 40, 34, active1 ? 0x002850 : 0x001020);
+    draw_rect_outline(mx + 20, sy, mw - 40, 34, active1 ? 0x00FFFF : 0x004080);
+    draw_string(mx + 36, sy + 11, "360 DREHLASER Y-ACHSE:", active1 ? 0xFFFFFF : 0xA0A0A0, 1);
+    draw_string(mx + 280, sy + 11, s_pad_laser_invert_y ? "< INVERTIERT >  (Stick nach Oben = zielt nach Oben)" : "< NORMAL >      (Kamera-Flug-Achse)", active1 ? 0x00FFFF : 0x60D0FF, 1);
+
+    /* Dynamische Belegungs-Tabelle: welche Taste triggert welche Aktion.
+     * Gruen = belegt (Preset), hellgruen = belegt + gerade gedrueckt,
+     * Dunkelblau = frei. Aktualisiert sich live beim Preset-Wechsel. */
+    int tbl_y = sy + 44;
+    draw_rect(mx + 20, tbl_y - 22, mw - 40, 22, 0x001428);
+    draw_rect_outline(mx + 20, tbl_y - 22, mw - 40, 22, 0x004080);
+    draw_string(mx + 36, tbl_y - 16, "AKTION", 0xFFE040, 1);
+    draw_string(mx + 330, tbl_y - 16, "COMPETITION PRO / USB-JOYSTICK (WINMM)", 0xFF9040, 1);
+    draw_string(mx + 700, tbl_y - 16, "PS4 / XBOX (XINPUT)", 0xFF9040, 1);
+    for (int act = 0; act < PAD_ACT_COUNT; act++) {
+        int ry = tbl_y + act * 24;
+        int di_b[2], xi_b[2], su = 0;
+        pad_action_binding(act, s_pad_preset, di_b, xi_b, &su);
+        draw_rect(mx + 20, ry, mw - 40, 22, (act & 1) ? 0x001020 : 0x000C18);
+        draw_string(mx + 36, ry + 6, pad_action_names[act], 0x00E0FF, 1);
+        for (int bi = 0; bi < RAW_BTN_COUNT; bi++) {
+            int pressed = (s_pad.raw_buttons >> bi) & 1;
+            int bd = (di_b[0] == bi || di_b[1] == bi);
+            int bxd = (xi_b[0] == bi || xi_b[1] == bi);
+            int dx0 = mx + 330 + bi * 30;
+            draw_rect(dx0, ry + 2, 26, 18, bd ? (pressed ? 0x00FF80 : 0x00A020) : 0x002040);
+            draw_rect_outline(dx0, ry + 2, 26, 18, bd ? 0x00FFC0 : 0x003050);
+            draw_string(dx0 + 5, ry + 6, pad_button_name_di(bi),
+                        bd ? (pressed ? 0x000000 : 0xFFFFFF) : 0x506070, 1);
+            int xx0 = mx + 700 + bi * 30;
+            draw_rect(xx0, ry + 2, 26, 18, bxd ? (pressed ? 0x00FF80 : 0x00A020) : 0x002040);
+            draw_rect_outline(xx0, ry + 2, 26, 18, bxd ? 0x00FFC0 : 0x003050);
+            draw_string(xx0 + 5, ry + 6, pad_button_name_xi(bi),
+                        bxd ? (pressed ? 0x000000 : 0xFFFFFF) : 0x506070, 1);
+        }
+        if (su) {
+            int sx0 = mx + 330 + RAW_BTN_COUNT * 30 + 8;
+            draw_rect(sx0, ry + 2, 66, 18, s_pad.up ? 0x00FF80 : 0x00A020);
+            draw_rect_outline(sx0, ry + 2, 66, 18, 0x00FFC0);
+            draw_string(sx0 + 7, ry + 6, "STICK-UP", s_pad.up ? 0x000000 : 0xFFFFFF, 1);
+        }
+    }
+
+    /* Retro-Geraete-Illustrationen (reines Physisches Layout — die aktuelle
+     * Belegung steht in der Tabelle oben und waehlt mit dem Preset um) */
+    int ay = tbl_y + PAD_ACT_COUNT * 24 + 12;
+    int box_h = 150;
+    int box_w = (mw - 60) / 2;
+
+    /* Linke Box: Competition Pro USB */
+    draw_rect(mx + 20, ay, box_w, box_h, 0x000F1E);
+    draw_rect_outline(mx + 20, ay, box_w, box_h, (s_pad_preset == PAD_PRESET_RETRO_COMPETITION_PRO) ? 0x00FF80 : 0x003060);
+    draw_string(mx + 36, ay + 10, "=== COMPETITION PRO USB (RETRO JOYSTICK) ===", 0xFF9040, 1);
+    draw_string(mx + 40, ay + 30, "        .-------.", 0x80D0FF, 1);
+    draw_string(mx + 40, ay + 46, "   ____/  STICK  \\____", 0x80D0FF, 1);
+    draw_string(mx + 40, ay + 62, "  |  [1] [2] [3] [4]  |", 0x00FF80, 1);
+    draw_string(mx + 40, ay + 78, "   \\_______________/", 0x80D0FF, 1);
+    draw_string(mx + 40, ay + 96, "  STICK L/R: LAUFEN   STICK OBEN: SPRINGEN", 0xC0D0E0, 1);
+    draw_string(mx + 40, ay + 112, "  STICK UNTEN: DUCKEN / MORPH", 0xC0D0E0, 1);
+    draw_string(mx + 40, ay + 130, "  TASTEN 1-4: SIEHE BELEGGUNGS-TABELLE OBEREN", 0xA0A0A0, 1);
+
+    /* Rechte Box: Modernes Gamepad (PS4 / Xbox) */
+    int rx = mx + 30 + box_w;
+    draw_rect(rx, ay, box_w, box_h, 0x000F1E);
+    draw_rect_outline(rx, ay, box_w, box_h, (s_pad_preset != PAD_PRESET_RETRO_COMPETITION_PRO) ? 0x00FF80 : 0x003060);
+    draw_string(rx + 16, ay + 10, "=== DUALSHOCK 4 / XBOX / USB PAD ===", 0xFF9040, 1);
+    draw_string(rx + 20, ay + 30, "      __               __", 0x80D0FF, 1);
+    draw_string(rx + 20, ay + 46, "     [LB]             [RB]", 0x80D0FF, 1);
+    draw_string(rx + 20, ay + 62, "  .------------------------.", 0x80D0FF, 1);
+    draw_string(rx + 20, ay + 78, " /   (^)           (Y)      \\", 0x80D0FF, 1);
+    draw_string(rx + 20, ay + 94, "|  (<)  (>)    (X)   (B)   |", 0x80D0FF, 1);
+    draw_string(rx + 20, ay + 110, " \\     [L-STICK][R-STICK] /", 0x80D0FF, 1);
+    draw_string(rx + 20, ay + 126, "  L: LAUFEN  R: DREHLASER-PEILEN", 0xC0D0E0, 1);
+    draw_string(rx + 20, ay + 140, "  TASTEN: SIEHE BELEGGUNGS-TABELLE OBEREN", 0xA0A0A0, 1);
+
+    /* Live Button & Axis Testfeld (Unten) */
+    int ty = ay + box_h + 10;
+    draw_rect(mx + 20, ty, mw - 40, 52, 0x001428);
+    draw_rect_outline(mx + 20, ty, mw - 40, 52, 0x0050A0);
+    draw_string(mx + 36, ty + 6, "LIVE CONTROLLER-TESTFELD (Druecke Tasten zum Pruefen):", 0xFFE040, 1);
+
+    /* Test-Badges (aktionsbezogen: leuchten je nach aktueller Preset-Belegung) */
+    struct { const char *name; int pressed; } badges[] = {
+        { "UP", s_pad.up },
+        { "DOWN", s_pad.down },
+        { "LEFT", s_pad.left },
+        { "RIGHT", s_pad.right },
+        { "SPRUNG", s_pad.btn_jump },
+        { "FEUER", s_pad.btn_fire },
+        { "LASER", s_pad.btn_beam },
+        { "MORPH", s_pad.btn_morph },
+        { "WAFFE", s_pad.btn_weapsw },
+        { "START", s_pad.btn_start }
+    };
+    int bx = mx + 36;
+    for (int bi = 0; bi < 10; bi++) {
+        int bw = (int)strlen(badges[bi].name) * 8 + 12;
+        draw_rect(bx, ty + 24, bw, 20, badges[bi].pressed ? 0x00FF80 : 0x002040);
+        draw_rect_outline(bx, ty + 24, bw, 20, badges[bi].pressed ? 0xFFFFFF : 0x004080);
+        draw_string(bx + 6, ty + 29, badges[bi].name, badges[bi].pressed ? 0x000000 : 0x80C0E0, 1);
+        bx += bw + 8;
+    }
+    draw_string(mx + 36, ty + 56, "OBEN/UNTEN: EINSTELLUNG WAEHLEN   LINKS/RECHTS: WERT UMSCHALTEN   B / START / ESC: ZURUECK", 0x80A0C0, 1);
 }
 
 /* --- GUI_STATE_MANUAL: Ausfuehrliches 5-Seiten Piloten-Handbuch (Amiga-Stil) --- */
@@ -1939,7 +2297,8 @@ static void render_top_bar(void) {
         } else {
             snprintf(aud, sizeof(aud), "AUDIO: 16574 Hz PAULA | %s [F5]", god_mode_name());
         }
-        draw_string(WIN_W - 560, 14, aud, s_god_mode ? 0xFF40FF : 0x40FF80, 1);
+        /* Rechtsbuehnen-Flucht: nie ueber den [F9] GRAFIK-Tab legen (v0.3.0 Fix) */
+        draw_string(WIN_W - (int)strlen(aud) * 8 - 16, 14, aud, s_god_mode ? 0xFF40FF : 0x40FF80, 1);
     }
 }
 
@@ -2219,34 +2578,58 @@ static void update_and_render_starfield(int speed) {
     }
 }
 
-#define MAX_CREDIT_LINES 6000
+/* 384 Zeilen reichen fuer das kompakte In-EXE-Archiv (103 eingebettete +
+ * Header/Footer). War 6000 (528 KB BSS!) als Doku-Dateien von der Platte
+ * eingelesen wurden — Platz sparend reduziert (v0.3.0 Feinschliff). */
+#define MAX_CREDIT_LINES 384
 #define CREDIT_LINE_LEN  88
 
 static char s_credit_lines[MAX_CREDIT_LINES][CREDIT_LINE_LEN];
 static int  s_credit_line_count = 0;
 static int  s_credit_scroll_y = 0;
 static int  s_credit_paused = 0;
-static int  s_credit_speed = 1;
 static int  s_credit_music_step = 0;
 static int  s_credit_music_timer = 0;
 static int  s_credit_fanfare_played = 0;
+/* Song-Looping: jeder Credits-Track laeuft 2-3 Maale, bevor zum naechsten
+ * gewechselt wird (Timer-Zaehler pro Loop statt starrer 3500-Tick-Grenze). */
+static int  s_credit_song_loop = 0;
+static int  s_credit_song_loop_target = 3;
+#define CREDIT_SONG_LOOP_TICKS 1200  /* ~24 s pro Loop bei 50Hz */
 
 typedef struct {
     int track_idx;
     int subsong;
 } CreditSongStep;
 
+/* v0.3.0 Indizes: 3=SoftMan Titel, 4=Lost Patrol, 5=Blue Monday, 1=T2 Desert,
+ * 7=Fairlight, 2=T2 Cave, 0=Apidya */
 static const CreditSongStep s_credit_playlist[] = {
-    { 4,  0 }, /* Phase 0: Software Manager Subsong 0 (Opening & Overview) */
-    { 5,  0 }, /* Phase 1: Lost Patrol (15-Sample MOD Atmosphaere) */
-    { 4, 21 }, /* Phase 2: Software Manager Subsong 21 (Amiga Heritage Thema) */
-    { 6,  0 }, /* Phase 3: Blue Monday Chiptune (8-Bit MOD) */
-    { 2,  0 }, /* Phase 4: Turrican 2 Desert (TFMX) */
-    { 8,  0 }, /* Phase 5: Fairlight Cracktro (MOD) */
-    { 3,  0 }, /* Phase 6: Turrican 2 Cave (TFMX) */
+    { 3,  0 }, /* Phase 0: Software Manager Titel Subsong 0 (Opening & Overview) */
+    { 4,  0 }, /* Phase 1: Lost Patrol (15-Sample MOD Atmosphaere) */
+    { 3, 21 }, /* Phase 2: Software Manager Titel Subsong 21 (Amiga Heritage Thema) */
+    { 5,  0 }, /* Phase 3: Blue Monday Chiptune (8-Bit MOD) */
+    { 1,  0 }, /* Phase 4: Turrican 2 Desert (TFMX) */
+    { 7,  0 }, /* Phase 5: Fairlight Cracktro (MOD) */
+    { 2,  0 }, /* Phase 6: Turrican 2 Cave (TFMX) */
     { 0,  0 }  /* Phase 7: Apidya Meadow (TFMX) */
 };
 #define CREDIT_PLAYLIST_COUNT (int)(sizeof(s_credit_playlist) / sizeof(s_credit_playlist[0]))
+
+/* Song-Loop-Reset: neue Ziel-Loops (2-3) pro neuem Track */
+static void credit_song_reset_loops(void) {
+    s_credit_music_timer = 0;
+    s_credit_song_loop = 0;
+    s_credit_song_loop_target = 2 + (s_credit_music_step & 1);
+}
+
+/* Naechsten Song aus der Playlist starten (M-Taste / Pad) */
+static void credit_music_next(void) {
+    s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
+    credit_song_reset_loops();
+    music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx,
+                        s_credit_playlist[s_credit_music_step].subsong);
+}
 
 static void credits_add_line(const char *text) {
     if (s_credit_line_count >= MAX_CREDIT_LINES) return;
@@ -2329,7 +2712,6 @@ static void credits_init(void) {
     s_credit_line_count = 0;
     s_credit_scroll_y = 0;
     s_credit_paused = 0;
-    s_credit_speed = 1;
     s_credit_music_step = 0;
     s_credit_music_timer = 0;
     s_credit_fanfare_played = 0;
@@ -2385,9 +2767,10 @@ static void credits_init(void) {
     credits_add_line("    [ ESC / ENTER ]   Zurueck zum Hauptmenue");
     credits_add_line("");
 
-    /* Vollstaendige In-Binary Einbettung des gesamten Archivs (Lore, TFMX Specs, Workflow, Log) */
-    for (int i = 0; i < EMBEDDED_CREDITS_TOTAL_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 50; i++) {
-        credits_add_line(EMBEDDED_CREDITS_ALL[i]);
+    /* Kompaktes In-Binary Archiv (4 Kapitel: Sound-Architektur, Voxel-Engine,
+     * Controller/Level-Benchmark, Demoszene-Greetings) aus embedded_credits.h */
+    for (int i = 0; i < EMBEDDED_CREDITS_COUNT && s_credit_line_count < MAX_CREDIT_LINES - 20; i++) {
+        credits_add_line(EMBEDDED_CREDITS_DATA[i]);
     }
 
     credits_add_line("");
@@ -2401,28 +2784,39 @@ static void credits_init(void) {
     credits_add_line("           [ ESC ] ODER [ ENTER ] DRUECKEN FUERS HAUPTMENUE");
     credits_add_line("");
 
-    /* Musik-Start mit Turrican 2 Cave (Track 4) */
+    /* Musik-Start (Playlist-Phase 0: Software Manager) + Loop-Reset */
     s_credit_music_step = 0;
+    credit_song_reset_loops();
     music_play_embedded(s_credit_playlist[0].track_idx, s_credit_playlist[0].subsong);
 }
 
 static void pad_credits_poll(void) {
+    static int prev_fire, prev_morph, prev_start, prev_y;
     poll_gamepad();
     if (!s_pad.connected) return;
-    if (s_pad.btn_fire || s_pad.btn_morph || s_pad.btn_start) {
+
+    if ((s_pad.btn_morph && !prev_morph) || (s_pad.btn_start && !prev_start)) {
         s_gui_state = GUI_STATE_MENU;
         music_play_embedded(0, 0);
+        prev_morph = s_pad.btn_morph;
+        prev_start = s_pad.btn_start;
         return;
     }
+    if (s_pad.btn_fire && !prev_fire) {
+        s_credit_paused = !s_credit_paused;
+        snprintf(s_status_msg, sizeof(s_status_msg), s_credit_paused ? "Credits Pausiert" : "Credits Fortgesetzt");
+    }
+    prev_fire = s_pad.btn_fire;
+    prev_morph = s_pad.btn_morph;
+    prev_start = s_pad.btn_start;
+
     if (s_pad.down || s_pad.btn_rb) s_credit_scroll_y += 6;
     if (s_pad.up   || s_pad.btn_lb) {
         s_credit_scroll_y -= 5;
         if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
     }
-    static int prev_y = 0;
     if (s_pad.btn_weapsw && !prev_y) {
-        s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
-        music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
+        credit_music_next();
     }
     prev_y = s_pad.btn_weapsw;
 }
@@ -2436,16 +2830,14 @@ static void render_state_credits(void) {
 
     update_and_render_starfield(star_speed);
 
-    /* Abgedunkeltes Zentrum fuer optimale Text-Lesbarkeit */
+    /* Abgedunkeltes Zentrum fuer optimale Text-Lesbarkeit (LUT-Integer) */
     int panel_w = 780;
     int panel_x = (WIN_W - panel_w) / 2;
-    for (int y = 30; y < WIN_H - 26; y++) {
-        uint32_t *row = &s_pixels[y * WIN_W];
-        for (int x = panel_x; x < panel_x + panel_w; x++) {
-            row[x] = rgb_mod(row[x], 0.28f);
-        }
-    }
-    draw_rect_outline(panel_x - 1, 30, panel_w + 2, WIN_H - 56, 0x003060);
+    dim_lut_init(71); /* ~0.28 Helligkeit */
+    dim_screen_rect(panel_x, 30, panel_x + panel_w, WIN_H - 26);
+    /* Rahmen: nur oben + unten — die blauen Seiten-Streifen sind weg (v0.3.0) */
+    draw_line(panel_x - 1, 30, panel_x + panel_w + 1, 30, 0x003060);
+    draw_line(panel_x - 1, WIN_H - 27, panel_x + panel_w + 1, WIN_H - 27, 0x003060);
 
     /* Text-Scroll-Berechnung */
     int line_h = 20;
@@ -2455,30 +2847,21 @@ static void render_state_credits(void) {
         s_credit_scroll_y += 1;
         s_credit_music_timer++;
 
-        /* Wenn die Luecke zwischen Kapitel II und III erreicht wird (oder nach ~40s):
-         * Nahtloser DJ-Wechsel von Software Manager Subsong 0 auf Subsong 21! */
-        int cur_top_line = s_credit_scroll_y / line_h;
-        if (s_credit_music_step == 0 && cur_top_line >= EMBEDDED_CREDITS_PHASE_1_LINE) {
-            s_credit_music_step = 1;
-            trigger_dj_crossfade();
-            music_play_embedded(s_credit_playlist[1].track_idx, s_credit_playlist[1].subsong);
-        } else if (s_credit_music_step == 1 && cur_top_line >= EMBEDDED_CREDITS_PHASE_2_LINE) {
-            s_credit_music_step = 2;
-            trigger_dj_crossfade();
-            music_play_embedded(s_credit_playlist[2].track_idx, s_credit_playlist[2].subsong);
-        } else if (s_credit_music_step == 2 && cur_top_line >= EMBEDDED_CREDITS_PHASE_3_LINE) {
-            s_credit_music_step = 3;
-            trigger_dj_crossfade();
-            music_play_embedded(s_credit_playlist[3].track_idx, s_credit_playlist[3].subsong);
-        } else if (s_credit_music_step == 3 && cur_top_line >= EMBEDDED_CREDITS_PHASE_4_LINE) {
-            s_credit_music_step = 4;
-            trigger_dj_crossfade();
-            music_play_embedded(s_credit_playlist[4].track_idx, s_credit_playlist[4].subsong);
-        } else if (s_credit_music_timer >= 2200) {
+        /* Song-Looping: Track laeuft s_credit_song_loop_target (2-3) Maale
+         * a CREDIT_SONG_LOOP_TICKS Ticks, dann weicher Wechsel zum naechsten.
+         * Kein Song dauert laenger als der komplette Abspann-Scroll:
+         * max. 3 * 1200 = 3600 Ticks (72 s) vs. Scroll-Ende ~35 s —
+         * der Wechsel wird nie spater als das Scroll-Ende sichtbar. */
+        if (s_credit_music_timer >= CREDIT_SONG_LOOP_TICKS) {
             s_credit_music_timer = 0;
-            s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
-            trigger_dj_crossfade();
-            music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
+            s_credit_song_loop++;
+            if (s_credit_song_loop >= s_credit_song_loop_target) {
+                s_credit_song_loop = 0;
+                s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
+                s_credit_song_loop_target = 2 + (s_credit_music_step & 1);
+                music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx,
+                                    s_credit_playlist[s_credit_music_step].subsong);
+            }
         }
     }
 
@@ -2486,7 +2869,7 @@ static void render_state_credits(void) {
         s_credit_scroll_y = total_scroll;
         if (!s_credit_fanfare_played) {
             s_credit_fanfare_played = 1;
-            music_play_embedded(1, 2); /* Turrican 2 Load Subsong 2 = LEVEL COMPLETE FANFARE! */
+            music_play_embedded(TRACK_IDX_WC_OFFICE, 0); /* WC Commander Office = End-Abspann-Thema (v0.3.0, ersetzt T2 Load-Fanfare) */
         }
     }
 
@@ -2535,6 +2918,18 @@ static void render_state_credits(void) {
         draw_string(WIN_W / 2 - 190, WIN_H / 2 + 10, "[ ENTER ] ODER [ ESC ] ZURUECK ZUM HAUPTMENUE", 0xFFFF40, 1);
     }
 
+    /* PAUSIERT-Banner: gross & blinkend, damit klar ist, dass der
+     * Auto-Scroll nur anhalten und kein Fehler vorliegt (v0.3.0) */
+    if (s_credit_paused) {
+        if ((s_gui_frame / 15) % 2 == 0) {
+            const char *pt = "  PAUSIERT  -  [ LEERTASTE / FEUER ] WEITER  ";
+            int pw = (int)strlen(pt) * 8 + 16;
+            draw_rect(WIN_W / 2 - pw / 2, WIN_H / 2 - 14, pw, 28, 0xEE000814);
+            draw_rect_outline(WIN_W / 2 - pw / 2, WIN_H / 2 - 14, pw, 28, 0x00FF80);
+            draw_string(WIN_W / 2 - pw / 2 + 8, WIN_H / 2 - 6, pt, 0x00FF80, 1);
+        }
+    }
+
     /* Top HUD */
     draw_rect(0, 0, WIN_W, 30, 0xEE000814);
     draw_rect(0, 29, WIN_W, 1, 0x004080);
@@ -2580,12 +2975,8 @@ static void render_level_clear_overlay(void) {
 
 /* --- KAMPAGNE: Sieg-Screen (nach Level 5, wie Game-Over aufgebaut) --- */
 static void render_victory_overlay(void) {
-    int y;
-    for (y = 0; y < WIN_H; y++) {
-        uint32_t *row = &s_pixels[y * WIN_W];
-        int x;
-        for (x = 0; x < WIN_W; x++) row[x] = rgb_mod(row[x], 0.22f);
-    }
+    dim_lut_init(56); /* ~0.22 Helligkeit, LUT-Integer statt Float-Schleife */
+    dim_screen_rect(0, 0, WIN_W, WIN_H);
     draw_title(WIN_W / 2, 150, "SIEG!", 5);
     {
         const char *a = "KAMPAGNE ABGESCHLOSSEN - DER STRUDELFORCE-KERN IST GEKLAERT";
@@ -2605,13 +2996,9 @@ static void render_victory_overlay(void) {
 
 /* --- GUI_STATE_GAMEOVER: Overlay ueber dem letzten Spielbild --- */
 static void render_game_over_overlay(void) {
-    int y;
-    /* Dimmen des letzten Frames (Halbtransparent-Optik ohne Alpha) */
-    for (y = 0; y < WIN_H; y++) {
-        uint32_t *row = &s_pixels[y * WIN_W];
-        int x;
-        for (x = 0; x < WIN_W; x++) row[x] = rgb_mod(row[x], 0.22f);
-    }
+    /* Dimmen des letzten Frames (LUT-Integer statt Float-Schleife) */
+    dim_lut_init(56); /* ~0.22 Helligkeit */
+    dim_screen_rect(0, 0, WIN_W, WIN_H);
     draw_title(WIN_W / 2, 160, "GAME OVER", 5);
     {
         char buf[80];
@@ -3038,16 +3425,17 @@ static void render_tab_game(void) {
     int cam_y = (int)s_cam_y;
     int ground_y = 620 + cam_y;
 
-    /* Basis-Fluellung unter der Top-Bar */
-    draw_rect(0, 36, WIN_W, WIN_H - 36, 0x000A18);
+    /* Basis-Fluellung: volles Spielfeld (v0.3.0: toter 36px-Balken oben,
+     * "wo mal Menue war", entfernt — Copper-Sky beginnt jetzt bei Zeile 0) */
+    draw_rect(0, 0, WIN_W, WIN_H, 0x000A18);
 
     /* Layer 3: Dynamische Amiga Copper-Baender mit Elevation-Farbgradient */
     float elevation = s_cam_y / 200.0f;
     if (elevation < 0.0f) elevation = 0.0f;
     if (elevation > 1.0f) elevation = 1.0f;
 
-    for (int i = 0; i < 80; i++) {
-        int y1 = 36 + i * 8;
+    for (int i = 0; i < WIN_H / 8; i++) {
+        int y1 = i * 8;
         float factor = 0.5f + 0.5f * sinf((float)i * 0.1f + (float)s_game.tick * 0.04f);
 
         /* Boden-/Horizont-Farben */
@@ -3057,8 +3445,8 @@ static void render_tab_game(void) {
 
         /* Hoehen-Stratosphere (Amiga-Cyan & Ultramarin-Blau) */
         float r_sky = 10.0f + 15.0f * factor;
-        float g_sky = 30.0f + 80.0f * (1.0f - (float)i / 80.0f) + 30.0f * factor;
-        float b_sky = 70.0f + 150.0f * (1.0f - (float)i / 80.0f) + 35.0f * factor;
+        float g_sky = 30.0f + 80.0f * (1.0f - (float)i / (float)(WIN_H / 8)) + 30.0f * factor;
+        float b_sky = 70.0f + 150.0f * (1.0f - (float)i / (float)(WIN_H / 8)) + 35.0f * factor;
 
         uint32_t cr = (uint32_t)(r_ground * (1.0f - elevation) + r_sky * elevation);
         uint32_t cg = (uint32_t)(g_ground * (1.0f - elevation) + g_sky * elevation);
@@ -3265,7 +3653,7 @@ static void render_tab_game(void) {
         int by = ground_y - 40 - (int)(((int64_t)b->y * 16) >> 16);
 
         /* Viewport Culling: Nur zeichnen wenn im sichtbaren Bildschirmbereich */
-        if (bx < -32 || bx > WIN_W + 32 || by < 36 || by > WIN_H) continue;
+        if (bx < -32 || bx > WIN_W + 32 || by < -32 || by > WIN_H) continue;
 
         if (b->kind == PROJ_BOUNCE) {
             draw_projectile_bounce(bx, by);
@@ -3323,6 +3711,8 @@ static void render_tab_game(void) {
                 proj->active = 0;
                 dbox->hp -= (s_game.weapon == WEAPON_LASER) ? 2 : 1;
                 dbox->hit_flash = 4;
+                dbox->bounce_y = 6;
+                spawn_debris(dbox->world_x << 16, dbox->world_y << 16, 4, 0xFFE040);
                 sound_sfx_hit(&s_audio, 0);
                 if (dbox->hp <= 0) shatter_box(dbox);
                 break;
@@ -4161,6 +4551,21 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     return 0;
                 }
             }
+            /* --- Controller-Konfiguration: Tastatur (spiegelt die Pad-Steuerung) --- */
+            if (s_gui_state == GUI_STATE_CONTROLS) {
+                if (wParam == VK_UP || wParam == VK_DOWN) {
+                    s_ctrl_setting_cursor = (s_ctrl_setting_cursor + 1) % 2;
+                    sound_sfx_hit(&s_audio, 0);
+                    return 0;
+                }
+                if (wParam == VK_LEFT || wParam == VK_RIGHT) {
+                    int dir = (wParam == VK_RIGHT) ? 1 : -1;
+                    if (s_ctrl_setting_cursor == 0) s_pad_preset = (s_pad_preset + 3 + dir) % 3;
+                    else if (s_ctrl_setting_cursor == 1) s_pad_laser_invert_y = !s_pad_laser_invert_y;
+                    sound_sfx_pickup(&s_audio);
+                    return 0;
+                }
+            }
 /* Tastatur-Kuerzel fuer Studio-Tabs */
             if (s_gui_state == GUI_STATE_STUDIO) {
                 if (s_current_tab == TAB_INTRO) {
@@ -4238,8 +4643,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                     s_credit_scroll_y -= 5;
                     if (s_credit_scroll_y < 0) s_credit_scroll_y = 0;
                 } else if (wParam == 'M' || wParam == 'm') {
-                    s_credit_music_step = (s_credit_music_step + 1) % CREDIT_PLAYLIST_COUNT;
-                    music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx, s_credit_playlist[s_credit_music_step].subsong);
+                    credit_music_next();
                 }
                 return 0;
             }
@@ -4911,7 +5315,8 @@ static int run_headless_tests(void) {
     /* 7. Credits & Artefakt-Archiv */
     {
         credits_init();
-        if (s_credit_line_count > 500) {
+        /* Kompaktes In-EXE-Archiv: 103 eingebettete + ~20 Header/Footer-Zeilen */
+        if (s_credit_line_count > 50 && s_credit_line_count <= MAX_CREDIT_LINES) {
             pass++; printf("  [PASS] Credits & Artefakt-Archiv (%d Zeilen geladen, Starfield aktiv)\n", s_credit_line_count);
         } else {
             fail++; printf("  [FAIL] Credits & Artefakt-Archiv (%d Zeilen)\n", s_credit_line_count);
@@ -5117,6 +5522,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     render_state_loading();
                 } else {
                     render_tab_game();
+                    render_top_bar();
                     render_status_bar();
                 }
             } else {
@@ -5137,6 +5543,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 if (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER) {
                     render_tab_game();
                     if (s_gui_state == GUI_STATE_GAMEOVER) render_game_over_overlay();
+                    render_top_bar();
                     render_status_bar();
                 }
             }
@@ -5213,7 +5620,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     if (s_pad.connected) {
                         if (s_pad.left)  mask |= INPUT_LEFT;
                         if (s_pad.right) mask |= INPUT_RIGHT;
-                        if (s_pad.up)    mask |= INPUT_UP;
+                        if (s_pad.up || s_pad.btn_jump) mask |= INPUT_UP;
                         if (s_pad.down || s_pad.btn_morph) mask |= INPUT_DOWN;
                         if (s_pad.btn_fire) mask |= INPUT_FIRE;
                         if (s_pad.btn_beam) mask |= INPUT_SECOND;
@@ -5419,14 +5826,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                                 if (s_tfmx_active && s_tfmx.num_subsongs > 2) {
                                     music_subsong_switch(2); /* Level Clear Fanfare */
                                 } else {
-                                    music_play_embedded(7, 0); /* Wing Commander Combat MOD */
+                                    music_play_embedded(TRACK_IDX_WC_OFFICE, 0); /* WC Commander Office MOD */
                                 }
                             }
                         }
                     } else if (s_game.state == STATE_VICTORY) {
                         if (s_last_subsong_reason != 5) {
                             s_last_subsong_reason = 5;
-                            music_play_embedded(7, 0); /* Sieg Fanfare MOD */
+                            music_play_embedded(TRACK_IDX_WC_OFFICE, 0); /* Sieg-Fanfare: WC Commander Office MOD */
                         }
                     } else if (s_game.state == STATE_GAMEOVER) {
                         if (s_last_subsong_reason != 3) {
@@ -5487,9 +5894,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     supersaw_render(&s_supersaw, abuf, WIN_AUDIO_BUF_SAMPLES, 150);
                 }
 
-                /* DJ Crossfade (blendet alte Audio-Spur weich ueber neue) */
-                apply_dj_crossfade(abuf, WIN_AUDIO_BUF_SAMPLES);
-                memcpy(s_last_audio_frame, abuf, sizeof(s_last_audio_frame));
+                /* DJ Fade (Pop-freier Studio Gain-Crossfade) */
+                apply_dj_fade(abuf, WIN_AUDIO_BUF_SAMPLES);
 
                 /* Soundgodizer (Stereo) oder Mono-Duplizierung */
                 if (s_god.enabled) {
@@ -5514,6 +5920,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     render_state_credits();
                 } else if (s_gui_state == GUI_STATE_MANUAL) {
                     render_state_manual();
+                } else if (s_gui_state == GUI_STATE_CONTROLS) {
+                    render_state_controls();
                 } else if (s_gui_state == GUI_STATE_GAME || s_gui_state == GUI_STATE_GAMEOVER) {
                     render_tab_game();
                     if (s_gui_state == GUI_STATE_GAMEOVER) {
@@ -5522,6 +5930,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     } else if (s_game.state == STATE_LEVEL_CLEAR) {
                         render_level_clear_overlay();
                     }
+                    render_top_bar();   /* v0.3.0: Mini-Menue-Top-Bar im Spiel wieder da */
                     render_status_bar();
                 } else {
                     /* STUDIO: Jukebox / Strudel / Intro (Top-Bar + Status) */
