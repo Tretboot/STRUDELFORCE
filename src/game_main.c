@@ -11,6 +11,12 @@
  * Reines C99 (Cross-Platform: Windows + POSIX). Lizenz: MIT (Clean Room)
  */
 #define _CRT_SECURE_NO_WARNINGS
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +54,12 @@ static void enable_windows_vt(void) {
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/select.h>
+static void sleep_ms(int ms) {
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (long)(ms % 1000) * 1000000L;
+    nanosleep(&ts, NULL);
+}
 #endif
 
 #ifndef FIX
