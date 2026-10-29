@@ -2651,19 +2651,32 @@ static const char * const GUI_STORY_CRAWL[] = {
 };
 #define GUI_STORY_CRAWL_COUNT (int)(sizeof(GUI_STORY_CRAWL)/sizeof(GUI_STORY_CRAWL[0]))
 
+static int s_story_tick = 0;
+
 static void render_state_story(void) {
     update_and_render_starfield(2);
 
-    /* 1. Header: 2-Ton Turrican-2 / Star Wars Titel */
-    draw_title(WIN_W / 2, 54, "THE WUG", 5);
-    {
-        const char *sub = "EPISODE I: DIE INVASION";
-        draw_string(WIN_W / 2 - (int)strlen(sub) * 8, 114, sub, 0xFF60D0FF, 2);
-    }
-    draw_line(WIN_W / 2 - 380, 20, WIN_W / 2 + 380, 20, 0xFFFFD700);
-    draw_line(WIN_W / 2 - 380, 138, WIN_W / 2 + 380, 138, 0xFFFFD700);
+    s_story_tick++;
 
-    /* 2. Star Wars 3D Perspective Crawl */
+    /* --- PHASE 0: Das blaue Star Wars Opening Hook (Frames 0..110) --- */
+    if (s_story_tick < 110) {
+        const char *l1 = "Vor langer Zeit im Amiga-Sektor...";
+        const char *l2 = "(A long time ago in Amiga space...)";
+        draw_string(WIN_W / 2 - (int)strlen(l1) * 8, WIN_H / 2 - 20, l1, 0xFF40C0FF, 2);
+        draw_string(WIN_W / 2 - (int)strlen(l2) * 8, WIN_H / 2 + 16, l2, 0xFF80D0FF, 2);
+        return;
+    }
+
+    /* --- PHASE 1: "THE WUG" Logo zoomt in die Ferne (Frames 110..180) --- */
+    if (s_story_tick < 180) {
+        int zf = s_story_tick - 110;
+        int zy = 240 - (zf * 170) / 70;
+        int scale = (zf < 35) ? 5 : 3;
+        draw_title(WIN_W / 2, zy, "THE WUG", scale);
+        return;
+    }
+
+    /* --- PHASE 2: Star Wars 3D Perspective Crawl (Frames 181+) --- */
     int y_vanish = 145;
     int y_base   = 630;
     int line_h   = 36;
@@ -2690,14 +2703,16 @@ static void render_state_story(void) {
         uint32_t col = (sy > 460) ? 0xFFFFD700 : ((sy > 280) ? 0xFFFFA020 : 0xFF60D0FF);
         if (i == 6) col = 0xFFFF3333; /* DIE WUGS glühend rot */
 
+        /* 1-Pixel Schlagschatten fuer gestochen scharfen Kontrast */
         for (int c = 0; c < len; c++) {
+            draw_char(sx + c * step + 1, sy + 1, l[c], 0xFF000000, scale);
             draw_char(sx + c * step, sy, l[c], col, scale);
         }
     }
 
-    /* 3. Sanfter Auto-Scroll bei 50/60Hz */
+    /* 3. Zuegiger Auto-Scroll bei 50/60Hz (wie in den Credits!) */
     if (!s_story_paused) {
-        if ((s_gui_frame & 1) == 0) s_story_scroll++;
+        s_story_scroll += 2;
     }
     if (s_story_scroll >= total_h) {
         s_gui_state = GUI_STATE_GAME;
@@ -3151,10 +3166,10 @@ static void render_game_over_overlay(void) {
         draw_string(WIN_W / 2 - (int)strlen(buf) * 8, 270, buf, 0xFFE0C060, 2);
     }
     if ((s_gui_frame / 20) % 2 == 0) {
-        const char *a = "[ ENTER ] NOCHMAL";
-        const char *b = "[ ESC ]   HAUPTMENUE";
+        const char *a = "[ LEERTASTE / ENTER / KLICK ] NOCHMAL SPIELEN";
+        const char *b = "[ ESC ] HAUPTMENUE";
         draw_string(WIN_W / 2 - (int)strlen(a) * 8, 360, a, 0xFFFF8020, 2);
-        draw_string(WIN_W / 2 - (int)strlen(b) * 8, 410, b, 0xFF909090, 2);
+        draw_string(WIN_W / 2 - (int)strlen(b) * 8, 410, b, 0xFFB0B0B0, 2);
     }
 }
 
@@ -4870,10 +4885,17 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 else if (wParam == VK_RETURN) menu_activate();
                 return 0;
             }
-            /* --- Story Crawl: Steuerung --- */
+            /* --- Story Crawl: Steuerung & Phasen-Skip --- */
             if (s_gui_state == GUI_STATE_STORY) {
-                if (wParam == VK_RETURN || wParam == VK_ESCAPE || wParam == VK_SPACE || wParam == VK_CONTROL || wParam == 'C' || wParam == 'c') {
-                    s_gui_state = GUI_STATE_GAME;
+                if (wParam == VK_ESCAPE) {
+                    s_gui_state = GUI_STATE_MENU;
+                    music_play_embedded(0, 0);
+                    return 0;
+                }
+                if (wParam == VK_RETURN || wParam == VK_SPACE || wParam == ' ' || wParam == VK_CONTROL || wParam == 'C' || wParam == 'c') {
+                    if (s_story_tick < 110) s_story_tick = 110;
+                    else if (s_story_tick < 180) s_story_tick = 180;
+                    else s_gui_state = GUI_STATE_GAME;
                 } else if (wParam == 'P' || wParam == 'p') {
                     s_story_paused = !s_story_paused;
                 } else if (wParam == VK_DOWN || wParam == 'S' || wParam == 's') {
@@ -4902,9 +4924,17 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
                 return 0;
             }
-            /* --- Game Over: ENTER = Neustart, ESC = Menue (s.o.) --- */
+            /* --- Game Over: ENTER, SPACE, KLICK = Neustart, ESC = Menue --- */
             if (s_gui_state == GUI_STATE_GAMEOVER) {
-                if (wParam == VK_RETURN) start_game(s_active_mode);
+                if (wParam == VK_RETURN || wParam == VK_SPACE || wParam == ' ') {
+                    start_game(s_active_mode);
+                    return 0;
+                }
+                if (wParam == VK_ESCAPE) {
+                    s_gui_state = GUI_STATE_MENU;
+                    music_play_embedded(0, 0);
+                    return 0;
+                }
                 return 0;
             }
 
@@ -5151,6 +5181,19 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         case WM_LBUTTONDOWN: {
             int mx = LOWORD(lParam);
             int my = HIWORD(lParam);
+
+            /* Klick bei Game Over -> sofortiges Weiterspielen */
+            if (s_gui_state == GUI_STATE_GAMEOVER) {
+                start_game(s_active_mode);
+                return 0;
+            }
+            /* Klick bei Story -> naechste Phase oder ins Spiel */
+            if (s_gui_state == GUI_STATE_STORY) {
+                if (s_story_tick < 110) s_story_tick = 110;
+                else if (s_story_tick < 180) s_story_tick = 180;
+                else s_gui_state = GUI_STATE_GAME;
+                return 0;
+            }
             /* Top Tabs (nur im Studio-State sichtbar) */
             if (my < 36) {
                 for (int t = 0; t < 4; t++) {
@@ -5766,6 +5809,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         if (s_active_mode == MODE_CAMPAIGN) {
                             s_story_scroll = 0;
                             s_story_paused = 0;
+                            s_story_tick = 0;
                             s_gui_state = GUI_STATE_STORY;
                         } else {
                             s_gui_state = GUI_STATE_GAME;
@@ -5861,9 +5905,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     if (GetAsyncKeyState('D') & 0x8000 || GetAsyncKeyState(VK_RIGHT) & 0x8000) mask |= INPUT_RIGHT;
                     if (GetAsyncKeyState('W') & 0x8000 || GetAsyncKeyState(VK_UP) & 0x8000 || GetAsyncKeyState(VK_SPACE) & 0x8000) mask |= INPUT_UP;
                     if (GetAsyncKeyState('S') & 0x8000 || GetAsyncKeyState(VK_DOWN) & 0x8000)  mask |= INPUT_DOWN;
-                    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mask |= INPUT_FIRE;    /* Strg: prim. Feuer */
-                    if (GetAsyncKeyState(VK_MENU) & 0x8000)    mask |= INPUT_SECOND;  /* Alt:  Halt-Strahl */
-                    if (GetAsyncKeyState('C') & 0x8000) mask |= INPUT_WEAPSW;
+
+                    /* Primary Fire: Strg, Linksklick, F, J, Z, Y, Enter */
+                    if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+                        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ||
+                        (GetAsyncKeyState('F') & 0x8000) ||
+                        (GetAsyncKeyState('J') & 0x8000) ||
+                        (GetAsyncKeyState('Z') & 0x8000) ||
+                        (GetAsyncKeyState('Y') & 0x8000) ||
+                        (GetAsyncKeyState(VK_RETURN) & 0x8000)) {
+                        mask |= INPUT_FIRE;
+                    }
+
+                    /* Secondary Beam: Alt, Rechtsklick, E, K, X */
+                    if ((GetAsyncKeyState(VK_MENU) & 0x8000) ||
+                        (GetAsyncKeyState(VK_RBUTTON) & 0x8000) ||
+                        (GetAsyncKeyState('E') & 0x8000) ||
+                        (GetAsyncKeyState('K') & 0x8000) ||
+                        (GetAsyncKeyState('X') & 0x8000)) {
+                        mask |= INPUT_SECOND;
+                    }
+
+                    /* Weapon Switch: C, Q, Tab */
+                    if ((GetAsyncKeyState('C') & 0x8000) ||
+                        (GetAsyncKeyState('Q') & 0x8000) ||
+                        (GetAsyncKeyState(VK_TAB) & 0x8000)) {
+                        mask |= INPUT_WEAPSW;
+                    }
                     if (GetAsyncKeyState('T') & 0x8000) livecode_open_chest(&s_livecode);
 
                     /* --- Controller (PS4 / DirectInput & Xbox / XInput via poll_gamepad) ---
@@ -6178,6 +6246,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                         if (s_active_mode == MODE_CAMPAIGN) {
                             s_story_scroll = 0;
                             s_story_paused = 0;
+                            s_story_tick = 0;
                             s_gui_state = GUI_STATE_STORY;
                         } else {
                             s_gui_state = GUI_STATE_GAME;

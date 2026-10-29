@@ -62,13 +62,19 @@ STRUDELFORCE bietet 100% Bit-Parität zwischen moderner Windows-Präsentation un
 2. **Nativer Amiga 500 Bare-Metal Port (`amiga/` & `strudelforce.adf`):**
    - Echter M68K Bare-Metal Build via `m68k-amiga-elf-gcc` (keine libc-Abhängigkeit, `-nostdlib -ffreestanding`).
    - **Vollständige State-Machine mit Parität:** Cracktro-Intro (3D-Wireframe-Vektorwürfel, Sinus-Scroller) -> Turrican-2 Hauptmenü -> AmigaShell Ladebildschirm mit echtem Feedback -> "THE WUG" Star Wars 3D Story Crawl (`AMI_STATE_STORY`) -> 50Hz Fixed-Point Spiel -> Interaktive Credits (`AMI_STATE_CREDITS`).
-   - **"THE WUG" Star Wars Story Crawl:** Großer 2-Ton-Titel (Gold über Rubinrot), räumlicher 3D-Perspektiv-Textcrawl in die Tiefe zur Erklärung der Wug-Invasion, sanfte Tiefenfarbverläufe und interaktive Geschwindigkeitssteuerung.
+   - **Automatische Hardware-Erkennung (OCS / ECS / AGA & RAM):** Liest `GfxBase->ChipRevBits0` und `SysBase->AttnFlags` aus und klassifiziert das System sofort (`SYS: 512KB CHIP | 68000 | OCS` bis `SYS: 2MB CHIP | 68020 | AGA`). Bereitet für zukünftige A1200-Assets und AGA-Modi vor.
+   - **Star Wars 3-Phasen Story Intro ("THE WUG"):**
+     - *Phase 0:* Klassischer blauer Opening Hook ("Vor langer Zeit im Amiga-Sektor...") auf pechschwarzem Sternenfeld.
+     - *Phase 1:* Monumentales 2-Ton "THE WUG"-Logo zoomt dynamisch in die Tiefe des Weltraums.
+     - *Phase 2:* Authentischer 3D-Perspektiv-Crawl in den Horizont-Fluchtpunkt im zügigen 50Hz-Tempo (100 px/s, identisch zur flüssigen Credits-Rolle), mit feinem Farbverlauf (Goldgelb bis Cyan) und Interaktivität (Pause, Tempo, Überspringen).
+   - **Pechschwarzer Weltraum-Himmel:** Dynamisches Copper-List-Management schaltet störende violette Himmel-Balken während Story, Intro, Menü und Credits ab und aktiviert den atmosphärischen Verlauf erst im eigentlichen Gameplay.
    - **De-Dimmed High-Contrast Visuals:** Keine störenden Abdunklungs-Rechtecke hinter Texten; Menüs und Abspann schweben frei über Sternenfeld, Copper-Verläufen und Spielgrafik mit lebendigen Farb-Tags.
    - **Interaktiver Amiga-Abspann:** 50Hz-Vertikalscroll mit Beschleunigung (Runter/S), Rücklauf (Hoch/W), Pause (Leertaste) und Menü-Rückkehr (Feuer/ESC), 2-Ton Turrican-Überschriften und farbigen Kategorien-Tags.
    - 5 OCS-Bitplanes (320x256 @ 50Hz PAL, 32 Farben, Doppelpuffer) direkt im Chip-RAM.
-   - Dynamischer Copper-Farbverlauf-Himmel (Amiga Raster-Bänder).
-   - **Paula 4-Kanal Hardware DMA Audio:** ThePlayer 6.1a Replayer direkt im Chip-RAM auf VBlank mit Register A6 Hardware-Basis ($DFF000).
-   - **Volle Eingabe-Unterstützung:** Joystick Port 2, Tastatur (Pfeiltasten, WASD, Space, Enter, Alt, Ctrl, ESC) und Maus Port 1 LMB.
+   - **Paula 4-Kanal Hardware DMA Audio:** Replayer läuft 100% synchron am 50Hz-VBlank direkt mit Chip-RAM-DMA ($DFF000 Paula Audio-Register), ohne Interrupt-Konflikte oder System-Abstürze.
+   - **Erweiterte Steuerung (PC & Amiga):**
+     - *PC:* WASD/Pfeiltasten, Sprung mit W/Hoch/Leertaste, primäres Feuer mit Strg/Linksklick/F/J/Z/Y/Enter, Sekundärstrahl mit Alt/Rechtsklick/E/K/X, Waffenwechsel mit C/Q/Tab, Game Over Neustart mit Leertaste/Enter/Klick und ESC fürs Hauptmenü.
+     - *Amiga:* Joystick Port 2, Tastatur (WASD/Pfeile/Space/Enter/Alt/Ctrl/ESC) und Maus Port 1 LMB.
    - Bootfähiges 880 KB Floppy Image (`strudelforce.adf`, Volume: **`StrudelOS`**) im Standard Amiga OFS-Format mit Kickstart 1.3 Bootblock (`boot1x`) und `s/startup-sequence`. Lauffähig auf jedem Amiga 500 (Kickstart 1.3, WinUAE mit authentischem Diskettenladegeräusch, RetroArch PUAE, echte Hardware).
 
 3. **Konsolidierte Monolithische Architektur:**
