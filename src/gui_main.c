@@ -2653,6 +2653,73 @@ static const char * const GUI_STORY_CRAWL[] = {
 
 static int s_story_tick = 0;
 
+/* --------------------------------------------------------------------------
+ * Star Wars 3D Perspektiv-Crawl Engine (Zero-Float, Scanline Texture-Mapping)
+ * -------------------------------------------------------------------------- */
+#define CRAWL_TEX_W 640
+#define CRAWL_TEX_H 2400
+
+static uint8_t s_crawl_plane[CRAWL_TEX_W * CRAWL_TEX_H];
+static int s_crawl_plane_ready = 0;
+
+static void init_crawl_plane(void) {
+    if (s_crawl_plane_ready) return;
+    memset(s_crawl_plane, 0, sizeof(s_crawl_plane));
+    int line_spacing = 54;
+    int start_y = 60;
+
+    for (int i = 0; i < GUI_STORY_CRAWL_COUNT; i++) {
+        const char *line = GUI_STORY_CRAWL[i];
+        if (!line || !line[0]) continue;
+
+        int len = (int)strlen(line);
+        /* Scale 2 auf 640er Text-Plane: jeder Charakter ist 16x16 Pixel */
+        int scale = 2;
+        int char_w = 8 * scale;
+        int line_w = len * char_w;
+        int sx = (CRAWL_TEX_W - line_w) / 2;
+        int sy = start_y + i * line_spacing;
+
+        uint8_t col_tag = 2; /* 2 = Star Wars Gold */
+        if (i == 1 || i == 2 || i == 28) col_tag = 3; /* 3 = Highlight / Weissgold */
+        if (i == 6) col_tag = 4; /* 4 = Warnung Gluehrot */
+
+        for (int c = 0; c < len; c++) {
+            unsigned char ch = (unsigned char)line[c];
+            if (ch >= 128) ch = '?';
+            const uint8_t *glyph = RETRO_FONT[ch];
+            int cx = sx + c * char_w;
+
+            for (int r = 0; r < 8; r++) {
+                uint8_t bits = glyph[r];
+                for (int b = 0; b < 8; b++) {
+                    if (bits & (0x80 >> b)) {
+                        /* 2x2 Pixel mit Schlagschatten einzeichnen */
+                        for (int dy = 0; dy < scale; dy++) {
+                            for (int dx = 0; dx < scale; dx++) {
+                                int px = cx + b * scale + dx;
+                                int py = sy + r * scale + dy;
+                                /* Drop-Shadow */
+                                int sh_x = px + 2;
+                                int sh_y = py + 2;
+                                if (sh_x < CRAWL_TEX_W && sh_y < CRAWL_TEX_H) {
+                                    if (s_crawl_plane[sh_y * CRAWL_TEX_W + sh_x] == 0) {
+                                        s_crawl_plane[sh_y * CRAWL_TEX_W + sh_x] = 1;
+                                    }
+                                }
+                                if (px >= 0 && px < CRAWL_TEX_W && py >= 0 && py < CRAWL_TEX_H) {
+                                    s_crawl_plane[py * CRAWL_TEX_W + px] = col_tag;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    s_crawl_plane_ready = 1;
+}
+
 static void render_state_story(void) {
     update_and_render_starfield(2);
 
@@ -2676,49 +2743,89 @@ static void render_state_story(void) {
         return;
     }
 
-    /* --- PHASE 2: Star Wars 3D Perspective Crawl (Frames 181+) --- */
+    /* --- PHASE 2: Echter 3D Star Wars Perspektiv-Crawl (Trapezoid-Mapping) --- */
+    init_crawl_plane();
+
+    /* Interaktive Steuerung (Tempo, Pause, Skip) */
+    if ((GetKeyState(VK_DOWN) & 0x8000) || (GetKeyState('S') & 0x8000) || s_pad.down || s_pad.btn_rb) {
+        s_story_scroll += 6; /* Warp-Speed vorwaerts */
+    } else if ((GetKeyState(VK_UP) & 0x8000) || (GetKeyState('W') & 0x8000) || s_pad.up || s_pad.btn_lb) {
+        s_story_scroll -= 4;
+        if (s_story_scroll < 0) s_story_scroll = 0;
+    } else if (!s_story_paused) {
+        s_story_scroll += 2; /* Fluessiger 50Hz-Crawl */
+    }
+
     int y_vanish = 145;
-    int y_base   = 630;
-    int line_h   = 36;
-    int total_h  = GUI_STORY_CRAWL_COUNT * line_h + WIN_H + 60;
+    int y_base   = 672;
+    int total_scroll = CRAWL_TEX_H + 850;
 
-    for (int i = 0; i < GUI_STORY_CRAWL_COUNT; i++) {
-        const char *l = GUI_STORY_CRAWL[i];
-        if (!l || l[0] == '\0') continue;
+    if (s_story_scroll >= total_scroll) {
+        s_gui_state = GUI_STATE_GAME;
+        return;
+    }
 
-        int wy = WIN_H + 40 - s_story_scroll + i * line_h;
-        if (wy < y_vanish || wy > y_base + 60) continue;
+    /* Raycast / Scanline-Perspektive:
+     * Der Text liegt auf einer 3D-Ebene, die unter ca. 55 Grad nach hinten kippt.
+     * Fuer jede Zeile y von y_vanish bis y_base:
+     * dy = y - y_vanish;
+     * Tiefe Z = K / dy.
+     * Auf dem Text-Strip entspricht dies v = s_story_scroll - (Z - Z_near).
+     * Die Scanline-Breite W(y) skaliert linear mit dy (Trapez). */
+    int w_base = 1180;
+    int h_area = y_base - y_vanish;
+    int K = 120000;
+    int z_near = K / h_area;
 
-        int t = ((wy - y_vanish) * 256) / (y_base - y_vanish);
-        if (t < 25) t = 25;
-        if (t > 256) t = 256;
+    for (int y = y_vanish + 1; y < y_base; y++) {
+        int dy = y - y_vanish;
+        int z = K / dy;
+        int v = s_story_scroll - (z - z_near);
+        if (v < 0 || v >= CRAWL_TEX_H) continue;
 
-        int sy = y_vanish + (t * (y_base - y_vanish)) / 256;
-        int scale = (t > 140) ? 2 : 1;
-        int step = (scale == 2) ? 14 : 8;
-        int len = (int)strlen(l);
-        int line_w = len * step;
-        int sx = (WIN_W - line_w) / 2;
+        int w = (dy * w_base) / h_area;
+        if (w < 4) continue;
 
-        uint32_t col = (sy > 460) ? 0xFFFFD700 : ((sy > 280) ? 0xFFFFA020 : 0xFF60D0FF);
-        if (i == 6) col = 0xFFFF3333; /* DIE WUGS glühend rot */
+        int x_left = (WIN_W - w) / 2;
+        int x_right = x_left + w;
+        if (x_left < 0) x_left = 0;
+        if (x_right > WIN_W) x_right = WIN_W;
 
-        /* 1-Pixel Schlagschatten fuer gestochen scharfen Kontrast */
-        for (int c = 0; c < len; c++) {
-            draw_char(sx + c * step + 1, sy + 1, l[c], 0xFF000000, scale);
-            draw_char(sx + c * step, sy, l[c], col, scale);
+        /* Atmosphaerischer Horizont-Fade */
+        int fade = (dy * 255) / 180;
+        if (fade > 255) fade = 255;
+        if (fade < 0) fade = 0;
+
+        uint32_t col_gold = 0xFF000000 | (((255 * fade) / 255) << 16) | (((220 * fade) / 255) << 8) | ((30 * fade) / 255);
+        uint32_t col_hi   = 0xFF000000 | (((255 * fade) / 255) << 16) | (((245 * fade) / 255) << 8) | ((140 * fade) / 255);
+        uint32_t col_red  = 0xFF000000 | (((255 * fade) / 255) << 16) | (((50 * fade) / 255) << 8)  | ((40 * fade) / 255);
+
+        const uint8_t *tex_row = &s_crawl_plane[v * CRAWL_TEX_W];
+        int u_step = (CRAWL_TEX_W << 16) / w;
+        int u_fixed = 0;
+
+        for (int x = x_left; x < x_right; x++) {
+            int u = u_fixed >> 16;
+            u_fixed += u_step;
+            uint8_t p = tex_row[u];
+            if (!p) continue;
+
+            if (p == 1) {
+                /* Schatten: Hintergrund leicht abdunkeln */
+                uint32_t bg = s_pixels[y * WIN_W + x];
+                uint32_t sh = ((bg & 0xFEFEFE) >> 1);
+                set_pixel(x, y, 0xFF000000 | sh);
+            } else if (p == 2) {
+                set_pixel(x, y, col_gold);
+            } else if (p == 3) {
+                set_pixel(x, y, col_hi);
+            } else if (p == 4) {
+                set_pixel(x, y, col_red);
+            }
         }
     }
 
-    /* 3. Zuegiger Auto-Scroll bei 50/60Hz (wie in den Credits!) */
-    if (!s_story_paused) {
-        s_story_scroll += 2;
-    }
-    if (s_story_scroll >= total_h) {
-        s_gui_state = GUI_STATE_GAME;
-    }
-
-    /* 4. Bottom Controls / Info Bar */
+    /* Bottom Controls / Info Bar */
     draw_rect(0, 676, WIN_W, 44, 0xD0001020);
     draw_line(0, 676, WIN_W, 676, 0xFF00FF80);
     const char *hint = "ENTER / LEERTASTE / FEUER : SPIEL STARTEN    |    PFEILTASTEN / S / W : TEMPO    |    P : PAUSE";
@@ -2730,7 +2837,7 @@ static void render_state_story(void) {
 /* 384 Zeilen reichen fuer das kompakte In-EXE-Archiv (103 eingebettete +
  * Header/Footer). War 6000 (528 KB BSS!) als Doku-Dateien von der Platte
  * eingelesen wurden — Platz sparend reduziert (v0.3.0 Feinschliff). */
-#define MAX_CREDIT_LINES 384
+#define MAX_CREDIT_LINES 1800
 #define CREDIT_LINE_LEN  88
 
 static char s_credit_lines[MAX_CREDIT_LINES][CREDIT_LINE_LEN];
@@ -2740,6 +2847,7 @@ static int  s_credit_paused = 0;
 static int  s_credit_music_step = 0;
 static int  s_credit_music_timer = 0;
 static int  s_credit_fanfare_played = 0;
+static int  s_captains_log_triggered = 0;
 /* Song-Looping: jeder Credits-Track laeuft 2-3 Maale, bevor zum naechsten
  * gewechselt wird (Timer-Zaehler pro Loop statt starrer 3500-Tick-Grenze). */
 static int  s_credit_song_loop = 0;
@@ -2863,6 +2971,7 @@ static void credits_init(void) {
     s_credit_music_step = 0;
     s_credit_music_timer = 0;
     s_credit_fanfare_played = 0;
+    s_captains_log_triggered = 0;
 
     init_starfield();
 
@@ -2984,6 +3093,19 @@ static void render_state_credits(void) {
     int line_h = 20;
     int total_scroll = s_credit_line_count * line_h + WIN_H + 80;
 
+    /* Automatische Musik- & Subsong-Umschaltung bei Beginn des Captain's Logs */
+    int cap_log_scroll_trigger = CREDITS_CAPTAINS_LOG_LINE * line_h;
+    if (!s_captains_log_triggered && s_credit_scroll_y >= cap_log_scroll_trigger - 80) {
+        s_captains_log_triggered = 1;
+        /* Wechsel auf Software Manager Subsong 21 (Chris Huelsbeck Amiga Heritage) fuer das Forschungstagebuch */
+        s_credit_music_step = 2; /* s_credit_playlist[2] ist {4, 21} */
+        credit_song_reset_loops();
+        music_play_embedded(s_credit_playlist[s_credit_music_step].track_idx,
+                            s_credit_playlist[s_credit_music_step].subsong);
+        snprintf(s_status_msg, sizeof(s_status_msg),
+                 "Captains Log gestartet - Chris Huelsbeck Subsong 21 [M/Y: Weiter]");
+    }
+
     if (!s_credit_paused) {
         s_credit_scroll_y += 1;
         s_credit_music_timer++;
@@ -3021,7 +3143,19 @@ static void render_state_credits(void) {
         const char *l = s_credit_lines[i];
         if (!l || l[0] == '\0') continue;
 
-        if (strncmp(l, "===", 3) == 0) {
+        if (strncmp(l, "--- [", 5) == 0) {
+            /* Captain's Log Iteration Header */
+            draw_rect(panel_x + 10, ly - 2, panel_w - 20, 22, 0xDD002040);
+            draw_rect_outline(panel_x + 10, ly - 2, panel_w - 20, 22, 0x00D0FF);
+            draw_string(panel_x + 24, ly + 2, l, 0xFFE040, 1);
+        } else if (strncmp(l, "  >>", 4) == 0) {
+            /* Captain's Log Unterabschnitt */
+            draw_string(panel_x + 28, ly, l, 0x40E0FF, 1);
+        } else if (strncmp(l, "  |", 3) == 0) {
+            /* Captain's Log Zitat / Blockquote */
+            draw_rect(panel_x + 24, ly, 2, 16, 0x00FF80);
+            draw_string(panel_x + 34, ly, l + 3, 0xB0E0C0, 1);
+        } else if (strncmp(l, "===", 3) == 0) {
             draw_rect(panel_x + 10, ly + 9, panel_w - 20, 2, 0x00A0FF);
             draw_rect(panel_x + 10, ly + 11, panel_w - 20, 1, 0xFF4080);
         } else if (strncmp(l, "    TEIL", 8) == 0 || strncmp(l, "                         STRUDELFORCE", 37) == 0) {
@@ -3092,7 +3226,12 @@ static void render_state_credits(void) {
     /* Top HUD */
     draw_rect(0, 0, WIN_W, 30, 0xEE000814);
     draw_rect(0, 29, WIN_W, 1, 0x004080);
-    draw_string(20, 10, "STRUDELFORCE 0.3.1  -  CREDITS & ARTEFAKT-DOKUMENTATION", 0xFFE040, 1);
+    if (s_captains_log_triggered) {
+        draw_string(20, 10, "STRUDELFORCE 0.3.1  -  CAPTAIN'S LOG: FORSCHUNGS- & ENTWICKLUNGSCHRONIK", 0x40E0FF, 1);
+        draw_string(WIN_W - 380, 10, "[ TASTE M / PAD Y: SUBSONG WECHSELN ]", 0xFFFF40, 1);
+    } else {
+        draw_string(20, 10, "STRUDELFORCE 0.3.1  -  CREDITS & ARTEFAKT-DOKUMENTATION", 0xFFE040, 1);
+    }
     char mus_info[128];
     snprintf(mus_info, sizeof(mus_info), "AUDIO: [%s] %s %s",
              s_current_track_type, s_current_track_name, s_credit_paused ? "[PAUSE]" : "");

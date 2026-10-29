@@ -147,16 +147,19 @@ Jede Codeänderung und Erweiterung im Projekt muss ausnahmslos diesen drei Geset
 1. **Versionsanhebung:** Master ist auf `0.3.1` synchronisiert (`strudelforce.h`, `gui_main.c`, `build_msvc.bat`, CI-Workflows).
 2. **Audio-Kuratierung (~447.5 KB):** 16 Mini-MODs + 4 TFMX-Tracks (`Turrican 3 World 1`, `BiFi Adventure`, `Cybersty`, `Mad TV`).
 3. **Turrican 3 World 1 Tempo-Fix:** Chris Hülsbecks `tempo == 0` Subsong-Bug behoben (`speed = 2` statt 5). Läuft in vollem Arcade-Tempo.
-4. **ADF Floppy-Pipeline:** `tools/build_amiga_adf.py` erzeugt ein valides 880 KB Amiga Floppy Image (`strudelforce.adf`, 901.120 Bytes, 189 KB Belegung) inklusive Bootblock (`boot install`), `s/startup-sequence` und TFMX-Tracks.
-5. **Level-Engine v2 geborgen:** 197 Chunks und 37 spielbare Levels liegen in `levels/levels_v2.json`, `src/level_data.h` und `levelkit/lv2.py` vor.
+4. **ADF Floppy-Pipeline & State-Machine:** `tools/build_amiga_adf.py` erzeugt ein valides 880 KB Amiga Floppy Image (`strudelforce.adf`, 901.120 Bytes, 189 KB Belegung) inklusive Bootblock (`boot install`), `s/startup-sequence` und 50Hz OCS-Parität (`amiga/main.c`: 3D Cracktro, Turrican Menü, Loading, 4-Kanal Paula DMA Musik).
+5. **Star Wars 3D Perspektiv-Crawl:** Zero-Float Scanline-Trapezoid Raycasting in `gui_main.c` mit kontinuierlicher Verjüngung, atmosphärischem Horizont-Fade und weichem Drop-Shadow.
+6. **Vollständiges Captain's Log im Abspann:** 1446 Zeilen in `src/embedded_credits.h` mit automatischem Song-/Subsong-Wechsel (Chris Hülsbeck Software Manager Subsong 21) und visueller Iterations-Strukturierung.
+7. **Level-Engine v2 geborgen:** 197 Chunks und 37 spielbare Levels liegen in `levels/levels_v2.json`, `src/level_data.h` und `levelkit/lv2.py` vor.
+8. **Projekt-Bibel & GitHub Wiki:** `PROJECT_BIBLE.md` auf v0.3.1 gehoben; Wiki-Dateien in `wiki/` mit automatisiertem Push-Skript `tools/sync_wiki.py` vorbereitet.
 
 ### Nächste Schritte für den nachfolgenden Agenten:
-1. **Amiga CI Build ohne Release ausführen:**
-   - GitHub Actions Workflow `amiga-adf` via GitHub UI ("Actions" -> `amiga-adf` -> "Run workflow" auf Branch `main`) manuell starten ODER Änderungen auf `main` pushen.
-   - Die CI kompiliert mit `m68k-amigaos-gcc` das echte C-Spiel (`AMIGA_SRCS` in `src/amiga_hw.c`, `core_sim_sf.c`, `voxel_render.c`, `biomes.c`, `tfmx_player.c`, `amiga_music.c`) zu `strudelforce.amiga` und packt das fertige ADF als Artefakt `strudelforce-amiga` (völlig ohne Release-Publikation).
+1. **GitHub Wiki aktivieren & synchronisieren:**
+   - Einmalig https://github.com/Tretboot/STRUDELFORCE/wiki öffnen und auf "Create the first page" (bzw. "Save page") klicken, um das Wiki-Repository auf GitHub zu initialisieren.
+   - Danach `python tools/sync_wiki.py` ausführen, um alle 8 Wiki-Seiten (Bibel, Arbeitsweise, Amiga-Hardware, Audio, Level-Engine, Captain's Log, Sidebar, Footer) automatisch hochzuladen.
 2. **Amiga-Port Testen (WinUAE / FS-UAE / Vamos):**
-   - Das aus der CI heruntergeladene `strudelforce.adf` in einem Amiga 500 Emulator booten.
-   - Gameplay (50Hz VBlank, Voxel-Bitplanes, Paula DMA TFMX-Streaming, CIA-A Joystick/Tastatur) prüfen.
+   - Das aus der CI heruntergeladene oder lokal gebaute `strudelforce.adf` in WinUAE (`tools/start_winuae.bat`) booten.
+   - Gameplay (50Hz VBlank, Voxel-Bitplanes, Paula DMA Musik, CIA-A Joystick/Tastatur) prüfen.
 3. **Level- & Sprite-Design:**
    - Ausarbeitung der Amiga OCS Hardware-Sprites basierend auf `src/sprite_data.h` und `ref/turrican2_*.png`.
    - Kampagnen-Level-Progression mit den neuen Chunks und Biomen aus `levelkit/lv2.py` und `levels/levels_v2.json` verfeinern.

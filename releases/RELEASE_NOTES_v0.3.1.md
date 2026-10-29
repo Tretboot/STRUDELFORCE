@@ -8,19 +8,30 @@
 
 ---
 
+> [!NOTE] WICHTIGER HINWEIS ZUR ERSTEN AMIGA .ADF TESTVERSION
+> `strudelforce.adf` ist die **erste bootfähige Amiga 500 Test- und Preview-Version** auf Diskette!
+> Sie bootet zuverlässig auf unbeschleunigter Amiga-Hardware (A500, Kickstart 1.3, 512 KB Chip-RAM), WinUAE und RetroArch PUAE. Sie demonstriert das vollständige 3D-Wireframe-Cracktro, das Turrican-2-Menü, den AmigaShell-Ladebalken, den 3D-Story-Crawl sowie 5-Bitplane OCS-Grafik mit 4-Kanal Paula DMA Musik.
+> **Status:** Die Floppy ist bootfähig und stabil; das Gameplay ist in dieser ersten Preview-Stufe als solides technisches Fundament ausgelegt und wird in den kommenden Releases spielerisch weiter ausbalanciert und verfeinert.
+
+---
+
 ## 🔥 Highlights der Version 0.3.1
 
-### 1. "THE WUG" – Star Wars Story Crawl Intro (Amiga & PC Parität)
-- **Großer 2-Ton "THE WUG" Star Wars Titel:** Im Kampagnen-Modus startet nach dem Laden das neue Story-Intro im Star Wars Stil mit großem 2-Ton-Banner (Gold über Rubinrot) und dem Untertitel *"EPISODE I: DIE INVASION"*.
-- **3D-Perspektiv-Crawl in die Tiefe:** Die Spiel-Lore scrollt in echter räumlicher 3D-Perspektive von unten schräg in den Weltraum-Horizont. Die Zeichenbreite und -höhe verjüngt sich dynamisch zum Fluchtpunkt, begleitet von einem tiefen Farbverlauf (Gold $\to$ Bernstein $\to$ Cyan $\to$ leuchtendes Wug-Rot).
+### 1. "THE WUG" – Echter 3D Star Wars Perspektiv-Crawl (Zero-Float Scanline-Raycasting)
+- **Echte räumliche 3D-Perspektive:** Die Spiel-Lore scrollt auf einer nach hinten geneigten 3D-Ebene in den Weltraum-Fluchtpunkt. Zeichenbreite und -höhe verjüngen sich stufenlos ($Z = K / dy$), begleitet von kontinuierlicher Verjüngung, atmosphärischem Horizont-Fadeout und 2px-Drop-Shadow über dem driftenden Sternenfeld.
 - **Interaktive Steuerung:**
-  - `Pfeil Runter / S`: Schneller vorwärts scrollen
-  - `Pfeil Hoch / W`: Zurück scrollen
+  - `Pfeil Runter / S`: Schneller vorwärts scrollen (Warp-Speed)
+  - `Pfeil Hoch / W`: Zurück scrollen / verlangsamen
   - `Leertaste / P`: Pause umschalten
   - `Feuer / Enter / ESC`: Direkt ins Spiel springen
 - **Volle Amiga & PC Parität:** Sowohl in `amiga/main.c` (`AMI_STATE_STORY`) als auch in der PC-GUI `src/gui_main.c` (`GUI_STATE_STORY`) bit- und darstellungskonform implementiert.
 
-### 2. Verbose AmigaShell Ladebildschirm mit echtem Feedback
+### 2. Interaktiver Abspann mit vollständigem Captain's Log & Musik-Umschaltung
+- **1500+ Zeilen Dokumentation & Chronik:** Nach den regulären Kapiteln I–IV (Chris Hülsbeck Tribute, Amiga Specs, Demoszene-Grüße) folgt nahtlos **Kapitel V: Das vollständige Captain's Log** (alle Iterationen von Iteration 1 bis v0.3.1) direkt im Spielabspann eingebettet.
+- **Automatischer Musik- & Subsong-Wechsel:** Beim Übergang in das Captain's Log wechselt die Audio-Engine automatisch zu **Chris Hülsbecks Software Manager Subsong 21** (Amiga Heritage Thema).
+- Über die Taste `M` bzw. Gamepad-Taste `Y` kann jederzeit durch weitere Subsongs geschaltet werden.
+
+### 3. Verbose AmigaShell Ladebildschirm mit echtem Feedback
 - **Authentischer Amiga CLI Terminal-Look:** Der Ladebalken ist keine statische Dummy-Animation mehr, sondern ein interaktives Shell-Fenster (`AmigaShell - StrudelOS v0.3.1 CLI`).
 - **Echte Subsystem-Phasen:**
   1. *StrudelOS Chip-RAM & Hardware Init*
@@ -31,11 +42,11 @@
   6. *Bereit: Start der Kampagne und "THE WUG" Story!*
 - **Laufende Lichtblenden:** Weich wandernde weiße Glanzlichter im Amiga-Block-Balken mit Prozentanzeige (0% bis 100%).
 
-### 3. Bootfähige Amiga 500 Floppy Disk (`strudelforce.adf`) & Paula DMA Sound
+### 4. Erste bootfähige Amiga 500 Floppy Disk (`strudelforce.adf`) & Paula DMA Sound
 - **Echte Amiga-Floppy (880 KB OFS):** Erstellt mit `amitools.tools.xdftool` und Kickstart 1.3 Bootblock (`boot1x`) sowie `s/startup-sequence`. Bootet direkt in das Spiel auf Amiga 500, WinUAE und RetroArch PUAE.
 - **Paula Hardware DMA Audio:** ThePlayer 6.1a Replayer im beschreibbaren Datensegment (`.data`) für selbstmodifizierenden 68k-Code. Hardware-Takeover aktiviert Paula DMA (`AUD0..AUD3`) und CIA-B Timer-Timing für saubere 4-Kanal-Wiedergabe.
 - **Volume-Label `StrudelOS`:** Authentische AmigaDOS-Diskette mit CLI-Boot-Banner.
-- **Belegter Speicherplatz:** Nur ca. 280 KB Daten auf der Diskette – voller Spielgenuss innerhalb des 880 KB Limits.
+- **Belegter Speicherplatz:** Nur ca. 320 KB Daten auf der Diskette – voller Spielgenuss innerhalb des 880 KB Limits.
 
 ### 4. Vollständige Amiga State Machine & Interaktive Credits
 - **Amiga State Machine Parität:**

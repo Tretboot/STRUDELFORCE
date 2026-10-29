@@ -51,11 +51,10 @@ Vogel auf zwei Beinen (`ref/wug-test.png`): watschelt → bleibt stehen → rot 
 - [ ] **Amiga-tauglich:** max. ~8 Bobs + wenige Fill-Linien pro Frame; Effekte über Palette/Copper (Blitzen, Raster-Balken) statt vieler Sprites.
 - [ ] **PC-Zusatz:** Additive Glows, Screen-Shake, Trails (nur Renderer, Kern bleibt bit-identisch).
 
-## 5. P1 — Abspann mit komplettem Captain's Log
-- [ ] `tools/gen_embedded_credits.py` erweitern: **gesamtes** `captains_log.md` (ungekürzt, aktueller Release-Stand) als Credit-Zeilen einbetten (`src/embedded_credits.h`, derzeit 103 Zeilen, Titel noch 0.3.0). Größe ~50 KB → String-Tabelle, ggf. Zeilenumbruch bei 78 Zeichen, UTF-8→CP437/ASCII-Fallback (Umlaute!).
-- [ ] Abspann-Steuerung (ESC/SPACE/Tempo) existiert; Kapitel-Sprungmarken pro Log-Eintrag ergänzen.
-- [ ] Log vor jedem Release finalisieren; `captains_log.md` ist `export-ignore` (nur im Spiel eingebettet, nicht doppelt im Source-ZIP).
-- [ ] Log-Datei hat einige Kodierungsfehler (`ǬŸ`, `�`) aus früheren Läufen → vor dem Einbetten als UTF-8 bereinigen.
+## 5. P1 -- Abspann mit komplettem Captain's Log
+- [x] 	ools/generators/gen_embedded_credits.py erweitert: **gesamtes** captains_log.md (ungekuerzt, Stand v0.3.1) als Credit-Zeilen eingebettet (src/embedded_credits.h, 1446 Zeilen, inkl. Kapitel V Banner).
+- [x] Abspann-Steuerung mit automatischem Musik- und Subsong-Wechsel bei Start des Captain's Log (Chris Huelsbeck Software Manager Subsong 21) und visuellen Kapitel-Headern (--- [ ... ] ---).
+- [x] Echter Star Wars 3D Perspektiv-Crawl (Scanline-Trapezoid Raycasting) in src/gui_main.c implementiert (Zero-Float, kontinuierliche Verjuengung, Horizont-Fade, Drop-Shadow).
 
 ## 6. P1 — Weiteres Aufräumen
 - [ ] `tools/` weiter ordnen: Kiwi-/Handoff-Skripte (`build_*injector.py`, `build_handoff.py`, `build_kiwi_handoff.py`, `hotfix_packer.py`, `kiwi_*.py`, `github_exporter.py`) nach `tools/kiwi/` verschieben **und** deren `ROOT = dirname(dirname(__file__))` anpassen; `AGENTS.md`-Verweise nachziehen.

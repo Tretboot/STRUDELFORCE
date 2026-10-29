@@ -613,3 +613,37 @@
 - Binary-Groesse: `amiga/out/a.exe` = 76.568 Bytes.
 - Floppy-Image `strudelforce.adf` erfolgreich neu gebaut (901.120 Bytes, OFS mit `boot1x`).
 - Testsuite: MSVC `test_suite.exe` (44/44 PASS), Python `tools/selftest.py` (PASS).
+
+
+---
+
+## Logbucheintrag — 2026-10-29 (Release v0.3.1: Erste bootfähige Amiga .adf Testversion, Star Wars 3D Crawl Engine & Abspann-Logbuch)
+
+**Auftrag:** Release v0.3.1 schnüren; erste bootfähige .adf Floppy-Testversion bereitstellen; Star Wars 3D Perspektiv-Crawl mit Zero-Float Scanline-Raycasting implementieren; gesamtes Captain's Log in den Abspann mit Software Manager Subsong 21 einbinden; Projekt-Bibel & GitHub Wiki synchronisieren.
+
+### 1. Star Wars 3D Perspektiv-Crawl Engine (`gui_main.c`)
+- **Problem:** Der bisherige Crawl nutzte nur sprunghafte Integer-Skalierung (`scale = (t > 140) ? 2 : 1`), wodurch der Text ruckartig zwischen zwei Größen umsprang und keine echte Raumtiefe entstand.
+- **Lösung:** Mathematisch exakter Scanline-Trapezoid Raycaster auf einer geneigten 3D-Ebene (Zero-Float, 100% Integer/Fixed-Point):
+  - Tiefe $Z = \frac{K}{y - y_{vanish}}$ ($K = 120000$)
+  - Kontinuierliche Verjüngung der Scanline-Breite $W(y)$ zum Fluchtpunkt am Horizont.
+  - Horizont-Fadeout und 2px-Drop-Shadow für plastische Tiefenwirkung über dem Sternenfeld.
+  - Volle Interaktivität: `W`/`UP` (Verlangsamen), `S`/`DOWN` (Warp-Speed), `SPACE` (Pause), `ENTER`/`ESC` (Start).
+
+### 2. Vollständiges Captain's Log im Abspann (`src/embedded_credits.h`)
+- `tools/generators/gen_embedded_credits.py` erweitert: liest das gesamte `captains_log.md`, bricht Zeilen bei 74 Zeichen um und bettet alle 1446 Zeilen als Kapitel V ("Forschungs- & Entwicklungschronik") ein.
+- **Musik- und Subsong-Umschaltung:** Sobald der Scroll das Logbuch erreicht, schaltet die Audio-Engine nahtlos auf Chris Hülsbecks *Software Manager Subsong 21* um.
+- Mit Taste `M` / Pad `Y` kann interaktiv durch weitere Subsongs geschaltet werden.
+
+### 3. Erste bootfähige Amiga 500 Floppy-Diskette (`strudelforce.adf`)
+- **Status:** Erste offizielle Testversion für Amiga 500 (Kickstart 1.3, 512 KB Chip-RAM).
+- **Features:** 3D Wireframe-Vektorwürfel Cracktro, Turrican-2 Menü, AmigaShell Ladebildschirm, 3D Story Crawl, 50Hz Fixed-Point Physik, 4-Kanal Paula DMA Musik.
+- **Hinweis:** Bootbar und stabil auf echter Hardware / WinUAE / RetroArch, Gameplay in dieser Preview-Version als Fundament für zukünftige Level-Balancings ausgelegt.
+
+### 4. Release-Packaging & Wiki
+- `tools/make_release.py` erzeugt die Release-Pakete in `release_out/`:
+  - `strudelforce-v0.3.1-source.zip`
+  - `strudelforce-v0.3.1-windows-x64.zip`
+  - `strudelforce-v0.3.1-amiga.zip`
+  - `SHA256SUMS.txt`
+- Wiki-Architektur in `wiki/` vorbereitet mit automatisiertem Synchronizer `tools/sync_wiki.py`.
+- Alle Tests grün: 44/44 Testsuite, Selftest, Core-Sim Endless & Campaign Oracles.

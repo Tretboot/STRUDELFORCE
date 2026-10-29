@@ -14,8 +14,8 @@
 > Ein kompromissloser Retro-Action-Shooter auf Amiga-Hardware-Restriktionen (512 KB Chip-RAM, OCS/AGA Bitplanes, Copper-Listen), Chris Hülsbecks legendärer **TFMX Professional Sound-Engine**, ProTracker MOD, TidalCycles/Strudel Live-Coding und richtungsbeschatteten 2.5D-Voxeln.
 
 ### 📦 Offizieller Release-Download: [v0.3.1](https://github.com/Tretboot/STRUDELFORCE/releases/tag/v0.3.1)
-* **Windows x64 Binary-Paket:** [`strudelforce-v0.3.1-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/strudelforce-v0.3.1-windows-x64.zip)
-* **Amiga 500 Floppy Disk:** [`strudelforce.adf`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/strudelforce.adf) (880 KB Standard OFS Floppy Disk Image, bootfähig auf Amiga 500 OCS / Kickstart 1.3)
+* **Windows x64 Binary-Paket:** [`strudelforce-v0.3.1-windows-x64.zip`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/strudelforce-v0.3.1-windows-x64.zip) (enthält `strudelforce.exe` mit echtem Star Wars 3D Crawl & vollem Captain's Log im Abspann)
+* **Amiga 500 Floppy Disk:** [`strudelforce.adf`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/strudelforce.adf) (880 KB Standard OFS Floppy Disk Image, **erste bootfähige Testversion** auf echtem Amiga 500 OCS / Kickstart 1.3 / WinUAE mit 4-Kanal Paula DMA Audio)
 * **Prüfsummen:** [`SHA256SUMS.txt`](https://github.com/Tretboot/STRUDELFORCE/releases/download/v0.3.1/SHA256SUMS.txt)
 * **Sofort spielbar (Single-Binary):** Enthält die eigenständige **`strudelforce.exe`** (2.5D Voxel GUI, inklusive integrierter CLI-Optionen `-headless`, `--demo` und `--test`) sowie die originalen Turrican 2 und Apidya TFMX-Soundtracks.
 
