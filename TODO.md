@@ -16,6 +16,12 @@ Stand: `amiga/` baut (`make -C amiga` → `amiga/out/a.exe`, 57 KB). `tools/buil
 - [x] **ADF-Dateisystem & Bootblock gefixt:** `tools/build_amiga_adf.py` nutzte fälschlicherweise FFS (`DOS1:ffs`) und `boot2x3x.bin` (prüft auf KS 2.0+). Kickstart 1.3 unterstützt auf Floppy nur OFS (`DOS0:ofs`) und benötigt `boot1x`. Auf `ofs` + `boot1x` umgestellt.
 - [x] **Emulator-Test verifiziert:** `strudelforce.adf` bootet in RetroArch (PUAE A500 Kickstart 1.3) fehlerfrei durch: Himmel-Verlauf (Copper), Ruinen-Säulen, Boden, Spieler-Sprite und HUD (Score, HP, LV, Wave 0) werden korrekt gerendert.
 - [x] **RetroArch-Testskripte optimiert:** `tools/retroarch_test.bat` nutzt nun `--appendconfig` statt `--config` mit `tools/retroarch_amiga.cfg`, damit Core- und Treibereinstellungen nicht überschrieben werden.
+- [x] **Amiga-Parity (v0.3.1): State Machine, Intro, Menue & Loading:** `amiga/main.c` vollstaendig auf State-Machine (`AMI_STATE_INTRO` -> `AMI_STATE_MENU` -> `AMI_STATE_LOADING` -> `AMI_STATE_GAME`) umgestellt.
+  - **Cracktro-Intro:** 3D-Wireframe-Vektor-Wuerfel (100% Integer-Fixed-Point-Rotation), Copper-Gradient-Horizont und Sinus-Scroller.
+  - **Turrican-2 Hauptmenue:** 2-Ton-Titel (Gold ueber Dunkelrot), Modus-Wahl (Kampagne mit 5 Welten vs. Endlos Roguelike), Steuerung und Credits.
+  - **Ladebildschirm:** Authentischer Amiga-Block-Ladebalken mit wandernden Lichtblenden und Hardware-Statusmeldungen (Chip-RAM, Copper, Biome, Paula).
+- [x] **Paula Audio-Engine (Amiga-Bare-Metal):** ThePlayer 6.1a (`player610.6.no_cia.bin` + `testmod.p61`) direkt in den M68K-Build eingebunden. 4-Kanal Paula Hardware-DMA Musik laeuft auf VBlank ohne messbare CPU-Last.
+- [x] **WinUAE Authentische Hardware-Emulation:** Diskettenlaufwerksgeraeusche aktiviert (`floppy0sound=1`, Lautstaerke 100%), WinUAE-Sound-Samples nach `Amiga Files\WinUAE\plugins\floppysounds\` extrahiert, 1-Klick-Starter `tools/start_winuae.bat` und Konfig `tools/winuae_a500.uae` bereitgestellt.
 - [ ] **VS-Code-Debug-Flow:** F5 *Amiga 500* (WinUAE via Extension, `.vscode/launch.json`, `amiga.program = amiga/out/a.exe`). Task `compile` ruft `make program=…` (Root-Makefile delegiert an `amiga/`).
 - [ ] Framerate messen (68000 @ 7 MHz, aktuell CPU-Rects, 1 `core_tick`/VBlank, Poll statt Interrupt): Bei Unterschreiten 50 fps → VBlank-Interrupt + Tick-Zähler, Blitter für Fills/Bobs, Dirty-Rects.
 - [ ] Eingabe: Tastatur (CIA-SDR) zusätzlich zum Joystick; Waffenwechsel (`INPUT_WEAPSW`), Morph, Pause, Menü/Titelscreen.

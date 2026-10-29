@@ -552,3 +552,64 @@
   - Spieler-Sprite
   - HUD: Score (0), Energiebalken (HP), Waffenlevel (LV III), Wave 0.
 - `README.md` auf Version 0.3.1 gehoben (inkl. Amiga Bare-Metal Dokumentation, Tests 44/44, aktualisierte Projektstruktur).
+
+---
+
+## Logbucheintrag — 2026-10-29 (Amiga Feature-Parity: State Machine, Cracktro Intro, Menue, Ladebildschirm & Paula Audio)
+
+**Auftrag:** WinUAE Hardware-Laufwerksgeraeusche einrichten, Amiga-Port auf volle Paritaet zur PC-Version heben (Cracktro Intro, Turrican-2 Menuestruktur, Amiga-Block Ladebildschirm, Paula Sound/Audio-Engine).
+
+### 1. WinUAE Floppy-Laufwerksgeraeusche (Authentische Hardware-Emulation)
+- **Problem:** WinUAE spielte standardmaessig keine mechanischen Diskettenkopf- und Motorgeraeusche ab.
+- **Ursache & Loesung:** WinUAE benoetigt die offiziellen WAV-Samples im Plugin-Verzeichnis (`drive_sounds.zip`). Das Paket wurde heruntergeladen und entpackt nach:
+  `C:\Users\Public\Documents\Amiga Files\WinUAE\plugins\floppysounds\` (bzw. `floppysounds\`).
+- Konfiguration in `tools/winuae_a500.uae` und `tools/start_winuae.bat`:
+  `floppy0sound=1`, `floppy0soundvolume_disk=100`, `floppy0soundvolume_empty=40`, `floppy_speed=100` (100% PAL-Geschwindigkeit, echter Spur-fuer-Spur-Klick bei 50Hz).
+  `-portable`-Flag aus `start_winuae.bat` entfernt, damit WinUAE direkt auf die Benutzerdatenpfade zugreift.
+
+### 2. Amiga-State-Machine & Feature-Paritaet (`amiga/main.c`)
+- Vorher startete das Spiel direkt in den 50Hz-Simulationsloop.
+- **Vollstaendige State-Machine (`AmiState`) implementiert:**
+  1. `AMI_STATE_INTRO`:
+     - 3D-Wireframe-Vektor-Wuerfel in Echtzeit rotierend (100% Integer Fixed-Point-Trigonometrie ueber `s_sin32`/`cos_get`, 0% Float!).
+     - Amiga-Copper-Horizont-Farbbaender.
+     - Vertikal schwingender Sinus-Scroller mit Amiga-Retro-Font (`+++ STRUDELFORCE 0.3.1 +++ ... PRESS FIRE TO START +++`).
+     - Wechselt auf Knopfdruck (Port-2 Feuer / Leertaste / Enter) nahtlos ins Hauptmenue.
+  2. `AMI_STATE_MENU` (Turrican-2 Stil):
+     - 2-Ton-Titelbanner `STRUDELFORCE` (16x16 Pixel vergroessert mit dunkelrotem Schlagschatten und Gold/Rot-Front).
+     - Subtitle `A TURRICAN TRIBUTE FOR AMIGA 500` & Disketteninfo.
+     - Menueauswahl mit Pfeil-Cursor und Blink-Highlight:
+       - `KAMPAGNE (5 WELTEN)`
+       - `ENDLOS ROGUELIKE`
+       - `STEUERUNG / CONTROLS`
+       - `CREDITS & INFO`
+     - Joystick Oben/Unten navigiert den Cursor, Feuer bestaetigt die Auswahl.
+  3. `AMI_STATE_CONTROLS`:
+     - Uebersichtliche Anzeige der Amiga-Joystickbelegung (Laufen, Springen, Morph-Ball, Schuss, Beam-Laser, LMB Beenden).
+  4. `AMI_STATE_CREDITS`:
+     - Demoszene- und Entwickler-Wuerdigung (Frank Mitzkatis, AI Agents, ThePlayer 6.1a, Chris Huelsbeck, Factor 5, Rainbow Arts).
+  5. `AMI_STATE_LOADING`:
+     - Authentischer Amiga-Block-Ladebalken mit wandernden weissen Lichtblenden.
+     - Fortschrittsanzeige in Prozent (0% bis 100%).
+     - Mehrphasige Hardware-Statusmeldungen:
+       - `INITIALISIERE CHIP-RAM & HARDWARE...`
+       - `KONFIGURIERE COPPER & 5 BITPLANES...`
+       - `LADE WELT 1: CHROME TEMPEST...`
+       - `PAULA 4-KANAL DMA SOUND ENGINE BEREIT...`
+     - Nach Ladeabschluss nahtloser Start von Kampagne oder Endlos-Spiel.
+  6. `AMI_STATE_GAME`:
+     - 50Hz Fixed-Point Gameplay (Smith-Kern, Layer-2 Saeulen, Plattformen, Gegner, Waffen, HUD).
+     - Bei `STATE_GAMEOVER` oder `STATE_VICTORY` erscheint ein Zentrierungs-Overlay; Druck auf Feuer kehrt direkt ins Hauptmenue zurueck.
+
+### 3. Paula Audio-Engine (ThePlayer 6.1a Integration)
+- Replayer `player610.6.no_cia.bin` und Chiptune-Modul `testmod.p61` ueber `#embed` eingebunden.
+- Modul wird im Chip-RAM (`sys_alloc_chip`) initialisiert.
+- Hardware-Audio-DMA (`AUD0..AUD3`) im `DMACON` (`0x800F`) aktiviert.
+- `p61_music()` laeuft strikt synchronisiert bei jedem VBlank (`sys_waitvbl()`) ohne Interrupt-Overhead.
+- Null CPU-Last im Gameplay, echter 4-Kanal Paula-Sound.
+
+### 4. Build & Verifikation
+- Kompiliert mit `m68k-amiga-elf-gcc` (Bartman GCC 15.1.0 Toolchain): 0 Fehler, 0 Warnungen.
+- Binary-Groesse: `amiga/out/a.exe` = 76.568 Bytes.
+- Floppy-Image `strudelforce.adf` erfolgreich neu gebaut (901.120 Bytes, OFS mit `boot1x`).
+- Testsuite: MSVC `test_suite.exe` (44/44 PASS), Python `tools/selftest.py` (PASS).

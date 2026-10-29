@@ -4,7 +4,9 @@
 	extern "C" {
 #endif
 
+#ifndef offsetof
 #define offsetof(st, m) __builtin_offsetof(st, m)
+#endif
 
 // VSCode's IntelliSense doesn't know about 68000 registers, so suppress warnings
 #ifndef __INTELLISENSE__
@@ -46,6 +48,9 @@ void debug_unregister(const void* addr); // NULL to unregister all
 // load/save data during debugging
 unsigned int debug_load(const void* addr, const char* name); // returns size (0 if file not found)
 void debug_save(const void* addr, unsigned int size, const char* name);
+
+#define EMBED __attribute__((aligned(2))) static const unsigned char
+#define EMBED_CHIP __attribute__((section(".INCBIN.MEMF_CHIP"))) __attribute__((aligned(2))) static const unsigned char
 
 #define INCBIN(name, file) INCBIN_SECTION(name, file, ".rodata", "")
 #define INCBIN_CHIP(name, file) INCBIN_SECTION(name, file, ".INCBIN.MEMF_CHIP", "aw")

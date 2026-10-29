@@ -1,0 +1,44 @@
+use_gui=no
+kickstart_rom_file=F:\AgentHome\STRUDELFORCE_Master\Kickstart\kick34005.A500
+floppy0=F:\AgentHome\STRUDELFORCE_Master\strudelforce.adf
+
+# Authentische Amiga 500 Hardware-Laufwerksgeraeusche & 100% PAL-Speed
+floppy_speed=100
+floppy_volume=100
+floppy0sound=1
+floppy0soundvolume_disk=100
+floppy0soundvolume_empty=40
+floppy1sound=0
+floppy2sound=0
+floppy3sound=0
+
+# Speicher: 512 KB Chip-RAM + 512 KB Trapdoor Slow-RAM (Standard OCS A500)
+chipmem_size=1
+bogomem_size=2
+
+# CPU & Chipsatz: OCS 68000 @ 7.09 MHz PAL
+cpu_type=68000
+cpu_speed=real
+cpu_cycle_exact=true
+chipset=ocs
+ntsc=false
+
+# Video: Sauberes PAL-Fenster 50 Hz
+gfx_fullscreen_amiga=false
+gfx_windowed_amiga=true
+gfx_width_windowed=720
+gfx_height_windowed=576
+
+# Audio: Echte Paula-Stereo-Emulation mit Hardware-Filter
+sound_output=exact
+sound_channels=stereo
+sound_frequency=44100
+sound_stereo_separation=7
+sound_filter=emulated
+sound_filter_type=standard
+sound_volume_paula=100
+sound_volume_master=100
+
+# Input: Tastatur & Maus
+win32.start_not_captured=yes
+win32.nonotificationicon=yes

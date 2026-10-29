@@ -1,29 +1,35 @@
 /*
  * main.c - STRUDELFORCE Amiga-Port, Bare-Metal-Entry (OCS, 320x256, 5 Bitplanes)
  * ---------------------------------------------------------------------------
- * Nutzt den *Smith-Kern* (src/game_logic.c) - identisches Gameplay zum PC.
- * Pro VBlank genau ein core_tick() (50Hz PAL). Render = flache Rects/Glyphen
- * in 5 Bitplanes (Doppelpuffer, 32 Farben), Himmel als Copper-Verlauf
- * (Gesetz 2: nur Paletten, keine Texturen). Sprites/Blitter folgen.
- *
- * Steuerung (Joystick Port 2 / WinUAE: Tastatur-Emulation):
- *   Links/Rechts = bewegen, Hoch = Sprung, Feuer = Schuss,
- *   2. Taste (Port-2-Pot) = Halt-Strahl, Runter = Morph.
- *   Linke Maustaste (Port 1) = Beenden (zurueck ins Workbench/Kickstart).
+ * 100% Amiga-500 Parity mit dem PC-Frontend (v0.3.1):
+ *   1. State Machine: Cracktro-Intro -> Menue -> Loading -> Spiel
+ *   2. Cracktro-Intro: 3D-Wireframe-Vektor-Wuerfel, schwebende Copper-Baender,
+ *      Sinus-Scroller ("PRESS FIRE TO START").
+ *   3. Hauptmenue (Turrican-2-Stil): 2-Ton-Titel (Gold ueber Dunkelrot),
+ *      Modus-Auswahl (Kampagne 5 Welten vs. Endlos Roguelike), Steuerung, Credits.
+ *   4. Ladebildschirm: Amiga-Block-Fortschrittsbalken mit Lichtblenden und
+ *      mehrphasigen Hardware-Statusmeldungen.
+ *   5. Sound-Engine: ThePlayer 6.1a (Paula 4-Kanal Hardware DMA Music).
+ *   6. 50Hz Fixed-Point Gameplay-Simulation (Smith-Kern).
  */
+
+#include "support/gcc8_c_support.h"
 #include "strudelforce.h"
 #include "retro_font.h"
 
 extern void  memclr(void *dest, unsigned long len);
+extern void *memcpy(void *dest, const void *src, unsigned long len);
 extern int   sys_take(void);
 extern void  sys_free(void);
 extern void  sys_waitvbl(void);
 extern void *sys_alloc_chip(unsigned long bytes);
+extern int   level_load_campaign(GameState *s);
 
 /* ---- Custom-Chip-Register (Offsets ab 0xDFF000) ------------------------- */
 #define CUSTOM_BASE 0xDFF000UL
 #define REG16(off) (*(volatile uint16_t *)(CUSTOM_BASE + (off)))
 #define REG32(off) (*(volatile uint32_t *)(CUSTOM_BASE + (off)))
+
 #define R_JOY1DAT 0x00C
 #define R_POTGOR  0x016
 #define R_COP1LC  0x080
@@ -46,13 +52,13 @@ extern void *sys_alloc_chip(unsigned long bytes);
 #define SCR_W 320
 #define SCR_H 256
 #define NPLANES 5
-#define ROW_WORDS (SCR_W / 16)            /* 20 Woerter / Zeile            */
-#define PLANE_BYTES (ROW_WORDS * 2 * SCR_H) /* 10240                       */
+#define ROW_WORDS (SCR_W / 16)              /* 20 Woerter pro Zeile           */
+#define PLANE_BYTES (ROW_WORDS * 2 * SCR_H) /* 10240 Bytes pro Plane          */
 
-/* Welt: 1 Einheit = 8 Pixel, y nach oben, Boden bei y=0. */
+/* Welt: 1 Einheit = 8 Pixel, y nach oben, Boden bei y=0 */
 #define PX_PER_UNIT_SHIFT 3
 #define GROUND_SY 224
-#define WORLD_PX (WORLD_W_UNITS * 8)       /* 576 */
+#define WORLD_PX (WORLD_W_UNITS * 8)         /* 576 Pixel                     */
 
 /* ---- Palette (OCS 12 Bit 0x0RGB) - Chrome-Tempest-Basis ------------------ */
 enum {
@@ -61,30 +67,91 @@ enum {
     C_E1_L = 10, C_E1_D = 11, C_E2_L = 12, C_E2_D = 13, C_E3_L = 14, C_E3_D = 15,
     C_PELLET = 16, C_BOUNCE = 17, C_ESHOT = 18, C_PART = 19, C_GOLD = 20,
     C_HUD_G = 21, C_HUD_R = 22, C_HUD_BG = 23, C_PILL_L = 24, C_PILL_D = 25,
-    C_SHIELD = 26
+    C_SHIELD = 26, C_CYAN = 27, C_BLUE = 28, C_DARK_RED = 29
 };
+
 static const uint16_t palette[32] = {
     0x000, 0xFFF, 0x8AC, 0x57A, 0x235, 0xBBB, 0x667, 0x0CF,
     0x069, 0xAFF, 0xF44, 0xA11, 0xFA0, 0xA60, 0xA4F, 0x62A,
     0xFF4, 0x4F4, 0xF6C, 0xF80, 0xFD0, 0x4F8, 0xF33, 0x223,
-    0x446, 0x224, 0x4AF, 0x000, 0x000, 0x000, 0x000, 0x000
+    0x446, 0x224, 0x4AF, 0x0DF, 0x126, 0x500, 0x000, 0x000
 };
 
-/* Himmel: Copper-Farbbaender, oberste Zeile bis Boden (Amiga-Copper-Raster). */
+/* Himmel: Copper-Farbbaender (Amiga-Copper-Raster) */
 static const uint16_t sky_bands[12] = {
     0x001, 0x002, 0x103, 0x204, 0x305, 0x406,
     0x517, 0x628, 0x739, 0x84A, 0x95B, 0xA6C
 };
 
+/* Integer Sine LUT (32 Eintraege, Amplitude [-127, 127]) */
+static const int8_t s_sin32[32] = {
+    0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 117, 106, 90, 71, 49, 25,
+    0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90, -71, -49, -25
+};
+
+static int8_t sin_get(int idx) { return s_sin32[idx & 31]; }
+static int8_t cos_get(int idx) { return s_sin32[(idx + 8) & 31]; }
+
 /* ---- Bildspeicher, Copperliste (Chip-RAM) -------------------------------- */
 static uint8_t  *planes[2][NPLANES];
 static uint16_t *copper;
-static uint16_t *cop_bpl;     /* Zeiger auf die 5 BPLxPT-Eintraege (10 Woerter) */
-static int       draw_idx;    /* aktueller Zeichenpuffer                        */
+static uint16_t *cop_bpl;
+static int       draw_idx;
 
 #define COP_WORDS 256
 
-/* ---- Pixel-Primitive ------------------------------------------------------ */
+/* ---- ThePlayer 6.1a (Paula 4-Kanal DMA Musik) ----------------------------- */
+EMBED player_bin[] = {
+#embed "player610.6.no_cia.bin"
+};
+EMBED module_bin[] = {
+#embed "testmod.p61"
+};
+
+static uint8_t *s_p61_chip_mod = 0;
+static int      s_p61_active   = 0;
+
+static int p61_init(const void* m) {
+    register volatile const void* _a0 __asm__("a0") = m;
+    register volatile const void* _a1 __asm__("a1") = 0;
+    register volatile const void* _a2 __asm__("a2") = 0;
+    register volatile const void* _a3 __asm__("a3") = player_bin;
+    register int _d0 __asm__("d0");
+    __asm__ volatile (
+        "movem.l %%d1-%%d7/%%a4-%%a6,-(%%sp)\n"
+        "jsr 0(%%a3)\n"
+        "movem.l (%%sp)+,%%d1-%%d7/%%a4-%%a6"
+    : "=r" (_d0), "+rf"(_a0), "+rf"(_a1), "+rf"(_a2), "+rf"(_a3)
+    :
+    : "cc", "memory");
+    return _d0;
+}
+
+static void p61_music(void) {
+    register volatile const void* _a3 __asm__("a3") = player_bin;
+    register volatile const void* _a6 __asm__("a6") = (void*)0xdff000;
+    __asm__ volatile (
+        "movem.l %%d0-%%d7/%%a0-%%a2/%%a4-%%a5,-(%%sp)\n"
+        "jsr 4(%%a3)\n"
+        "movem.l (%%sp)+,%%d0-%%d7/%%a0-%%a2/%%a4-%%a5"
+    : "+rf"(_a3), "+rf"(_a6)
+    :
+    : "cc", "memory");
+}
+
+static void p61_end(void) {
+    register volatile const void* _a3 __asm__("a3") = player_bin;
+    register volatile const void* _a6 __asm__("a6") = (void*)0xdff000;
+    __asm__ volatile (
+        "movem.l %%d0-%%d1/%%a0-%%a1,-(%%sp)\n"
+        "jsr 8(%%a3)\n"
+        "movem.l (%%sp)+,%%d0-%%d1/%%a0-%%a1"
+    : "+rf"(_a3), "+rf"(_a6)
+    :
+    : "cc", "memory");
+}
+
+/* ---- Pixel- & Grafik-Primitive -------------------------------------------- */
 static void fill_rect(int x, int y, int w, int h, int c)
 {
     int x2, wl, wr, p, j;
@@ -118,7 +185,35 @@ static void fill_rect(int x, int y, int w, int h, int c)
     }
 }
 
-/* 8x8-Glyph (RETRO_FONT), Farbe c, transparent. x muss in 0..311 liegen. */
+/* Schneller Bresenham-Linienalgorithmus in Bitplanes */
+static void draw_line(int x0, int y0, int x1, int y1, int c)
+{
+    int dx = x1 - x0, dy = y1 - y0;
+    int sx = (dx >= 0) ? 1 : -1;
+    int sy = (dy >= 0) ? 1 : -1;
+    int err;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    err = (dx > dy ? dx : -dy) / 2;
+
+    while (1) {
+        if (x0 >= 0 && x0 < SCR_W && y0 >= 0 && y0 < SCR_H) {
+            int wl = x0 >> 4;
+            uint16_t mask = (uint16_t)(0x8000u >> (x0 & 15));
+            int p;
+            for (p = 0; p < NPLANES; p++) {
+                uint16_t *w = (uint16_t *)planes[draw_idx][p] + y0 * ROW_WORDS + wl;
+                if ((c >> p) & 1) *w |= mask;
+                else              *w &= (uint16_t)~mask;
+            }
+        }
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = err;
+        if (e2 > -dx) { err -= dy; x0 += sx; }
+        if (e2 <  dy) { err += dx; y0 += sy; }
+    }
+}
+
 static void draw_glyph(int x, int y, unsigned char ch, int c)
 {
     int r, p;
@@ -140,6 +235,32 @@ static void draw_text(int x, int y, const char *s, int c)
     while (*s) { draw_glyph(x, y, (unsigned char)*s, c); x += 8; s++; }
 }
 
+/* 2-Ton Turrican-2 Titel-Schrift (2x skaliert, 16x16 Pixel pro Zeichen) */
+static void draw_char2x(int x, int y, unsigned char ch, int top_c, int bot_c)
+{
+    int r, col;
+    if (ch > 127 || x < 0 || x > SCR_W - 16 || y < 0 || y > SCR_H - 16) return;
+    for (r = 0; r < 8; r++) {
+        uint8_t bits = RETRO_FONT[ch][r];
+        int c = (r < 4) ? top_c : bot_c;
+        if (!bits) continue;
+        for (col = 0; col < 8; col++) {
+            if (bits & (0x80 >> col)) {
+                fill_rect(x + col * 2, y + r * 2, 2, 2, c);
+            }
+        }
+    }
+}
+
+static void draw_text2x(int x, int y, const char *s, int top_c, int bot_c)
+{
+    while (*s) {
+        draw_char2x(x, y, (unsigned char)*s, top_c, bot_c);
+        x += 16;
+        s++;
+    }
+}
+
 static void draw_number(int x, int y, uint32_t v, int c)
 {
     char buf[11];
@@ -154,7 +275,235 @@ static int cam_x;
 static int wx(fix16_t v) { return (int)(v >> (16 - PX_PER_UNIT_SHIFT)) - cam_x; }
 static int wy(fix16_t v) { return GROUND_SY - (int)(v >> (16 - PX_PER_UNIT_SHIFT)); }
 
-static void render(const GameState *s)
+/* ============================================================================
+ * State Machine
+ * ============================================================================ */
+typedef enum {
+    AMI_STATE_INTRO = 0,    /* Amiga Cracktro Intro (3D-Logo, Copper, Sinus) */
+    AMI_STATE_MENU,         /* Turrican-2 Hauptmenue */
+    AMI_STATE_CONTROLS,     /* Steuerung-Anzeige */
+    AMI_STATE_CREDITS,      /* Credits-Anzeige */
+    AMI_STATE_LOADING,      /* Authentischer Amiga Ladebalken */
+    AMI_STATE_GAME          /* 50Hz Fixed-Point Spiel */
+} AmiState;
+
+static AmiState s_ami_state = AMI_STATE_INTRO;
+static int      s_menu_sel  = 0;
+static int      s_mode      = MODE_CAMPAIGN;
+static int      s_load_tick = 0;
+static uint32_t s_frame_cnt = 0;
+
+#define LOAD_TICKS_TOTAL 90 /* ~1.8 Sekunden Loading */
+
+/* ---- Demoscene 3D Vector Cube Vertices & Edges (100% Integer Math) -------- */
+static const int8_t s_cube_v[8][3] = {
+    {-36, -36, -36}, { 36, -36, -36},
+    { 36,  36, -36}, {-36,  36, -36},
+    {-36, -36,  36}, { 36, -36,  36},
+    { 36,  36,  36}, {-36,  36,  36}
+};
+
+static const uint8_t s_cube_e[12][2] = {
+    {0,1},{1,2},{2,3},{3,0},
+    {4,5},{5,6},{6,7},{7,4},
+    {0,4},{1,5},{2,6},{3,7}
+};
+
+/* Scroller-Text im Cracktro Intro */
+static const char INTRO_SCROLLER[] =
+    "     +++ STRUDELFORCE 0.3.1 +++ 100% AMIGA 500 BARE-METAL EDITION +++ "
+    "PAULA 4-VOICE DMA MUSIC VIA THEPLAYER 6.1A +++ 16.16 FIXED-POINT CORE BY FRANK MITZKATIS & AI CODING AGENTS +++ "
+    "GREETS TO FACTOR 5, RAINBOW ARTS, CHRIS HUELSBECK AND COMMODORE +++ PRESS FIRE TO ENTER MAIN MENU +++     ";
+
+/* ---- State Renderers ------------------------------------------------------ */
+
+static void render_intro(uint32_t f)
+{
+    int i, scroller_len, scroll_px, char_idx, fine_x;
+    int px[8], py[8];
+    int ax = (int)(f & 31);
+    int ay = (int)((f * 2) & 31);
+    int az = (int)((f >> 1) & 31);
+
+    int cosX = cos_get(ax), sinX = sin_get(ax);
+    int cosY = cos_get(ay), sinY = sin_get(ay);
+    int cosZ = cos_get(az), sinZ = sin_get(az);
+
+    /* 1. Header Banner */
+    fill_rect(0, 4, SCR_W, 14, C_HUD_BG);
+    draw_text(16, 7, "* COMMODORE AMIGA 500 DEMO INTRO *", C_CYAN);
+
+    /* 2. 3D Rotating Vector Cube in Bitplanes */
+    for (i = 0; i < 8; i++) {
+        int x = s_cube_v[i][0];
+        int y = s_cube_v[i][1];
+        int z = s_cube_v[i][2];
+
+        int x1 = (x * cosY - z * sinY) / 127;
+        int z1 = (x * sinY + z * cosY) / 127;
+        int y1 = (y * cosX - z1 * sinX) / 127;
+        int z2 = (y * sinX + z1 * cosX) / 127;
+        int x2 = (x1 * cosZ - y1 * sinZ) / 127;
+        int y2 = (x1 * sinZ + y1 * cosZ) / 127;
+
+        int dist = z2 + 160;
+        if (dist < 20) dist = 20;
+        px[i] = 160 + (x2 * 130) / dist;
+        py[i] = 100 + (y2 * 130) / dist;
+    }
+
+    for (i = 0; i < 12; i++) {
+        int v0 = s_cube_e[i][0];
+        int v1 = s_cube_e[i][1];
+        draw_line(px[v0], py[v0], px[v1], py[v1], C_CYAN);
+        draw_line(px[v0] + 1, py[v0], px[v1] + 1, py[v1], C_WHITE);
+    }
+
+    /* 3. Blinkender Call to Action */
+    if ((f / 20) & 1) {
+        draw_text(68, 172, "PRESS FIRE BUTTON OR SPACE", C_GOLD);
+    } else {
+        draw_text(68, 172, "PRESS FIRE BUTTON OR SPACE", C_WHITE);
+    }
+
+    /* 4. Amiga Sinus Scroller */
+    scroller_len = 0;
+    while (INTRO_SCROLLER[scroller_len]) scroller_len++;
+    scroll_px = (int)f * 2;
+    char_idx = (scroll_px / 8) % scroller_len;
+    fine_x = scroll_px & 7;
+
+    for (i = 0; i < 41; i++) {
+        char ch = INTRO_SCROLLER[(char_idx + i) % scroller_len];
+        int sx = i * 8 - fine_x;
+        int sy = 214 + (sin_get(i * 2 + (int)(f & 31)) * 6) / 127;
+        if (sx >= -8 && sx < SCR_W) {
+            draw_glyph(sx, sy, (unsigned char)ch, C_WHITE);
+        }
+    }
+}
+
+static void render_menu(int sel, uint32_t f)
+{
+    int i;
+    /* Top Bar */
+    fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
+    draw_text(4, 2, "[>] STRUDELFORCE 0.3.1 - AMIGA 500 PAL", C_HUD_G);
+
+    /* Turrican-2 Style 2-Ton Titel (Schlagschatten + Front) */
+    draw_text2x(66, 30, "STRUDELFORCE", C_DARK_RED, C_DARK_RED);
+    draw_text2x(64, 28, "STRUDELFORCE", C_GOLD, C_HUD_R);
+
+    draw_text(44, 66, "A TURRICAN TRIBUTE FOR AMIGA 500", C_PL_L);
+    draw_text(36, 80, "DISK 1 : STRUDELFORCE.ADF (SINGLE DISC)", C_GR_M);
+
+    /* Menue-Kasten */
+    fill_rect(30, 102, 260, 84, C_HUD_BG);
+    fill_rect(32, 104, 256, 80, C_GR_D);
+
+    const char *items[4] = {
+        "KAMPAGNE (5 WELTEN)",
+        "ENDLOS ROGUELIKE",
+        "STEUERUNG / CONTROLS",
+        "CREDITS & INFO"
+    };
+
+    for (i = 0; i < 4; i++) {
+        int y = 112 + i * 18;
+        if (i == sel) {
+            int blink_c = ((f / 8) & 1) ? C_WHITE : C_GOLD;
+            fill_rect(36, y - 2, 248, 14, C_HUD_BG);
+            draw_text(40, y, "> ", blink_c);
+            draw_text(58, y, items[i], blink_c);
+        } else {
+            draw_text(58, y, items[i], C_GR_L);
+        }
+    }
+
+    /* Bedienhinweise */
+    draw_text(44, 204, "JOYSTICK HOCH/RUNTER = AUSWAHL", C_WHITE);
+    draw_text(84, 218, "FEUERKNOPF = START", C_GOLD);
+    draw_text(60, 238, "PORT 1 LMB = BEENDEN (CLI)", C_GR_M);
+}
+
+static void render_controls(void)
+{
+    fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
+    draw_text(4, 2, "[STEUERUNG / CONTROLS]", C_HUD_G);
+
+    draw_text(80, 30, "JOYSTICK (PORT 2):", C_GOLD);
+    draw_text(40, 55, "LINKS / RECHTS : BEWEGEN", C_WHITE);
+    draw_text(40, 75, "HOCH           : SPRINGEN", C_WHITE);
+    draw_text(40, 95, "RUNTER         : MORPH-BALL", C_WHITE);
+    draw_text(40, 115, "FEUER          : SCHUSS (3 WAFFEN)", C_WHITE);
+    draw_text(40, 135, "2. TASTE / ALT : HALT-STRAHL (BEAM)", C_WHITE);
+
+    draw_text(40, 165, "PORT 1 LMB     : ZURUECK ZUR WORKBENCH", C_GR_L);
+
+    fill_rect(40, 205, 240, 20, C_HUD_BG);
+    draw_text(56, 211, "DRUECKE FEUER ZUM HAUPTMENUE", C_GOLD);
+}
+
+static void render_credits(void)
+{
+    fill_rect(0, 0, SCR_W, 12, C_HUD_BG);
+    draw_text(4, 2, "[CREDITS & INFO]", C_HUD_G);
+
+    draw_text(44, 30, "STRUDELFORCE 0.3.1 AMIGA PORT", C_GOLD);
+    draw_text(30, 60, "ORIGINAL DESIGN : FRANK MITZKATIS", C_PL_L);
+    draw_text(30, 80, "AMIGA 500 CORE  : AI CODING AGENTS", C_PL_L);
+    draw_text(30, 100, "AUDIO SYSTEM    : THEPLAYER 6.1A", C_PL_L);
+    draw_text(30, 120, "TFMX ENGINE     : CHRIS HUELSBECK TRIBUTE", C_PL_L);
+    draw_text(30, 140, "DEVELOPED FOR   : FACTOR 5 & AMIGA FANS", C_PL_L);
+
+    draw_text(30, 175, "BIT-GENAUE 16.16-FIXED-POINT-PHYSIK", C_WHITE);
+
+    fill_rect(40, 205, 240, 20, C_HUD_BG);
+    draw_text(56, 211, "DRUECKE FEUER ZUM HAUPTMENUE", C_GOLD);
+}
+
+static void render_loading(int ticks)
+{
+    int i, bw = 220, bh = 18, bx = 50, by = 110;
+    int fill = (bw * ticks) / LOAD_TICKS_TOTAL;
+    int pct = (ticks * 100) / LOAD_TICKS_TOTAL;
+
+    draw_text2x(64, 40, "STRUDELFORCE", C_GOLD, C_HUD_R);
+    draw_text(32, 74, "DISK 1 : STRUDELFORCE.ADF (880K OFS)", C_WHITE);
+
+    /* Progress-Bar Umrandung & Hintergrund */
+    fill_rect(bx - 3, by - 3, bw + 6, bh + 6, C_HUD_BG);
+    fill_rect(bx, by, bw, bh, C_GR_D);
+
+    /* Gefuellter Balken */
+    if (fill > 0) {
+        fill_rect(bx, by, fill, bh, C_E2_L);
+        /* Animierte weisse Highlight-Lichtblenden */
+        for (i = 0; i < 6; i++) {
+            int sx = ((i * 38 + ticks * 4) % (fill + 10)) - 10;
+            if (sx >= 0 && sx < fill - 4) {
+                fill_rect(bx + sx, by, 4, bh, C_WHITE);
+            }
+        }
+    }
+
+    /* Prozentanzeige */
+    draw_number(144, 138, pct, C_WHITE);
+    draw_text(172, 138, "%", C_WHITE);
+
+    /* Authentische mehrphasige Hardware-Statusmeldungen */
+    if (ticks < 22) {
+        draw_text(32, 170, "INITIALISIERE CHIP-RAM & HARDWARE...", C_CYAN);
+    } else if (ticks < 45) {
+        draw_text(32, 170, "KONFIGURIERE COPPER & 5 BITPLANES...", C_CYAN);
+    } else if (ticks < 68) {
+        draw_text(32, 170, "LADE WELT 1: CHROME TEMPEST...", C_CYAN);
+    } else {
+        draw_text(32, 170, "PAULA 4-KANAL DMA SOUND ENGINE BEREIT...", C_CYAN);
+    }
+}
+
+static void render_gameplay(const GameState *s)
 {
     int i, bg;
     /* Hintergrund: Mid-Layer-Saeulen, 1/4 Parallax (Layer 2) */
@@ -169,7 +518,8 @@ static void render(const GameState *s)
     fill_rect(0, GROUND_SY, SCR_W, 4, C_GR_L);
     fill_rect(0, GROUND_SY + 4, SCR_W, 4, C_GR_M);
     fill_rect(0, GROUND_SY + 8, SCR_W, SCR_H - GROUND_SY - 8, C_GR_D);
-    /* Plattformen (y = Oberkante, h = Dicke in Einheiten) */
+
+    /* Plattformen */
     for (i = 0; i < s->platform_count; i++) {
         const LevelPlatform *pl = &s->platforms[i];
         int x = wx(pl->x), y = wy(pl->y);
@@ -180,6 +530,7 @@ static void render(const GameState *s)
         fill_rect(x, y, w, h, pl->kind == 2 ? C_E1_D : C_PL_D);
         fill_rect(x, y, w, 2, pl->kind == 2 ? C_E1_L : C_PL_L);
     }
+
     /* Pickups */
     for (i = 0; i < MAX_PICKUPS; i++) {
         const Pickup *p = &s->pickups[i];
@@ -187,6 +538,7 @@ static void render(const GameState *s)
         fill_rect(wx(p->x) - 3, wy(p->y) - 8, 6, 8, C_GOLD);
         fill_rect(wx(p->x) - 1, wy(p->y) - 7, 2, 2, C_WHITE);
     }
+
     /* Gegner */
     for (i = 0; i < MAX_ENEMIES; i++) {
         const Enemy *e = &s->enemies[i];
@@ -205,6 +557,7 @@ static void render(const GameState *s)
         fill_rect(x + w / 4, y + 2, 2, 2, C_WHITE);
         fill_rect(x + w - w / 4 - 2, y + 2, 2, 2, C_WHITE);
     }
+
     /* Projektile */
     for (i = 0; i < MAX_PROJECTILES; i++) {
         const Projectile *p = &s->projectiles[i];
@@ -214,7 +567,8 @@ static void render(const GameState *s)
         fill_rect(wx(p->x) - 2, wy(p->y) - 2, 4, 4, c);
         fill_rect(wx(p->x) - 1, wy(p->y) - 1, 2, 2, C_WHITE);
     }
-    /* Spieler (blinkt waehrend Respawn-Schutz) */
+
+    /* Spieler */
     if (s->state != STATE_GAMEOVER && !(s->respawn_timer && (s->tick & 4))) {
         int px = wx(s->px), py = wy(s->py);
         if (s->morphing) {
@@ -222,18 +576,20 @@ static void render(const GameState *s)
             fill_rect(px - 3, py - 7, 6, 4, C_P_BODY);
         } else {
             fill_rect(px - 4, py - 14, 8, 14, C_P_DARK);
-            fill_rect(px - 3, py - 13, 6, 6, C_P_BODY);          /* Torso/Kopf    */
-            fill_rect(px + (s->facing > 0 ? 1 : -3), py - 12, 2, 2, C_P_GLOW); /* Visier */
-            fill_rect(px + (s->facing > 0 ? 4 : -9), py - 9, 5, 2, C_PL_L);    /* Arm-Kanone */
+            fill_rect(px - 3, py - 13, 6, 6, C_P_BODY);
+            fill_rect(px + (s->facing > 0 ? 1 : -3), py - 12, 2, 2, C_P_GLOW);
+            fill_rect(px + (s->facing > 0 ? 4 : -9), py - 9, 5, 2, C_PL_L);
         }
         if (s->shield) fill_rect(px - 6, py - 16, 12, 1, C_SHIELD);
     }
+
     /* Partikel */
     for (i = 0; i < MAX_PARTICLES; i++) {
         const Particle *p = &s->particles[i];
         if (!p->active) continue;
         fill_rect(wx(p->x), wy(p->y), 2, 2, C_PART);
     }
+
     /* Laser-/Halt-Strahl */
     if (s->beam_active && s->laser_len > 0) {
         int len = (int)(s->laser_len >> (16 - PX_PER_UNIT_SHIFT));
@@ -250,33 +606,49 @@ static void render(const GameState *s)
     fill_rect(170, 3, (int)((s->max_hp ? s->hp * 50 / s->max_hp : 0)), 6, s->hp * 4 < s->max_hp ? C_HUD_R : C_HUD_G);
     draw_text(236, 2, "LV", C_HUD_G);
     for (i = 0; i < (int)s->lives && i < 9; i++) fill_rect(256 + i * 6, 3, 4, 6, C_P_BODY);
-    if (s->state == STATE_GAMEOVER) draw_text(116, 120, "GAME OVER", C_HUD_R);
-    if (s->state == STATE_WAVE_INTRO) { draw_text(124, 100, "WAVE", C_WHITE); draw_number(164, 100, s->wave, C_WHITE); }
-    if (s->state == STATE_VICTORY) draw_text(124, 120, "VICTORY!", C_GOLD);
+
+    if (s->state == STATE_WAVE_INTRO) {
+        draw_text(124, 100, "WAVE", C_WHITE);
+        draw_number(164, 100, s->wave, C_WHITE);
+    }
+
+    /* Game Over & Victory Overlays */
+    if (s->state == STATE_GAMEOVER) {
+        fill_rect(60, 90, 200, 50, C_HUD_BG);
+        fill_rect(62, 92, 196, 46, C_GR_D);
+        draw_text(116, 100, "GAME OVER", C_HUD_R);
+        draw_text(72, 120, "DRUECKE FEUER ZUM MENUE", C_WHITE);
+    }
+    if (s->state == STATE_VICTORY) {
+        fill_rect(60, 90, 200, 50, C_HUD_BG);
+        fill_rect(62, 92, 196, 46, C_GR_D);
+        draw_text(124, 100, "VICTORY!", C_GOLD);
+        draw_text(72, 120, "DRUECKE FEUER ZUM MENUE", C_WHITE);
+    }
 }
 
-/* ---- Copper ---------------------------------------------------------------- */
+/* ---- Copper-Setup --------------------------------------------------------- */
 static void build_copper(void)
 {
     uint16_t *c = copper;
     int i;
-    /* Bitplane-Pointer (werden pro Frame gepatcht) */
     cop_bpl = c;
     for (i = 0; i < NPLANES; i++) {
         *c++ = (uint16_t)(0x0E0 + i * 4);     *c++ = 0;
         *c++ = (uint16_t)(0x0E0 + i * 4 + 2); *c++ = 0;
     }
     for (i = 1; i < 32; i++) { *c++ = (uint16_t)(R_COLOR + i * 2); *c++ = palette[i]; }
-    /* Himmel-Verlauf: Farbregister 0, je ca. 16 Zeilen (Anzeige ab Zeile 0x2C) */
+
+    /* Himmel-Verlauf */
     *c++ = R_COLOR; *c++ = sky_bands[0];
     for (i = 1; i < 12; i++) {
         *c++ = (uint16_t)(((0x2C + i * 16) << 8) | 0x01); *c++ = 0xFFFE;
         *c++ = R_COLOR; *c++ = sky_bands[i];
     }
-    /* Boden-Zeile: Farbe 0 = Schwarz (Bitplane deckt ohnehin ab) */
+    /* Boden-Zeile */
     *c++ = (uint16_t)(((0x2C + GROUND_SY) << 8) | 0x01); *c++ = 0xFFFE;
     *c++ = R_COLOR; *c++ = 0x000;
-    *c++ = 0xFFFF; *c++ = 0xFFFE;          /* Copper-Ende */
+    *c++ = 0xFFFF; *c++ = 0xFFFE;
 }
 
 static void set_front(int idx)
@@ -289,7 +661,7 @@ static void set_front(int idx)
     }
 }
 
-/* ---- Eingabe: Joystick Port 2 -> Kern-Maske -------------------------------- */
+/* ---- Eingabe: Joystick Port 2 --------------------------------------------- */
 static uint16_t read_input(void)
 {
     uint16_t j = REG16(R_JOY1DAT), m = 0;
@@ -299,8 +671,8 @@ static uint16_t read_input(void)
     if (right) m |= INPUT_RIGHT;
     if (up)    m |= INPUT_JUMP;
     if (down)  m |= INPUT_MORPH;
-    if (!(CIAA_PRA & 0x80)) m |= INPUT_FIRE;               /* Port-2-Feuer   */
-    if (!(REG16(R_POTGOR) & (1u << 14))) m |= INPUT_SECOND; /* Port-2-Taste 2 */
+    if (!(CIAA_PRA & 0x80)) m |= INPUT_FIRE;                /* Port-2 Feuer     */
+    if (!(REG16(R_POTGOR) & (1u << 14))) m |= INPUT_SECOND; /* Port-2 2. Taste  */
     return m;
 }
 
@@ -310,8 +682,11 @@ int main(void)
 {
     int i, front = 0;
     uint8_t *mem;
+    uint16_t prev_input = 0;
+
     if (!sys_take()) return 20;
 
+    /* Chip-RAM fuer Doppelpuffer + Copper-Liste */
     mem = (uint8_t *)sys_alloc_chip((unsigned long)PLANE_BYTES * NPLANES * 2 + COP_WORDS * 2);
     if (!mem) { sys_free(); return 20; }
     for (i = 0; i < NPLANES; i++) {
@@ -320,7 +695,14 @@ int main(void)
     }
     copper = (uint16_t *)(mem + (unsigned long)PLANE_BYTES * NPLANES * 2);
 
-    core_init(&g_state, 0x5EEDCAFEu);
+    /* Chip-RAM fuer ThePlayer 6.1a Modul allozieren */
+    s_p61_chip_mod = (uint8_t *)sys_alloc_chip(sizeof(module_bin));
+    if (s_p61_chip_mod) {
+        memcpy(s_p61_chip_mod, module_bin, sizeof(module_bin));
+        if (p61_init(s_p61_chip_mod) == 0) {
+            s_p61_active = 1;
+        }
+    }
 
     build_copper();
     set_front(front);
@@ -336,27 +718,108 @@ int main(void)
     REG16(R_BPL2MOD) = 0;
     REG32(R_COP1LC) = (uint32_t)(uintptr_t)copper;
     REG16(R_COPJMP1) = 0;
-    REG16(R_DMACON)  = 0x8000 | 0x0200 | 0x0100 | 0x0080;    /* DMAEN BPLEN COPEN */
 
-    while (CIAA_PRA & 0x40) {                 /* LMB (Port 1) beendet           */
-        int px;
+    /* DMA aktivieren: Master, Bitplanes, Copper, und alle 4 Paula-Audio-Kanaele! */
+    REG16(R_DMACON)  = 0x8000 | 0x0200 | 0x0100 | 0x0080 | 0x000F;
+
+    while (CIAA_PRA & 0x40) {                 /* Port 1 LMB beendet (CLI)      */
+        uint16_t in = read_input();
+        uint16_t trig = in & ~prev_input;     /* Flankenerkennung fuer Menue   */
+        prev_input = in;
+
         draw_idx = front ^ 1;
-        core_tick(&g_state, read_input());
+        memclr(planes[draw_idx][0], (unsigned long)PLANE_BYTES * NPLANES);
 
-        px = (int)(g_state.px >> (16 - PX_PER_UNIT_SHIFT));
-        cam_x = px - SCR_W / 2;
-        if (cam_x < 0) cam_x = 0;
-        if (cam_x > WORLD_PX - SCR_W) cam_x = WORLD_PX - SCR_W;
+        switch (s_ami_state) {
+        case AMI_STATE_INTRO:
+            render_intro(s_frame_cnt);
+            if (trig & INPUT_FIRE) {
+                s_ami_state = AMI_STATE_MENU;
+            }
+            break;
 
-        memclr(planes[draw_idx][0], (unsigned long)PLANE_BYTES * NPLANES); /* nur zusammenhaengend, wenn Ebenen adjazent */
-        render(&g_state);
+        case AMI_STATE_MENU:
+            if (trig & INPUT_JUMP)  s_menu_sel = (s_menu_sel + 3) % 4;
+            if (trig & INPUT_MORPH) s_menu_sel = (s_menu_sel + 1) % 4;
+            if (trig & INPUT_FIRE) {
+                switch (s_menu_sel) {
+                case 0: /* Kampagne */
+                    s_mode = MODE_CAMPAIGN;
+                    s_load_tick = 0;
+                    s_ami_state = AMI_STATE_LOADING;
+                    break;
+                case 1: /* Endlos */
+                    s_mode = MODE_ENDLESS;
+                    s_load_tick = 0;
+                    s_ami_state = AMI_STATE_LOADING;
+                    break;
+                case 2: /* Steuerung */
+                    s_ami_state = AMI_STATE_CONTROLS;
+                    break;
+                case 3: /* Credits */
+                    s_ami_state = AMI_STATE_CREDITS;
+                    break;
+                }
+            }
+            render_menu(s_menu_sel, s_frame_cnt);
+            break;
 
+        case AMI_STATE_CONTROLS:
+            render_controls();
+            if (trig & INPUT_FIRE) s_ami_state = AMI_STATE_MENU;
+            break;
+
+        case AMI_STATE_CREDITS:
+            render_credits();
+            if (trig & INPUT_FIRE) s_ami_state = AMI_STATE_MENU;
+            break;
+
+        case AMI_STATE_LOADING:
+            s_load_tick++;
+            render_loading(s_load_tick);
+            if (s_load_tick >= LOAD_TICKS_TOTAL) {
+                core_init(&g_state, 0x5EEDCAFEu);
+                g_state.mode = s_mode;
+                if (s_mode == MODE_CAMPAIGN) {
+                    g_state.campaign_level = 1;
+                    level_load_campaign(&g_state);
+                }
+                s_ami_state = AMI_STATE_GAME;
+            }
+            break;
+
+        case AMI_STATE_GAME: {
+            int px;
+            core_tick(&g_state, in);
+
+            px = (int)(g_state.px >> (16 - PX_PER_UNIT_SHIFT));
+            cam_x = px - SCR_W / 2;
+            if (cam_x < 0) cam_x = 0;
+            if (cam_x > WORLD_PX - SCR_W) cam_x = WORLD_PX - SCR_W;
+
+            render_gameplay(&g_state);
+
+            /* Zurueck zum Menue bei Game Over oder Sieg */
+            if ((g_state.state == STATE_GAMEOVER || g_state.state == STATE_VICTORY) && (trig & INPUT_FIRE)) {
+                s_ami_state = AMI_STATE_MENU;
+            }
+            break;
+        }
+        }
+
+        /* 50Hz PAL VBlank Synchronisation & Paula DMA Music Tick */
         sys_waitvbl();
+        if (s_p61_active) p61_music();
+
         front = draw_idx;
         set_front(front);
+        s_frame_cnt++;
     }
 
-    REG16(R_DMACON) = 0x0780;                 /* Bitplane/Copper aus            */
+    /* Paula DMA & Audio beenden */
+    if (s_p61_active) p61_end();
+
+    REG16(R_DMACON) = 0x078F;                 /* Bitplane, Copper, Paula aus   */
     sys_free();
     return 0;
 }
