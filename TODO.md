@@ -1,60 +1,77 @@
-# STRUDELFORCE — TODO.md (KIWI-Handoff: Priorisierte Arbeitspakete)
+# STRUDELFORCE — TODO.md (Stand 2026-10-29, nach Aufräum-Runde)
 
-> Stand: 2026-10-28 — Release **v0.1** (Versionskorrektur: war intern "v1.1", jetzt 0.1)
-> Legende: `[ ]` offen · `[~]` aktiv · `[x]` erledigt
-> Historie der Smith-Phase (Iteration 1–4): `docs/todo_smith.md` (nicht im Handoff-ZIP).
-> Bindende Architektur-Grundlagen & die 3 Eisernen Gesetze: `AGENTS.md`.
+> Legende: `[ ]` offen · `[~]` begonnen · `[x]` erledigt. Gesetze & Architektur: `AGENTS.md`, `PROJECT_BIBLE.md`.
+> Historie: `captains_log.md`, `docs/todo_smith.md`. Handoff-/Kiwi-Altlasten: `docs/kiwi/`, `tools/kiwi/`.
 
-## P0 — LEVEL-DESIGN OVERHAUL (Höchste Priorität für die KIWI-Phase)
-- [ ] **Das aktuelle Level-Gerüst ist UNBRAUCHBAR.** Es erlaubt derzeit nur rudimentäres Rechts/Links-Movement und hat keine echte Spielstruktur.
-- [ ] Level-Design **von Grund auf neu bauen**: echte Kollisionen, Plattformen, Vertikalität.
-- [ ] Ziel: ein echtes, spielbares Fundament — **erst darauf** folgt das Balancing. (Die aktuelle 1-Hit-Grunt-/15-HP-Tank-Balance bleibt nur als Test-Baseline, wird final nicht fixiert, bis das Level-Fundament steht.)
-- [ ] Im Rahmen des Neuaufbaus: handgebaute Hommage-Levels an Klassiker (Turrican, Giana Sisters, Super Mario) **und** ein prozeduraler Roguelike-Modus, der Level-Bausteine zufällig, aber logisch zusammensetzt (deterministischer Seed-RNG nach AGENTS.md).
-- [ ] C-Datenstrukturen (Arrays/Structs) für Level/Kollision/Vertikalität vorbereiten — statisch vorallokiert, 16.16-Fixed-Point, null malloc.
-- [~] Fundament v0.1 (Bestand, darauf aufbauen): Modus-Auswahl (Kampagne 5×3 Wellen mit festen Biomen vs. Endlos-Roguelike), `MODE_*` + `STATE_LEVEL_CLEAR`/`STATE_VICTORY` im Kern, `core_campaign_biome()`, Oracle-Spiegelung (`verify_core_sim.py --campaign`), Biome-Paletten im GUI-Render.
+## 0. Projekt-Konventionen (neu)
+- **Temporäres gehört nach `tmp/`** (gitignored): Frame-Dumps (`strudelforce.exe --dump` schreibt jetzt nach `tmp/dump/`), `.obj` (`build_msvc.bat` → `tmp/obj/`), Scratch. Nie im Root.
+- **Referenzbilder** (Turrican-Screens, `wug-test.png`) liegen in `ref/` (nur lokal, gitignored).
+- **Release = `python tools/make_release.py`**: Source-ZIP per `git archive` (Pfade mit `export-ignore` in `.gitattributes` bleiben draußen: Handoff-Tools, Kiwi-Doku, Testdaten, Audio-Referenzen, Captain's Log), Windows-ZIP, Amiga-ZIP, `SHA256SUMS.txt`. **Nie** `TFMX Professional/`, `MOD/`, `Kickstart/` mitliefern.
+- `tools/gen_sources.py` ist **veraltet** — nicht ausführen (überschreibt Shim-Header, bricht ab). Zu bereinigen (siehe 6.).
+- CI: eine Datei `.github/workflows/build.yml` (windows, linux, amiga, release bei Tag `v*`).
 
-## P0 — TURRICAN-2 VISUAL UPGRADE: Level-Geometrie + UI (Anweisung Captain, 2026-10-28)
-- [x] **Erster Fix (v0.1a, Renderer-seit, Kern bleibt bit-identisch):**
-  - Pro Biome **eigene Untergrund-Terrassen** (24px-Blöcke, deterministischer `world_hash`, Strata-Linien): Chrome = weite Stufen, Great Bath = flache Wellen, Hive = hohe Rohrblöcke, Void = tiefe Kerben, Furnace = Zacken.
-  - Pro Biome **eigene Hintergrund-Silhouetten** (ersetzt die einheitlichen Ruinen-Säulen): Antennen-Türme / Kuppeln / Fabrikblöcke mit Schornsteinen / Monolithe mit Kristallspitzen / Ofentürme mit flickernden Glut-Kronen (1/4 Parallax).
-  - **Vordergrund-Rohre** (Layer 0, 1.5x Scroll, Turrican-2-Signatur): pro Slot eigene Höhe/Breite, Flansche, Naht, Bohrungen, Biome-Farbton.
-  - **HUD-Redesign v1:** drei saubere Bevel-Panels (links: LIVES/HP/Schild mit segmentierten Bars + HP-Farbzustand & Blinken <25%; mitte: großer SCORE + KILLS; rechts: KAMPAGNE/ENDLOS-Zeile, Biome, Waffe, Truhe) — die alten Steuerungshinweis-Zeilen im Spiel sind raus (stehen im Menü-Footer).
-  - Menü: Turrican-Silhouette im Hintergrund, "PUFEILE"-Typo gefixt.
-- [ ] **Weiter ausbauen (Playtest-Feedback einarbeiten):**
-  - Echte **Plattformen mit Kollision** (Kern-Feature, gehört zu P0-Level-Design): Spieler klettert/springt auf Rohr-/Platten-Geometrie — aktuell ist die Terrain-Geometrie rein dekorativ (Spieler läuft auf fester Bodenzeile).
-  - Mehr **Vertikalität & Durchgänge** (Schächte, Tunnel-Portale zwischen Chunks), Geometrie muss zum Core-Chunk-Generator (`biomes.c` / Level-Tool) als Daten übergehen — nicht mehr Renderer-Magie.
-  - UI-Runde 2: HUD-Größe/Position per Playtest justieren, Game-Over/Level-Clear-Overlays im Panel-Design angleichen, Loading-Screen mit Level-Biome-Preview.
-  - Eventuell: pro Level eine **Vignette/Farbtemperatur** (Copper-List-Style) und mehr Details in den Silhouetten (Fenster-Lichter in der Hive, Algen-Partikel im Great Bath).
+## 1. P0 — Amiga-Port im Emulator zum Laufen bringen
+Stand: `amiga/` baut (`make -C amiga` → `amiga/out/a.exe`, 57 KB). `tools/build_amiga_adf.py` packt das **echte** Binary. **Noch nie auf Emulator/Hardware gelaufen.**
+- [x] Ursache „nur Workbench“ im RetroArch gefunden: `strudelforce.amiga` auf der ADF war ein 40-Byte-Stub (`moveq #0,d0; rts`), und die startup-sequence nutzte `echo`/`run` ohne `C:` auf der Disk. → Stub entfernt, startup-sequence = nur `strudelforce.amiga`.
+- [ ] **Neue ADF testen** (`python tools/build_amiga_adf.py`; RetroArch/PUAE mit Kickstart 1.3 A500, `tools/retroarch_test.bat`). Erwartung: Himmel-Verlauf, Boden, Spieler, HUD, Joystick-Port 2.
+- [ ] Falls weiter Workbench: (a) Kickstart ≥2.0 in PUAE gewählt? ROM-Pfad `Kickstart/kick34005.A500` (1.3) verwenden; (b) KS 1.3 führt startup-sequence evtl. nur mit `C:Execute`/`C:Run` aus → eigenen **Bootblock** schreiben, der das Programm direkt startet (xdftool `boot install` setzt nur den Standard-Bootblock); (c) Alternative: `exe2adf.exe` (liegt in der Extension) verwenden.
+- [ ] **VS-Code-Debug-Flow:** F5 *Amiga 500* (WinUAE via Extension, `.vscode/launch.json`, `amiga.program = amiga/out/a.exe`). Task `compile` ruft `make program=…` (Root-Makefile delegiert an `amiga/`).
+- [ ] Framerate messen (68000 @ 7 MHz, aktuell CPU-Rects, 1 `core_tick`/VBlank, Poll statt Interrupt): Bei Unterschreiten 50 fps → VBlank-Interrupt + Tick-Zähler, Blitter für Fills/Bobs, Dirty-Rects.
+- [ ] Eingabe: Tastatur (CIA-SDR) zusätzlich zum Joystick; Waffenwechsel (`INPUT_WEAPSW`), Morph, Pause, Menü/Titelscreen.
+- [ ] Alt-Code **löschen/archivieren**: `src/amiga_hw.c`, `core_sim_sf.c`, `voxel_render.c`, `biomes.c`, `livecode_ui_sf.c`, `sf_interfaces.h`, `main_pc.c` (Schwarm-Kern; falsche Register, Typ-Konflikt mit `strudelforce.h`). Vorher prüfen, was `test_suite`/`Makefile` noch referenziert.
+- [ ] `src/amiga_music.c` (INCBIN-Länge nicht konstant) fixen **oder** ersetzen; Musik auf dem Amiga: TFMX-Streaming (`tfmx_player.c` kompiliert unter m68k) oder P61 (Player liegt im Bartman-Template). Aktuell enthält die ADF `music/` (178 KB), das Programm nutzt sie noch nicht.
+- [ ] M68K-Audio-SFX (Paula-Kanal 3, Chip-RAM-Samples), 7-kHz-Filter (CIA-A `$BFE001` Bit 1) beim Great-Bath-Truhen-Tribute.
+- [ ] Chip-RAM-Budget dokumentieren (aktuell 2×5×10 KB Bitplanes + Copper); Ziel: 512 KB A500.
+- [ ] CI-Amiga-Job **verifizieren**: `build.yml` holt die Toolchain aus der `.vsix` von `BartmanAbyss/vscode-amiga-debug` (Asset-Name/Linux-Pfad ungeprüft!). Beim ersten Lauf Log prüfen; ggf. `--repo` auf den Architect-Fork ändern oder Toolchain als Release-Asset ins eigene Repo legen.
 
-## P1 — NEUES GAMEPLAY-KONZEPT: DIE VOXEL-EVOLUTION (Konzept für die spätere Implementierung)
-- [ ] **Konzept:** Der Spielercharakter wird modular aus Voxeln (PC) bzw. Pixel-Clustern (Amiga) zusammengesetzt.
-- [ ] Der Spieler startet als kleines, rudimentäres Konstrukt und findet in der Welt **Bauteile** (Beine, Arme, Waffen).
-- [ ] Durch das Einsammeln **wächst der Charakter physisch**, wird detaillierter und schaltet Funktionen frei (z. B. Beine → Sprung/Höhenversatz, Arme → neue Angriffe, Waffen-Module → weitere Waffenslots).
-- [ ] Architektur-Vorbereitung: C-Datenstrukturen statisch (16.16-Fixed-Point, null malloc, 512 KB Chip-RAM-Budget), Bauteil-Spawns als Level-Features anbinden (→ P0), Amiga-Seite = Pixel-Cluster auf 6 Bitplanes (Gesetz 2: keine Texturen, nur Paletten + Face-Shading).
-- [ ] Anbindung an bestehendes Pickup-System (`core_sim.c`, deterministische Spawns — C == Python-Oracle).
+## 2. P0 — Sprites (Amiga + PC)
+Ziel: eine gemeinsame Sprite-Datenbasis (`src/sprite_data.h`/`turrican_sprites.h` vorhanden, 16-Farben-Matrizen), zwei Renderer.
+- [ ] **Format festlegen:** indizierte Matrizen (4–5 Bit), Maskenplane; Generator `tools/gen_sprites.py` (PNG/ASCII → C-Arrays **und** Amiga-Planar-Daten). Keine Texturen (Gesetz 2): Plastizität nur durch Face-Shading-Farbstufen.
+- [ ] **Amiga:** Blitter-Bobs (Cookie-Cut, Minterm `0xCA`) auf den 5 Bitplanes; Hardware-Sprites nur Spieler + Laser-Kern (8 Kanäle, 16 px breit, 3 Farben + attach). Doppelpuffer + Hintergrundrestore bzw. Komplett-Redraw.
+- [ ] **PC:** gleiche Daten, Upscale + Glow/Bloom, Partikel (GDI-Pfad in `gui_main.c`).
+- [ ] Sprite-Satz: Spieler (Lauf 6 Frames, Sprung, Morph-Ball, Tod), Walker, Shooter, Tank, **Wug**, Pickups/Kristalle, Truhe, Boss-Platzhalter.
+- [ ] Animations-Tabelle (Frame-Dauer in Ticks), deterministisch (nur aus `tick`/Zustand, nie RNG im Renderer).
 
-## P2 — AUDIO-STRATEGIE: DER ORIGINAL-SOUNDTRACK
-- [ ] Die originalen TFMX-Module (Apidya, Turrican etc.) **nicht nur technisch** (Reverse Engineering), sondern auch **inhaltlich/musikalisch** analysieren: Song-Form, Stimm-Verbrauch, Sample-Zuordnung, Arrangement-Prinzipien.
-- [ ] **Eigene Kompositionen schreiben: ein ORIGINAL-SOUNDTRACK für "STRUDELFORCE MASTER"** (Titel/Boot, Biome-Tunes, Boss-Kämpfe).
-- [ ] Die **originalen Amiga-Samples der Klassiker extrahieren** (aus den beiliegenden `.smpl`/`.mdat`-Dateien) und sie in den neuen Kompositionen wiederverwenden.
-- [ ] Vorher: TFMX-Player/Importer-Defekte reparieren (Byte-Offsets, Wait-States, DMA-Makros) — nur originalgetreues Playback erlaubt verlässliches Reverse Engineering.
-- [ ] Ergebnis in den bestehenden Audio-Flow integrieren (Jukebox, TFMX/MOD-Library, Live-Code-Swap am Zyklus-Rand, `tools/tfmx_oracle.py` als Bit-Genauigkeits-Wächter).
+## 3. P0 — Gegner „WUG“ (Entwurf: `docs/WUG.md`)
+Vogel auf zwei Beinen (`ref/wug-test.png`): watschelt → bleibt stehen → rot glühende Augen → riesiger Laser; Treffer in der Aufladephase bricht ab.
+- [ ] `ENEMY_WUG` + Zustandsautomat im Kern (`game_logic.c`), Python-Oracle-Spiegel (`verify_core_sim.py`), Tests (`test_suite.c`), Balancing, Spawn ab Welle 2 / Level 2.
+- [ ] Sprites (2.), Laser-Effekt (4.), Audio-Telegraph (Charge-Ton) & Fire-SFX.
 
-## Erledigt in v0.1 (2026-10-28, lokal)
-- [x] **Steuerung neu (GUI):** WASD + Pfeiltasten = bewegen, Leertaste = Sprung, **STRG = Feuer**, **ALT = Halt-Strahl**, C = Waffe, S = Morph, T = Truhe, ESC = Menü.
-- [x] **Controller-Support (XInput):** Stick/D-Pad = bewegen, A = Feuer, X = Beam, B = Morph, RS = Waffe, Start = Menü; Menue-Navigation per D-Pad + A; Verbindungsanzeige im Menü-Footer.
-- [x] **Kampagne vs. Endlos-Roguelike:** Modus-Auswahl im Hauptmenü; Kampagne = 5 Level × 3 Wellen, feste Biome-Reihenfolge (Chrome Tempest → Great Bath → Mech Hive → Void Reach → Core Furnace), Level-Clear-Boni, SIEG-Screen nach Level 5; Endlos = altes Verhalten **bit-identisch**.
-- [x] **Biome-Paletten im Render:** Copper-Himmel, Säulen & Boden wechseln pro Kampagne-Level (reine Paletten, Gesetz 2); Wave-/Level-Intro-Banner im Gameplay.
-- [x] Haupt-EXE: `strudelforce_v0.1.exe` (früher `strudelforce_gui.exe` → intern "v1.1" → korrigiert auf 0.1); Versionsnummer im Menü + Fenster-Titel.
-- [x] **Intro mit Original-Samples:** Apidya Meadow (.tfx + .sam) ist **in die EXE gepackt** (`src/embedded_music.h`) und läuft als Intro/Menü-Musik — keine Disk-Dateien nötig (auch ADF-fähig).
-- [x] **MOD-Ordner angebunden:** Jukebox scannt `TFMX Professional/` + `MOD/` (41/45 MODs spielbar); 3 × Lost_Patrol = nicht Standard-31-Sample-Format (kein M.K!/M!K!-Sig bei Offset 1080) → Player lehnt ab (bekannt, dokumentiert).
-- [x] **Explorer mit freier Pfadeingabe:** beliebigen (auch absoluten) Pfad tippen + ENTER → Ordner wechseln oder .tfx/.mod direkt laden/spielen.
-- [x] Jukebox-Fallback ohne Disk: 3 Embedded-Tracks (Meadow TFMX, WC Regular Combat, WC Overall Victory), rotierend pro Wave; Selftest `test_embedded_music.exe` (Build [7/7]).
-- [x] KIWI-Return-Paket organisiert: `archive/kiwi_return_2026-10-28/`, Doku nach `docs/` (LORE, BIOMES, TFMX-Analyse), keine KIWI-C-Stubs im Build.
+## 4. P0 — Waffen-Sprites & Effekte überarbeiten
+- [ ] Pellet, Bounce 2.0, Laser (Breite nach Waffenlevel `sf_laser_widths`), Spread, Halt-Strahl: je eigene Optik, Muzzle-Flash, Einschlag, Explosionen, Funken/Partikel.
+- [ ] **Amiga-tauglich:** max. ~8 Bobs + wenige Fill-Linien pro Frame; Effekte über Palette/Copper (Blitzen, Raster-Balken) statt vieler Sprites.
+- [ ] **PC-Zusatz:** Additive Glows, Screen-Shake, Trails (nur Renderer, Kern bleibt bit-identisch).
 
-## Carry-over (offen aus den lokalen Phasen)
-- [ ] 15-Sample-SoundTracker-MOD-Unterstützung (würde die 3 Lost-Patrol-Dateien spielbar machen) — C **und** `tools/mod_oracle.py` bit-genau gemeinsam ändern!
-- [ ] M68K-Build mit `m68k-amiga-elf-gcc` + 880K-A500-ADF + RetroArch/PUAE-Test (`tools/retroarch_test.bat`) — Toolchain lokal nicht in PATH; Boot-Screen-Code in `amiga_hw.c` ist nur parse-geprüft, noch nicht auf der Zielmaschine kompiliert.
-- [ ] Biquad/SVF-Filter in Fixed-Point (aktuell nur 1-Pole im Core).
-- [ ] `main_pc.c` (Raylib) lokal nicht kompilierbar — Target `pc_game` mit `RAYLIB_DIR` setzen.
-- [ ] Generatoren nicht handeditieren: `Makefile`, `src/tfmx_player.h`, `src/mod_player.h`, `src/sf_mixer.h`, `src/sid_header.h`, `src/level_data.h`, `.vscode/tasks.json` → Änderungen in `tools/gen_sources.py` bzw. `tools/level_tool.py`, dann regenerieren.
+## 5. P1 — Abspann mit komplettem Captain's Log
+- [ ] `tools/gen_embedded_credits.py` erweitern: **gesamtes** `captains_log.md` (ungekürzt, aktueller Release-Stand) als Credit-Zeilen einbetten (`src/embedded_credits.h`, derzeit 103 Zeilen, Titel noch 0.3.0). Größe ~50 KB → String-Tabelle, ggf. Zeilenumbruch bei 78 Zeichen, UTF-8→CP437/ASCII-Fallback (Umlaute!).
+- [ ] Abspann-Steuerung (ESC/SPACE/Tempo) existiert; Kapitel-Sprungmarken pro Log-Eintrag ergänzen.
+- [ ] Log vor jedem Release finalisieren; `captains_log.md` ist `export-ignore` (nur im Spiel eingebettet, nicht doppelt im Source-ZIP).
+- [ ] Log-Datei hat einige Kodierungsfehler (`ǬŸ`, `�`) aus früheren Läufen → vor dem Einbetten als UTF-8 bereinigen.
+
+## 6. P1 — Weiteres Aufräumen
+- [ ] `tools/` weiter ordnen: Kiwi-/Handoff-Skripte (`build_*injector.py`, `build_handoff.py`, `build_kiwi_handoff.py`, `hotfix_packer.py`, `kiwi_*.py`, `github_exporter.py`) nach `tools/kiwi/` verschieben **und** deren `ROOT = dirname(dirname(__file__))` anpassen; `AGENTS.md`-Verweise nachziehen.
+- [ ] `tools/gen_sources.py` entrümpeln oder löschen (Shim-Header-Generatoren sind obsolet; Makefile/.vscode werden von Hand gepflegt).
+- [ ] `README.md`/`BUILD_GUIDE.md`/`PROJECT_BIBLE.md` auf neue Struktur (amiga/, tmp/, make_release.py, build.yml) aktualisieren; `docs/kiwi_phase3/` (14 Alt-Berichte) zusammenfassen oder löschen.
+- [ ] `docs/img/` (PNG-Level-Previews) nur bei Bedarf regenerieren; `levels/levels_kiwi_extended.json`, `assets/samples/*.wav` auf Nutzen prüfen.
+- [ ] Alt-Releasezips in `archive/handoffs/` (lokal, ~45 MB) nach Sichtung löschen; `archive/KiwiReste/` ebenso.
+- [ ] Alte Hinweise in `captains_log.md` auf entfernte Dateien (`pack_releases.py`, `kiwi_injector.py`) sind historisch — nicht ändern.
+
+## 7. P0 (aus Vorgänger) — Level-Design Overhaul
+- [ ] Aktuelles Level-Gerüst ist unbrauchbar (Plattformen existieren im Kern, aber wenig Vertikalität/Durchgänge). Von Grund auf: echte Kollision, Plattformen, Vertikalität; handgebaute Hommage-Levels (Turrican, Giana Sisters, Mario) + deterministischer Roguelike-Modus. Level-Engine v2 (197 Chunks, 37 Levels: `levels/levels_v2.json`, `levelkit/lv2.py`) liegt vor und muss an Kern + Amiga-Renderer angebunden werden (Amiga zeichnet derzeit nur die ~10 `platforms[]` des Kerns).
+- [ ] Balancing erst nach dem Level-Fundament (Grunt 1 Treffer, Tank 15 HP bleibt Baseline).
+- [ ] Turrican-2-Visual-Upgrade (Renderer, PC): Plattformen mit Kollision zeigen, Schächte/Portale, HUD-Runde 2, Level-Vignetten (Copper-Farbtemperatur).
+
+## 8. P1 — Voxel-Evolution (Konzept)
+- [ ] Spieler wächst modular aus Bauteilen (Beine → Sprung, Arme → Angriffe, Waffen-Module). Statische Strukturen, 16.16, Pickup-System-Anbindung, Amiga = Pixel-Cluster (Gesetz 2).
+
+## 9. P2 — Audio
+- [ ] Original-Soundtrack für „STRUDELFORCE MASTER“ (Titel, Biome, Boss); Original-Samples der Klassiker extrahieren; TFMX-Player-Defekte (Wait-States, DMA-Makros) reparieren; `tools/tfmx_oracle.py` als Wächter.
+- [ ] 15-Sample-SoundTracker-MOD-Support (3 Lost-Patrol-MODs) — C **und** `tools/mod_oracle.py` gemeinsam.
+- [ ] Biquad/SVF-Filter in Fixed-Point (aktuell 1-Pol).
+
+## 10. Release-Checkliste
+1. `build_msvc.bat` · `test_suite.exe` · `verify_core_sim.py` (Endlos + `--campaign`) · `tools/selftest.py` grün.
+2. `make -C amiga` + `python tools/build_amiga_adf.py` (ADF im Emulator gestartet!).
+3. Version in `src/strudelforce.h` (`STRUDELFORCE_VERSION`), `build_msvc.bat`, README; Notes `releases/RELEASE_NOTES_v<VER>.md`.
+4. Captain's Log final (Abspann, 5.).
+5. Commit, Tag `v<VER>`, Push → CI baut & veröffentlicht (`tools/make_release.py` lokal als Trockenlauf).

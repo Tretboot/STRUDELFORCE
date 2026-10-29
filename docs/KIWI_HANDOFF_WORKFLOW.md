@@ -4,7 +4,22 @@ Dieses Dokument definiert den standardisierten, verlustfreien Roundtrip-Prozess 
 
 ---
 
-## 1. Architektur-Übersicht & Paket-Größen
+## 0. Python-Injection Handoff (Empfohlen für Chat/Prompt & Leveleditor)
+
+Falls ein direkter ZIP-Upload im Sandbox-Interface blockiert wird (z. B. `.zip` in `.txt` umbenannt schlägt fehl oder Token-Limits verhindern große Binär-Uploads), existiert der **selbstextrahierende Python-Injektor**:
+
+```bash
+# 1. Injektor bauen (Solid LZMA + Base64, enthält Leveleditor-Dateien + 1 TFMX + 1 MOD):
+python tools/build_kiwi_injector.py
+
+# 2. Skript in Kiwi hochladen/ausführen:
+python kiwi_level_injector.py --test
+```
+*Vorteile:* Nur ~699 KB (bzw. ~321 KB im `--slim` Modus), garantiert fehlerfreie Verzeichnisstruktur via `os.makedirs`, Zero-Chat-Dump, SHA-256 Integritätsprüfung aller Dateien. Siehe auch [KIWI_INJECTOR_GUIDE.md](file:///f:/AgentHome/STRUDELFORCE_Master/docs/KIWI_INJECTOR_GUIDE.md).
+
+---
+
+## 1. Architektur-Übersicht & Paket-Größen (ZIP-Verfahren)
 
 Um Übertragungszeiten in die Cloud zu minimieren und Timeouts zu verhindern, existiert ein dreistufiges Packing-Profil:
 

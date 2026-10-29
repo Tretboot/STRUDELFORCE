@@ -15,6 +15,7 @@
  */
 
 #include "strudelforce.h"
+#include "level_engine.h"
 
 /* ================= 16.16 Konstanten =================
  * Balance 2026-10-28 (v0.3.0 Feinschliff): entspannteres, weniger hektisches
@@ -640,6 +641,8 @@ void core_tick(GameState *s, uint16_t input) {
     if (s->respawn_timer > 0) s->respawn_timer--;
 
     if (s->state == STATE_WAVE_INTRO) {
+        if (s->mode == MODE_CAMPAIGN && s->platform_count == 0)
+            level_load_campaign(s);
         if (--s->state_timer == 0) {
             s->wave++;
             wave_spawn(s);
@@ -667,7 +670,7 @@ void core_tick(GameState *s, uint16_t input) {
         if (--s->state_timer == 0) {
             if (s->campaign_level < CAMPAIGN_LEVELS) {
                 s->campaign_level++;
-                core_setup_platforms(s);
+                level_load_campaign(s);
             }
             s->state = STATE_WAVE_INTRO;
             s->state_timer = WAVE_INTRO_TICKS;
@@ -772,6 +775,7 @@ void core_tick(GameState *s, uint16_t input) {
     xp_update(s);
 }
 
+#ifndef M68K /* Livecode-Editor: Dateizugriff/libc - nicht im Amiga-Build */
 /* ================= Livecode-UI Logik ================= */
 
 void livecode_init(LiveCodeUI *ui, const char *default_pattern) {
@@ -873,6 +877,7 @@ void livecode_open_chest(LiveCodeUI *ui) {
     ui->step_in_cycle = 0;
     ui->have_pending = 0;
 }
+#endif /* !M68K */
 
 const char *livecode_biome_name(int biome) {
     switch (biome) {

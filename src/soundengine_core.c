@@ -493,7 +493,7 @@ void tfmx_player_start(TfmxPlayer *p, uint8_t sub) {
     for (i = 0; i < TFMX_VOICES; i++) voice_reset(&p->v[i]);
     for (i = 0; i < TFMX_TRACKS; i++) { memset(&p->t[i], 0, sizeof(TfmxTrack)); p->t[i].pnum = 0xFF; p->t[i].ploop = -1; }
     p->first = rd16(p, 0x100 + 2u * sub); p->last = rd16(p, 0x140 + 2u * sub); p->pos = p->first;
-    p->speed = 5; set_cia(p, 0);
+    p->speed = 2; set_cia(p, 0); /* Default-Tempo 2 (statt 5 = halbe Geschwindigkeit bei Turrican 3) */
     tp = rd16(p, 0x180 + 2u * sub);
     if (tp >= 0x10) { set_cia(p, tp); p->speed = 0; }
     else if (tp) p->speed = tp;

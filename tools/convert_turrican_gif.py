@@ -41,7 +41,7 @@ def decompress_lzw(lzw_min, stream):
             old_code = code
     return out
 
-with open('Turrican.gif', 'rb') as f:
+with open('ref/misc/Turrican.gif', 'rb') as f:
     data = f.read()
 
 W = data[6] | (data[7] << 8)

@@ -19,16 +19,23 @@
 #ifndef STRUDELFORCE_H
 #define STRUDELFORCE_H
 
+#define STRUDELFORCE_VERSION "0.3.1"
+
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
 #include <stdint.h>
 #include <stddef.h>
+#ifdef M68K
+/* M68K-Build (libc-frei, Dual-Toolchain-Regel): nur Freestanding-Header + Shims. */
+#include "amiga_crt.h"
+#else
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

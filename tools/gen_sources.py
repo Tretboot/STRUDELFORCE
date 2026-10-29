@@ -326,9 +326,9 @@ stage_amiga_music:
 	@cp "$(AMIGA_MUSIC_SRC)/Turrican 2 - World 4 - Factory.sam" $(AMIGA_MUSIC)/T2W4.SAM
 	@printf '; STRUDELFORCE - startup-sequence (A500)\n; Data-Disk: run  df0:strudelforce.amiga\n; Boot-Disk:  startet das Spiel direkt.\necho STRUDELFORCE 2.5D Voxel Shooter (A500)\nrun "strudelforce.amiga"\n' > $(AMIGA_DIST)/s/startup-sequence
 	@echo "Amiga-Musik staged: Load + World 1-4 (Turrican 2) + s/startup-sequence"
-amiga_bin: $(AMIGA_SRCS)
-	@command -v $(M68K_CC) >/dev/null 2>&1 || (echo "m68k-amigaos-gcc fehlt (bebbo/amiga-gcc)"; exit 1)
-	$(M68K_CC) $(M68K_CFLAGS) $(AMIGA_SRCS) -o strudelforce.amiga $(M68K_LDFLAGS)
+amiga_bin:
+	$(MAKE) -C amiga
+	@cp amiga/out/a.exe strudelforce.amiga
 amiga_adf: amiga_bin stage_amiga_music
 	@command -v $(ADF_TOOL) >/dev/null 2>&1 || (echo "xdftool fehlt: pip install amitools"; exit 1)
 	@cp strudelforce.amiga $(AMIGA_DIST)/strudelforce.amiga
@@ -353,17 +353,11 @@ M68KELF_LDFLAGS = -Wl,--emit-relocs,--gc-sections,-Ttext=0
 program ?= out/strudelforce.amiga
 
 .PHONY: program
-program: stage_amiga_music
-	@command -v $(M68KELF_CC) >/dev/null 2>&1 || (echo "m68k-amiga-elf-gcc fehlt (Bartman-Extension installiert + PATH?)"; exit 1)
-	@mkdir -p obj_amiga out
-	$(M68KELF_CC) $(M68KELF_CFLAGS) -c src/amiga_hw.c -o obj_amiga/amiga_hw.o
-	$(M68KELF_CC) $(M68KELF_CFLAGS) -c src/core_sim_sf.c -o obj_amiga/core_sim_sf.o
-	$(M68KELF_CC) $(M68KELF_CFLAGS) -c src/voxel_render.c -o obj_amiga/voxel_render.o
-	$(M68KELF_CC) $(M68KELF_CFLAGS) -c src/biomes.c -o obj_amiga/biomes.o
-	$(M68KELF_CC) $(M68KELF_CFLAGS) -c src/tfmx_player.c -o obj_amiga/tfmx_player.o
-	$(M68KELF_CC) $(M68KELF_CFLAGS) -c src/amiga_music.c -o obj_amiga/amiga_music.o
-	$(M68KELF_CC) $(M68KELF_CFLAGS) $(M68KELF_LDFLAGS) obj_amiga/amiga_hw.o obj_amiga/core_sim_sf.o obj_amiga/voxel_render.o obj_amiga/biomes.o obj_amiga/tfmx_player.o obj_amiga/amiga_music.o -o $(program:.exe=.elf)
-	elf2hunk $(program:.exe=.elf) $(program)
+# Der Port lebt im eigenstaendigen Projekt amiga/ (Bartman-Template-Struktur, libc-frei):
+# amiga/main.c (Bare-Metal-Entry) + src/game_logic.c (Smith-Kern, identisch zum PC).
+# Artefakte: amiga/out/a.exe (Hunk) + a.elf (Debug-Symbole) -> amiga.program zeigt darauf.
+program:
+	$(MAKE) -C amiga
 
 clean:
 	rm -f strudelforce_game strudelforce_gui strudelforce_test test_audio_mix win_audio_selftest *.exe *.obj src/*.obj
@@ -458,7 +452,7 @@ _kick = next((c for c in _kick_candidates if os.path.isfile(c)),
 _kick_json = _kick.replace("\\", "/")
 w(".vscode/settings.json", r"""
 {
-  "amiga.program": "out/strudelforce.amiga",
+  "amiga.program": "amiga/out/a.exe",
   "amiga.rom-paths.A500": "__KICK__"
 }
 """.replace("__KICK__", _kick_json))

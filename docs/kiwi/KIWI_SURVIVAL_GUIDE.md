@@ -232,6 +232,23 @@ static inline const char *get_text(TextID id) {
 
 ---
 
+## 11. DIE KIWI-AUFGABEN-GRENZE (STRIKTE MODUL-ISOLIERUNG)
+
+### Erkenntnis aus Iteration 8/9 (Level-Editor / Sandbox-Limits):
+Die Cloud-Sandbox wird bei voller Projekt-Größe instabil:
+- Dateilimit: max. ~50 Dateien persistent, Batches > 20 werden oft verworfen.
+- Systematischer Wipe von `.h`-Dateien (Workaround: `.h.c` via `hfile_guard.py`).
+- Kontext- und Speicherobergrenzen führen zu unerwartetem Datenverlust.
+
+### Eiserne Regeln für zukünftige KIWI-Delegationen:
+1. **Maximal 1 bis 3 Dateien pro Auftrag:** Z.B. 1 Spezifikation (`spec.md`), 1 Implementierungsdatei (`module.py` oder `module.c`), 1 isoliertes Testskript (`test_module.py`).
+2. **Keine Full-Repo-Handoffs:** Das Gesamtprojekt bleibt lokal auf dem Entwicklungsrechner. An Kiwi werden nur die isolierten Schnittstellendefinitionen übergeben.
+3. **Klare, eng umgrenzte Spezifikationen:** Der Auftrag muss eine in sich geschlossene Funktion sein (z.B. "Implementiere Parser X mit Test-Fixture Y", "Baue Reach-Heuristik Z").
+4. **Keine tiefen Verzeichnisstrukturen:** Alles flach oder in maximal einem Unterordner halten.
+5. **Autarke Testbarkeit:** Das Modul muss ohne 80 externe Abhängigkeiten mit einem Minimal-Test überprüfbar sein.
+
+---
+
 ## KONTAKT / NEXT STEPS
 
 Bei Unsicherheiten:

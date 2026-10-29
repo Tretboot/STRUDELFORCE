@@ -1,6 +1,12 @@
 name: Build & Release
 
-# STRUDELFORCE CI & Automated Release (v0.3.0 Consolidated Monolith)
+# STRUDELFORCE CI (aufgeraeumt 2026-10-29)
+#   windows   : MSVC-Build (GUI + Terminal), Testsuite, Python-Oracle
+#   linux     : GCC-Kerncheck + portable Testsuite
+#   amiga     : m68k-amiga-elf-gcc (Toolchain aus der Bartman-VS-Code-Extension) -> amiga/out/a.exe + strudelforce.adf
+#   release   : nur bei Tag v*; tools/make_release.py (Source via git archive/.gitattributes
+#               export-ignore, Windows-ZIP, Amiga-ZIP, SHA256SUMS). Lizenzierte Ordner
+#               (TFMX Professional/, MOD/) werden NIE mitgepackt.
 on:
   push:
     branches: [ "main" ]
@@ -10,8 +16,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows-msvc:
-    name: Windows (MSVC Consolidated Monolith)
+  windows:
+    name: Windows (MSVC)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +26,7 @@ jobs:
         run: build_msvc.bat
         shell: cmd
 
-      - name: Selftests (Integrationstest-Suite & Terminal-Demos)
+      - name: Selftests
         run: |
           test_suite.exe
           strudelforce_game.exe --demo 2500 --no-intro --no-sound
@@ -32,20 +38,19 @@ jobs:
           python verify_core_sim.py --seed 1234 --ticks 2500
           python verify_core_sim.py --seed 1234 --campaign
           python tools/selftest.py
+        shell: cmd
 
-      - name: Upload Windows-Binaries
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: strudelforce-windows-v0.3.0
+          name: windows-binaries
           path: |
             strudelforce.exe
-            strudelforce_0.3.exe
             strudelforce_game.exe
-            test_suite.exe
+          if-no-files-found: error
 
-  linux-gcc:
-    name: Linux (GCC Monolith & Portabler Selftest)
-    runs-on: ubuntu-latest
+  linux:
+    name: Linux (GCC Kern & Testsuite)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -55,57 +60,90 @@ jobs:
           gcc -std=c99 -Wall -Wextra -Isrc -c src/engine_core.c -o /tmp/engine_core.o
           gcc -std=c99 -Wall -Wextra -Isrc -c src/soundengine_core.c -o /tmp/soundengine_core.o
 
-      - name: Linux Integrationstest (test_suite)
+      - name: Integrationstest
         run: |
-          gcc -std=c99 -O2 -Isrc src/test_suite.c src/game_logic.c src/engine_core.c src/soundengine_core.c -lm -o test_suite
-          ./test_suite
+          gcc -std=c99 -O2 -Isrc src/test_suite.c src/game_logic.c src/engine_core.c src/soundengine_core.c -lm -o /tmp/test_suite
+          /tmp/test_suite
 
-      - name: Python-Oracle (Endlos + Kampagne + Selftest)
+      - name: Python-Oracle
         run: |
           python3 verify_core_sim.py --seed 1234 --ticks 2500
           python3 verify_core_sim.py --seed 1234 --campaign
           python3 tools/selftest.py
 
+  amiga:
+    name: Amiga (m68k-amiga-elf-gcc + ADF)
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Die Toolchain steckt in der .vsix der Extension (bin/linux/opt/bin + elf2hunk).
+      # ANPASSEN, falls der Fork ein eigenes Release nutzt: --repo <owner>/<fork>.
+      - uses: actions/cache@v4
+        id: toolchain
+        with:
+          path: .toolchain
+          key: amiga-elf-toolchain-v1
+
+      - name: Toolchain aus der Bartman-Extension holen
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .toolchain/vsix
+          gh release download --repo BartmanAbyss/vscode-amiga-debug --pattern '*.vsix' --dir .toolchain/vsix
+          cd .toolchain && unzip -q vsix/*.vsix 'extension/bin/linux/*'
+          chmod -R +x extension/bin/linux
+
+      - name: Amiga-Binary bauen (make -C amiga)
+        run: |
+          BIN="$PWD/.toolchain/extension/bin/linux"
+          export PATH="$BIN/opt/bin:$BIN:$PATH"
+          m68k-amiga-elf-gcc --version | head -1
+          make -C amiga
+
+      - name: ADF bauen
+        run: |
+          python3 -m pip install --quiet --break-system-packages amitools
+          python3 tools/build_amiga_adf.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amiga
+          path: |
+            strudelforce.adf
+            amiga/out/a.exe
+          if-no-files-found: error
+
   release:
     name: Publish GitHub Release (v*)
-    needs: [windows-msvc, linux-gcc]
+    needs: [windows, linux, amiga]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: windows-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build Windows Binaries
-        run: build_msvc.bat
-        shell: cmd
-
-      - name: Package Release ZIP
-        shell: pwsh
-        run: |
-          mkdir release_dist
-          Copy-Item strudelforce.exe release_dist/
-          Copy-Item strudelforce_0.3.exe release_dist/
-          Copy-Item strudelforce_game.exe release_dist/
-          Copy-Item test_suite.exe release_dist/
-          Copy-Item README.md release_dist/
-          Copy-Item RELEASE_0.3.0.md release_dist/ -ErrorAction SilentlyContinue
-          if (Test-Path "TFMX Professional/Turrican 2") {
-            New-Item -ItemType Directory -Path "release_dist/TFMX Professional/Turrican 2" -Force
-            Copy-Item "TFMX Professional/Turrican 2/*" "release_dist/TFMX Professional/Turrican 2/"
-          }
-          if (Test-Path "TFMX Professional/Apidya") {
-            New-Item -ItemType Directory -Path "release_dist/TFMX Professional/Apidya" -Force
-            Copy-Item "TFMX Professional/Apidya/*" "release_dist/TFMX Professional/Apidya/"
-          }
-          Compress-Archive -Path release_dist/* -DestinationPath strudelforce-v0.3.0-windows-x64.zip
-          $hash = (Get-FileHash strudelforce-v0.3.0-windows-x64.zip -Algorithm SHA256).Hash
-          "$hash  strudelforce-v0.3.0-windows-x64.zip" | Out-File -Encoding utf8 SHA256SUMS.txt
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            strudelforce-v0.3.0-windows-x64.zip
-            SHA256SUMS.txt
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries
+          path: .
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: amiga
+          path: .
+
+      - name: Release-Pakete bauen (nur relevante Dateien)
+        run: |
+          mkdir -p amiga/out && mv -f a.exe amiga/out/a.exe 2>/dev/null || true
+          python3 tools/make_release.py
+          ls -la release_out
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release_out/*
           generate_release_notes: true

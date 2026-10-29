@@ -1,0 +1,981 @@
+{
+ "format": "sflevels/2",
+ "levels": [
+  {
+   "name": "Dream World 1 (Giana-Hommage)",
+   "music_zones": [
+    [
+     0,
+     32,
+     0
+    ],
+    [
+     32,
+     64,
+     1
+    ],
+    [
+     64,
+     96,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Hive Shaft (Turrican-Hommage)",
+   "music_zones": [
+    [
+     0,
+     32,
+     0
+    ],
+    [
+     32,
+     64,
+     1
+    ],
+    [
+     64,
+     96,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Machine Factory (Turrican 3 Tribute)",
+   "music_zones": [
+    [
+     0,
+     32,
+     0
+    ],
+    [
+     32,
+     64,
+     1
+    ],
+    [
+     64,
+     96,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "The Great Bath",
+   "music_zones": [
+    [
+     0,
+     26,
+     0
+    ],
+    [
+     26,
+     52,
+     1
+    ],
+    [
+     52,
+     80,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Chrome Tempest Bridges",
+   "music_zones": [
+    [
+     0,
+     32,
+     0
+    ],
+    [
+     32,
+     64,
+     1
+    ],
+    [
+     64,
+     96,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Turrican 2 - World 1: Desert Outpost",
+   "music_zones": [
+    [
+     0,
+     26,
+     0
+    ],
+    [
+     26,
+     52,
+     1
+    ],
+    [
+     52,
+     80,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Turrican 2 - World 2: Cave Depths",
+   "music_zones": [
+    [
+     0,
+     26,
+     0
+    ],
+    [
+     26,
+     52,
+     1
+    ],
+    [
+     52,
+     80,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Turrican 2 - World 3: Magma Flight",
+   "music_zones": [
+    [
+     0,
+     26,
+     0
+    ],
+    [
+     26,
+     52,
+     1
+    ],
+    [
+     52,
+     80,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Turrican 2 - World 5: Alien Citadel",
+   "music_zones": [
+    [
+     0,
+     26,
+     0
+    ],
+    [
+     26,
+     52,
+     1
+    ],
+    [
+     52,
+     80,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Strudel-Bad",
+   "music_zones": [
+    [
+     0,
+     16,
+     0
+    ],
+    [
+     16,
+     48,
+     1
+    ],
+    [
+     48,
+     80,
+     2
+    ],
+    [
+     80,
+     96,
+     3
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Magma-Schacht",
+   "music_zones": [
+    [
+     0,
+     32,
+     1
+    ],
+    [
+     32,
+     64,
+     2
+    ],
+    [
+     64,
+     96,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Zitadelle-Wache",
+   "music_zones": [
+    [
+     0,
+     32,
+     3
+    ],
+    [
+     32,
+     64,
+     2
+    ],
+    [
+     64,
+     96,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1000",
+   "music_zones": [
+    [
+     0,
+     32,
+     2
+    ],
+    [
+     32,
+     64,
+     0
+    ],
+    [
+     64,
+     96,
+     1
+    ],
+    [
+     96,
+     128,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1001",
+   "music_zones": [
+    [
+     0,
+     26,
+     2
+    ],
+    [
+     26,
+     52,
+     1
+    ],
+    [
+     52,
+     80,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1002",
+   "music_zones": [
+    [
+     0,
+     25,
+     2
+    ],
+    [
+     25,
+     50,
+     3
+    ],
+    [
+     50,
+     75,
+     1
+    ],
+    [
+     75,
+     100,
+     1
+    ],
+    [
+     100,
+     128,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1003",
+   "music_zones": [
+    [
+     0,
+     25,
+     0
+    ],
+    [
+     25,
+     50,
+     1
+    ],
+    [
+     50,
+     75,
+     3
+    ],
+    [
+     75,
+     100,
+     2
+    ],
+    [
+     100,
+     128,
+     3
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1004",
+   "music_zones": [
+    [
+     0,
+     25,
+     3
+    ],
+    [
+     25,
+     50,
+     1
+    ],
+    [
+     50,
+     75,
+     2
+    ],
+    [
+     75,
+     100,
+     0
+    ],
+    [
+     100,
+     128,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1005",
+   "music_zones": [
+    [
+     0,
+     32,
+     0
+    ],
+    [
+     32,
+     64,
+     0
+    ],
+    [
+     64,
+     96,
+     0
+    ],
+    [
+     96,
+     128,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1006",
+   "music_zones": [
+    [
+     0,
+     28,
+     2
+    ],
+    [
+     28,
+     56,
+     1
+    ],
+    [
+     56,
+     84,
+     0
+    ],
+    [
+     84,
+     112,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1007",
+   "music_zones": [
+    [
+     0,
+     26,
+     2
+    ],
+    [
+     26,
+     52,
+     3
+    ],
+    [
+     52,
+     80,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1008",
+   "music_zones": [
+    [
+     0,
+     32,
+     3
+    ],
+    [
+     32,
+     64,
+     2
+    ],
+    [
+     64,
+     96,
+     0
+    ],
+    [
+     96,
+     128,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1009",
+   "music_zones": [
+    [
+     0,
+     24,
+     2
+    ],
+    [
+     24,
+     48,
+     1
+    ],
+    [
+     48,
+     72,
+     3
+    ],
+    [
+     72,
+     96,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1010",
+   "music_zones": [
+    [
+     0,
+     24,
+     1
+    ],
+    [
+     24,
+     48,
+     1
+    ],
+    [
+     48,
+     72,
+     0
+    ],
+    [
+     72,
+     96,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1011",
+   "music_zones": [
+    [
+     0,
+     37,
+     0
+    ],
+    [
+     37,
+     74,
+     1
+    ],
+    [
+     74,
+     112,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1012",
+   "music_zones": [
+    [
+     0,
+     28,
+     1
+    ],
+    [
+     28,
+     56,
+     2
+    ],
+    [
+     56,
+     84,
+     1
+    ],
+    [
+     84,
+     112,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1013",
+   "music_zones": [
+    [
+     0,
+     42,
+     0
+    ],
+    [
+     42,
+     84,
+     2
+    ],
+    [
+     84,
+     128,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1014",
+   "music_zones": [
+    [
+     0,
+     20,
+     0
+    ],
+    [
+     20,
+     40,
+     3
+    ],
+    [
+     40,
+     60,
+     1
+    ],
+    [
+     60,
+     80,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1015",
+   "music_zones": [
+    [
+     0,
+     16,
+     2
+    ],
+    [
+     16,
+     32,
+     1
+    ],
+    [
+     32,
+     48,
+     3
+    ],
+    [
+     48,
+     64,
+     0
+    ],
+    [
+     64,
+     80,
+     3
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1016",
+   "music_zones": [
+    [
+     0,
+     37,
+     0
+    ],
+    [
+     37,
+     74,
+     3
+    ],
+    [
+     74,
+     112,
+     3
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1017",
+   "music_zones": [
+    [
+     0,
+     25,
+     2
+    ],
+    [
+     25,
+     50,
+     2
+    ],
+    [
+     50,
+     75,
+     2
+    ],
+    [
+     75,
+     100,
+     2
+    ],
+    [
+     100,
+     128,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1018",
+   "music_zones": [
+    [
+     0,
+     25,
+     0
+    ],
+    [
+     25,
+     50,
+     0
+    ],
+    [
+     50,
+     75,
+     0
+    ],
+    [
+     75,
+     100,
+     2
+    ],
+    [
+     100,
+     128,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1019",
+   "music_zones": [
+    [
+     0,
+     16,
+     2
+    ],
+    [
+     16,
+     32,
+     0
+    ],
+    [
+     32,
+     48,
+     1
+    ],
+    [
+     48,
+     64,
+     0
+    ],
+    [
+     64,
+     80,
+     3
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1020",
+   "music_zones": [
+    [
+     0,
+     26,
+     0
+    ],
+    [
+     26,
+     52,
+     0
+    ],
+    [
+     52,
+     80,
+     1
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1021",
+   "music_zones": [
+    [
+     0,
+     32,
+     1
+    ],
+    [
+     32,
+     64,
+     0
+    ],
+    [
+     64,
+     96,
+     2
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1022",
+   "music_zones": [
+    [
+     0,
+     32,
+     3
+    ],
+    [
+     32,
+     64,
+     0
+    ],
+    [
+     64,
+     96,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1023",
+   "music_zones": [
+    [
+     0,
+     25,
+     2
+    ],
+    [
+     25,
+     50,
+     0
+    ],
+    [
+     50,
+     75,
+     0
+    ],
+    [
+     75,
+     100,
+     0
+    ],
+    [
+     100,
+     128,
+     3
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  },
+  {
+   "name": "Gen-1024",
+   "music_zones": [
+    [
+     0,
+     26,
+     3
+    ],
+    [
+     26,
+     52,
+     0
+    ],
+    [
+     52,
+     80,
+     0
+    ]
+   ],
+   "notes": "",
+   "cutscenes": [],
+   "next": null
+  }
+ ]
+}

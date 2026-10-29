@@ -37,7 +37,7 @@
 #include "turrican_sprites.h"
 #include "embedded_credits.h"
 
-#define GAME_VERSION "0.3.0"
+#define GAME_VERSION "0.3.1"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -477,6 +477,7 @@ static int           s_music_toast_timer = 0;
 static ModPlayer     s_mod;        /* Game-Tab MOD-Player */
 static uint8_t       s_mod_buf[128 * 1024];
 static int           s_mod_active = 0;
+static uint32_t      s_track_ticks = 0; /* Laufzeit des aktuellen Songs (fuer Auto-Rotation) */
 
 /* Explorer State */
 #define MAX_EXPLORER_ITEMS 256
@@ -1320,6 +1321,7 @@ static int music_play_embedded_direct(int idx, int subsong) {
     s_tfmx_active = 0;
     s_song_start_wave = (int)s_game.wave;
     s_song_start_tick = s_game.tick;
+    s_track_ticks = 0;
 
     if (t->is_mod) {
         if (mod_player_load_mem(&s_mod, t->tfx, t->tfx_len)) {
@@ -1682,6 +1684,7 @@ static int music_load_index(int idx) {
             char *dot;
             mod_player_start(&s_mod, GAME_AUDIO_RATE);
             s_mod_active = 1;
+            s_track_ticks = 0;
             strncpy(s_current_track_name, e->name, sizeof(s_current_track_name) - 1);
             dot = strrchr(s_current_track_name, '.');
             if (dot) *dot = '\0';
@@ -1699,6 +1702,7 @@ static int music_load_index(int idx) {
             char *dot;
             tfmx_player_start(&s_tfmx, 0);
             s_tfmx_active = 1;
+            s_track_ticks = 0;
             strncpy(s_current_track_name, e->name, sizeof(s_current_track_name) - 1);
             dot = strrchr(s_current_track_name, '.');
             if (dot) *dot = '\0';
@@ -2140,7 +2144,7 @@ static void render_state_manual(void) {
     /* Retro Amiga Header */
     draw_rect(0, 0, WIN_W, 40, 0x001020);
     draw_rect_outline(0, 0, WIN_W, 40, 0x0050A0);
-    draw_string(24, 14, ">>> STRUDELFORCE 0.3.0 - OFFIZIELLES PILOTEN-HANDBUCH <<<", 0x00E0FF, 1);
+    draw_string(24, 14, ">>> STRUDELFORCE 0.3.1 - OFFIZIELLES PILOTEN-HANDBUCH <<<", 0x00E0FF, 1);
     
     char pbuf[64];
     snprintf(pbuf, sizeof(pbuf), "SEITE %d / 5   [ < A / LINKS ]   [ D / RECHTS > ]", s_manual_page + 1);
@@ -2241,7 +2245,13 @@ static void render_state_manual(void) {
         draw_string(mx + 60, ty,      "* Echter Cleanroom Mini-Notation Pattern Evaluator.", 0xFFFFFF, 1); ty += 20;
         draw_string(mx + 60, ty,      "* Druecke ESC im Spiel fuer die Livecode-Konsole.", 0xFFFFFF, 1); ty += 20;
         draw_string(mx + 60, ty,      "* 7-Oszillator Detune SuperSaw Lead Synth (F5 im Studio schaltbar).", 0xFF80FF, 1); ty += 20;
-        draw_string(mx + 60, ty,      "* Soundgodizer Masterkette (Taste F5): BASS -> WARM -> OVERDRIVE.", 0xFFFF40, 1);
+        draw_string(mx + 60, ty,      "* Soundgodizer Masterkette (Taste F5): BASS -> WARM -> OVERDRIVE.", 0xFFFF40, 1); ty += 28;
+
+        draw_string(mx + 40, ty,      "DEIN EIGENER SOUNDTRACK (JUKEBOX AUTO-SCAN):", 0x40E0FF, 1); ty += 22;
+        draw_string(mx + 60, ty,      "* Leg eigene .mod / .tfx-Dateien in die Ordner 'TFMX PROFESSIONAL'", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "  oder 'MOD' (neben der EXE) - der Scan laeuft bis 3 Ebenen tief.", 0xFFFFFF, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* TFMX-Tracks brauchen die .sam-Samples im selben Ordner (Paula-DMA).", 0xC0C0C0, 1); ty += 20;
+        draw_string(mx + 60, ty,      "* Neue Tracks erscheinen automatisch in Jukebox (F2) & Cracktro-Intro.", 0xC0C0C0, 1);
     } else {
         /* SEITE 5: GRAFIK & FILTER */
         draw_string(mx + 30, my + 24, "=== KAPITEL V: DEMOSZENE-GRAFIK, CRT-FILTER & VOLLBILD ===", 0xFF9040, 2);
@@ -3404,9 +3414,10 @@ static void render_tab_game(void) {
     int pw_x = (int)(((int64_t)s_game.px * 20) >> 16);
     int pw_y = (int)(((int64_t)s_game.py * 16) >> 16);
 
-    /* Weiche 2D-Kamera (zentriert auf den Spieler) */
+    /* Weiche 2D-Kamera (zentriert auf den Spieler, dynamisch an Level-Breite angepasst) */
+    int total_world_px = (int)(((int64_t)s_game.world_w * 20) >> 16);
+    float max_cam_x = (float)(total_world_px > WIN_W ? total_world_px - WIN_W : 0);
     float target_cam_x = (float)pw_x - (float)(WIN_W / 2);
-    float max_cam_x = (float)(72 * 20 - WIN_W); /* 1440 - 1280 = 160 px */
     if (target_cam_x < 0.0f) target_cam_x = 0.0f;
     if (target_cam_x > max_cam_x) target_cam_x = max_cam_x;
 
@@ -3973,7 +3984,11 @@ static void render_tab_explorer(void) {
     int t2_active = (s_exp_mode == 1);
     draw_rect(24, 54, 218, 26, t1_active ? 0x004080 : 0x001830);
     draw_rect_outline(24, 54, 218, 26, t1_active ? 0x00FFFF : 0x003060);
-    draw_string(30, 62, "[*] 15 INTEGR. ROM-TRACKS", t1_active ? 0x00FFFF : 0x80A0C0, 1);
+    {
+        char rom_lbl[40];
+        snprintf(rom_lbl, sizeof(rom_lbl), "[*] %d INTEGR. ROM-TRACKS", EMBEDDED_TRACK_COUNT);
+        draw_string(30, 62, rom_lbl, t1_active ? 0x00FFFF : 0x80A0C0, 1);
+    }
 
     draw_rect(246, 54, 230, 26, t2_active ? 0x004080 : 0x001830);
     draw_rect_outline(246, 54, 230, 26, t2_active ? 0x00FFFF : 0x003060);
@@ -3982,7 +3997,7 @@ static void render_tab_explorer(void) {
     draw_rect(20, 84, 460, 1, 0x004080);
 
     if (s_exp_mode == 0) {
-        /* Modus 0: 11 Eingebaute ROM-Soundtracks direkt listen */
+        /* Modus 0: Eingebaute ROM-Soundtracks direkt listen (Anzahl dynamisch) */
         draw_string(28, 90, "EINGEBAUTE SOUNDTRACKS IM BINARY (CHRIS HUELSBECK):", 0xFFE040, 1);
         int y = 112;
         for (int i = 0; i < EMBEDDED_TRACK_COUNT; i++) {
@@ -4008,6 +4023,15 @@ static void render_tab_explorer(void) {
                 draw_string(410, y, "PLAY", 0x00FF80, 1);
             }
             y += 20;
+        }
+        /* v0.3.0: Hinweis auf eigene Soundtracks (Auto-Scan) */
+        if (y + 90 < WIN_H - 90) {
+            draw_rect(24, y + 4, 452, 1, 0x004080);
+            draw_string(28, y + 12, ">>> DEIN EIGENER SOUNDTRACK:", 0x40E0FF, 1);
+            draw_string(28, y + 30, "Leg .mod / .tfx(+.sam) neben der EXE", 0xC0D0E0, 1);
+            draw_string(28, y + 46, "in 'TFMX PROFESSIONAL' oder 'MOD'", 0xC0D0E0, 1);
+            draw_string(28, y + 62, "(bis 3 Ebenen tief) - die Jukebox", 0xC0D0E0, 1);
+            draw_string(28, y + 78, "scannt das automatisch ein!", 0xC0D0E0, 1);
         }
         draw_rect(20, WIN_H - 85, 460, 1, 0x004080);
         draw_string(28, WIN_H - 78, "[KLICK/ENTER] Spielen   [PFEIL] Waehlen   [TAB] Modus", 0x80C0E0, 1);
@@ -4414,16 +4438,79 @@ static void render_tab_intro(void) {
         }
     }
 
-    /* 3. Tanzendes 3D-Sinus-ASCII-Logo STRUDELFORCE */
-    const char *logo_chars = "S T R U D E L F O R C E";
-    int nchars = (int)strlen(logo_chars);
-    int lx0 = (WIN_W - nchars * 28) / 2;
-    for (int i = 0; i < nchars; i++) {
-        if (logo_chars[i] == ' ') continue;
-        float sy = 390.0f + 18.0f * sinf((float)i * 0.45f + (float)s_gui_frame * 0.08f);
-        uint32_t col = ((i % 2) == 0) ? 0xFFFFA020 : 0xFF00E0FF;
-        draw_char(lx0 + i * 28 + 2, (int)sy + 2, logo_chars[i], 0x400010, 3);
-        draw_char(lx0 + i * 28, (int)sy, logo_chars[i], col, 3);
+    /* 3. DEMOSCENE 3D-FLUGBY (v0.3.0): Grosse ASCII-STRUDELFORCE fliegt
+     *    perspektivisch aus dem Raum auf die Kamera zu (Star-Wars-Zoom).
+     *    Effekte: Copper-Rainbow-Zyklus, Distanz-Fade, Glow-Halo +
+     *    Chromatic-Aberration bei Nahannah + Warp-Sternenfeld. */
+    {
+        static const char *w = "STRUDELFORCE";
+        static const uint32_t copper[12] = {
+            0xE04040, 0xE08020, 0xF0C040, 0xC0E040,
+            0x40E080, 0x40E0C0, 0x40A0E0, 0x6060F0,
+            0xA040E0, 0xE040C0, 0xE04080, 0xE06060
+        };
+        const int n = (int)strlen(w);              /* 12 Zeichen: STRUDELFORCE */
+        const float mid = (float)(n - 1) / 2.0f;   /* Mitte der Wort-Achse */
+        const float focal = 430.0f;
+        const float cy_t = 385.0f;
+
+        /* Flug-Phase: ~5.2 s (260 Frames), z geht per Ease-In von 1450 auf 150 */
+        int phase = s_gui_frame % 260;
+        float t = (float)phase / 260.0f;
+        float zc = 150.0f + 1300.0f * (1.0f - t) * (1.0f - t);
+
+        /* Warp-Sternenfeld: 36 radiale Streaks, Tempo koppelt an die Distanz */
+        {
+            static float s_warp_r[36];
+            int st;
+            float speed = 900.0f / (zc > 40.0f ? zc : 40.0f);
+            for (st = 0; st < 36; st++) {
+                float a = (float)st * (3.14159f / 18.0f);
+                float ca = cosf(a), sa = sinf(a);
+                s_warp_r[st] += speed * (1.0f + (float)(st % 3) * 0.35f);
+                if (s_warp_r[st] > 440.0f) s_warp_r[st] = 8.0f + (float)st * 11.7f;
+                float r0 = s_warp_r[st];
+                float r1 = r0 + 14.0f + speed * 10.0f;
+                if (r1 > 445.0f) continue;
+                int x0 = WIN_W / 2 + (int)(ca * r0);
+                int y0 = (int)cy_t + (int)(sa * r0 * 0.62f);
+                int x1 = WIN_W / 2 + (int)(ca * r1);
+                int y1 = (int)cy_t + (int)(sa * r1 * 0.62f);
+                draw_line(x0, y0, x1, y1, (r1 > 300.0f) ? 0xB0C8F0 : 0x506880);
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            float wx = ((float)i - mid) * 34.0f; /* Welt-Koordinaten (X-Achse) */
+            float wy = 10.0f * sinf((float)i * 0.55f + (float)s_gui_frame * 0.04f);
+            float z = zc + 18.0f * fabsf((float)i - mid); /* symmetrische Welle */
+            if (z < 80.0f) z = 80.0f;
+            float sf = focal / z;
+            int scl = (int)(sf * 3.4f + 0.5f);
+            if (scl < 1) scl = 1;
+            if (scl > 26) scl = 26;
+            int sx = WIN_W / 2 + (int)((wx * focal) / z);
+            int sy = (int)cy_t + (int)((wy * focal) / z) - (scl * 4);
+
+            uint32_t col = copper[(i + s_gui_frame / 3) % 12];
+            if (z > 900.0f) col = 0x8090B0;          /* Ferne: blass-bleiern  */
+            else if (z > 500.0f) col = (col >> 1);   /* Mitte: halbdunkel     */
+
+            if (z < 420.0f) {
+                /* Glow-Halo (4 diagonale Ghosts) + RGB-Aberration bei Nahannah */
+                uint32_t glow = (col >> 1) & 0x7F7F7F;
+                int o = scl / 4 + 1;
+                draw_char(sx + o, sy - o, w[i], glow, scl);
+                draw_char(sx - o, sy - o, w[i], glow, scl);
+                draw_char(sx + o, sy + o, w[i], glow, scl);
+                draw_char(sx - o, sy + o, w[i], glow, scl);
+                int k = scl / 6 + 1;
+                draw_char(sx - k, sy, w[i], 0xC02040, scl);
+                draw_char(sx + k, sy, w[i], 0x20C060, scl);
+            }
+            draw_char(sx + 2, sy + 2, w[i], 0x400010, scl); /* Schlagschatten */
+            draw_char(sx, sy, w[i], col, scl);
+        }
     }
 
     /* Cracktro Banner */
@@ -4435,6 +4522,8 @@ static void render_tab_intro(void) {
         snprintf(cr_buf, sizeof(cr_buf), "TRACK: %s  |  [ LEERTASTE / M / N : WECHSELN ]", s_current_track_name);
         draw_string(210, 78, cr_buf, 0xFFE040, 1);
     }
+    /* v0.3.0: Hinweis auf Auto-Scan eigener Soundtracks */
+    draw_string(210, 104, "[F2] JUKEBOX: EIGENE .MOD/.TFX IN 'MOD' & 'TFMX PROFESSIONAL' (neben der EXE) WERDEN AUTO-GEFUNDEN", 0x80A0C0, 1);
 
     /* Bottom Information & Navigation */
     draw_string(WIN_W / 2 - 250, 440, "COMMODORE AMIGA 500 * 50HZ PAL CORE * CYBER-PAULA TFMX AUDIO", 0xFFE040, 1);
@@ -4459,9 +4548,27 @@ static void render_tab_intro(void) {
 /* --- Frame-Dump (Headless-Visual-Test): strudelforce_gui.exe --dump [frames] [basis] ---
  * Rendert frames ohne Audio-Geraet und speichert alle 10 Ticks ein PPM-Bild.
  * Letztes Drittel: Intro-Tab (Anim-Check), ab 2/3 Low-HP (Interlace-Check). */
+/* Legt fehlende Ordner einer Dateipfad-Angabe an (tmp/dump/...). */
+static void dump_mkdirs(const char *fn) {
+    char p[256];
+    size_t i, n = strlen(fn);
+    if (n >= sizeof(p)) return;
+    memcpy(p, fn, n + 1);
+    for (i = 1; i < n; i++) {
+        if (p[i] == '/' || p[i] == '\\') {
+            char c = p[i];
+            p[i] = 0;
+            CreateDirectoryA(p, NULL);
+            p[i] = c;
+        }
+    }
+}
+
 static void dump_ppm(const char *fn) {
-    FILE *f = fopen(fn, "wb");
+    FILE *f;
     int i;
+    dump_mkdirs(fn);
+    f = fopen(fn, "wb");
     if (!f) return;
     fprintf(f, "P6\n%d %d\n255\n", WIN_W, WIN_H);
     for (i = 0; i < WIN_W * WIN_H; i++) {
@@ -5355,7 +5462,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     int s_acc_ms = 0;   /* 50Hz-Akku (Pacing mit Catch-up) */
     int dump_mode = 0;  /* --dump [frames] [basis] : Headless-Frame-Dump */
     int dump_frames = 150;
-    char dump_base[128] = "dump";
+    char dump_base[128] = "tmp/dump/dump"; /* Testausgaben nie im Projekt-Root */
     int headless_mode = 0;
     int demo_mode = 0;
     uint32_t sim_ticks = 2500;
@@ -5463,23 +5570,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!dump_mode) win_audio_open(GAME_AUDIO_RATE);
     explorer_scan_directory(s_current_dir);
     {
-        /* Jukebox-Library: Wichtige Action-Klassiker zuerst scannen */
+        /* Jukebox-Library: Kuratierte Klassiker und Chiptunes zuerst scannen */
         static const char *priority_dirs[] = {
-            "TFMX Professional\\Turrican 2",
-            "TFMX Professional\\Apidya",
             "TFMX Professional\\Turrican 3",
-            "TFMX Professional\\Jim Power",
-            "TFMX Professional\\Z-Out",
-            "TFMX Professional\\Hard'n'Heavy",
-            "TFMX Professional\\Battle Isle",
-            "TFMX Professional\\BC Kid",
-            "TFMX Professional\\Gem X",
-            "TFMX Professional\\Gem Z",
-            "TFMX Professional\\Master Blazer",
-            "TFMX Professional\\Metal Law",
-            "TFMX Professional\\Mr. Nutz",
-            "TFMX Professional\\PP Hammer",
-            "TFMX Professional\\Quik And Silva",
+            "TFMX Professional\\BiFi Adventure",
+            "TFMX Professional\\Cybersty",
+            "TFMX Professional\\Mad TV",
             "MOD"
         };
         int p;
@@ -5792,6 +5888,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                                 s_last_wave = s_game.wave;
                                 music_play_next();
                             }
+                        }
+
+                        /* Auto-Rotation fuer kurze Looping-MODs (z.B. 3c minichip):
+                         * Nach mehrmaligem Loop (oder 1-2 Minuten) naechsten Track starten */
+                        s_track_ticks++;
+                        if (s_mod_active && ((s_mod.loops >= 4 && s_track_ticks > 50 * 30) || s_track_ticks > 50 * 120)) {
+                            music_play_next();
                         }
 
                         /* Reaktive Subsongs im laufenden Spiel */

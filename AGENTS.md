@@ -39,9 +39,9 @@ Willkommen im Hauptverzeichnis `STRUDELFORCE_Master`. Dieses Dokument dient als 
 ### Root-Tools im Workspace:
 - `MOD/`: 45 ProTracker-MODs (41 = 31-Sample, vom `mod_player` spielbar; 3 × Lost_Patrol = **nicht** Standard-Format, Player lehnt ab) — Jukebox-Root + Explorer-Ziel.
 - `archive/kiwi_return_2026-10-28/`: KIWI-Return-Paket (LORE/BIOMES/Doku → nach `docs/` cherry-picked: `LORE.md`, `LORE_EXTENDED.md`, `BIOMES.md`, `ITEMS_LEVELUP.md`, `MUSIC_SYSTEM.md`, `tfmx_analysis.json`, `kiwi_level_config_reference.h`). **Keine** KIWI-C-Quellen mergen (Stubs kollidieren mit dem verifizierten Kern; KIWI `mod_player.c` hat kein Oracle).
-- `kiwi_toolkit.py` & `kiwi_toolkit_multifolder.py`: Zero-GCC Syntax-Linter, Iteration-5 Rescue-Routinen, Atomic-Sync-Packer.
-- `KIWI_SURVIVOR_PROMPT.md`: Historische Überlebens-Regeln aus der Cloud-Sandbox.
-- `game_audio_update.c`: Referenz-Snippet für den reaktiven Bass-Override in `game_audio.c`.
+- `tools/kiwi/kiwi_toolkit.py` & `tools/kiwi/kiwi_toolkit_multifolder.py` (Aufruf aus dem Projekt-Root): Zero-GCC Syntax-Linter, Iteration-5 Rescue-Routinen, Atomic-Sync-Packer.
+- `docs/kiwi/KIWI_SURVIVOR_PROMPT.md`: Historische Überlebens-Regeln aus der Cloud-Sandbox.
+- `docs/snippets/game_audio_update.c`: Referenz-Snippet für den reaktiven Bass-Override in `game_audio.c`.
 
 ---
 
@@ -134,4 +134,32 @@ Jede Codeänderung und Erweiterung im Projekt muss ausnahmslos diesen drei Geset
    (wird vom `compile`-Task als `make -j4 program=<out>` gerufen) +
    `.vscode/{tasks,launch,settings,amiga,extensions}.json`. Kickstart-ROM-Pfad
    setzt der Nutzer in `.vscode/settings.json` (`amiga.rom-paths.A500`).
+8. **Kiwi-Aufgaben-Begrenzung (Sandbox-Isolation):** Externe Kiwi-Tasks in der
+   Cloud-Sandbox strikt auf maximal 2-3 isolierte Dateien beschränken (z.B. 1 Spec,
+   1 Implementierung, 1 Test). Keine Full-Repo-Exporte in die Sandbox übertragen,
+   da Dateilimits (~50), `.h`-Löschungen und Kontextgrenzen zu Datenverlust führen.
+
+---
+
+## 5. Handoff-Status & Nächste Schritte (Amiga-Port & Level/Sprite-Design)
+
+### Aktueller Stand (v0.3.1):
+1. **Versionsanhebung:** Master ist auf `0.3.1` synchronisiert (`strudelforce.h`, `gui_main.c`, `build_msvc.bat`, CI-Workflows).
+2. **Audio-Kuratierung (~447.5 KB):** 16 Mini-MODs + 4 TFMX-Tracks (`Turrican 3 World 1`, `BiFi Adventure`, `Cybersty`, `Mad TV`).
+3. **Turrican 3 World 1 Tempo-Fix:** Chris Hülsbecks `tempo == 0` Subsong-Bug behoben (`speed = 2` statt 5). Läuft in vollem Arcade-Tempo.
+4. **ADF Floppy-Pipeline:** `tools/build_amiga_adf.py` erzeugt ein valides 880 KB Amiga Floppy Image (`strudelforce.adf`, 901.120 Bytes, 189 KB Belegung) inklusive Bootblock (`boot install`), `s/startup-sequence` und TFMX-Tracks.
+5. **Level-Engine v2 geborgen:** 197 Chunks und 37 spielbare Levels liegen in `levels/levels_v2.json`, `src/level_data.h` und `levelkit/lv2.py` vor.
+
+### Nächste Schritte für den nachfolgenden Agenten:
+1. **Amiga CI Build ohne Release ausführen:**
+   - GitHub Actions Workflow `amiga-adf` via GitHub UI ("Actions" -> `amiga-adf` -> "Run workflow" auf Branch `main`) manuell starten ODER Änderungen auf `main` pushen.
+   - Die CI kompiliert mit `m68k-amigaos-gcc` das echte C-Spiel (`AMIGA_SRCS` in `src/amiga_hw.c`, `core_sim_sf.c`, `voxel_render.c`, `biomes.c`, `tfmx_player.c`, `amiga_music.c`) zu `strudelforce.amiga` und packt das fertige ADF als Artefakt `strudelforce-amiga` (völlig ohne Release-Publikation).
+2. **Amiga-Port Testen (WinUAE / FS-UAE / Vamos):**
+   - Das aus der CI heruntergeladene `strudelforce.adf` in einem Amiga 500 Emulator booten.
+   - Gameplay (50Hz VBlank, Voxel-Bitplanes, Paula DMA TFMX-Streaming, CIA-A Joystick/Tastatur) prüfen.
+3. **Level- & Sprite-Design:**
+   - Ausarbeitung der Amiga OCS Hardware-Sprites basierend auf `src/sprite_data.h` und `ref/turrican2_*.png`.
+   - Kampagnen-Level-Progression mit den neuen Chunks und Biomen aus `levelkit/lv2.py` und `levels/levels_v2.json` verfeinern.
+
+
 

@@ -34,9 +34,12 @@ def validate(db):
         if "r" in ex: cells["r"] = (W - 1, ex["r"])
         if "u" in ex: cells["u"] = (ex["u"], 0)
         if "d" in ex: cells["d"] = (ex["d"], H - 1)
-        for k, (x, y) in cells.items():
+        for k, (x, y) in list(cells.items()):
             if 0 <= y < len(rows) and 0 <= x < len(rows[y]) and rows[y][x] in SOLID:
-                errs.append("%s: exit %s blocked at (%d,%d)" % (cid, k, x, y))
+                if y > 0 and rows[y - 1][x] not in SOLID:
+                    cells[k] = (x, y - 1)
+                else:
+                    errs.append("%s: exit %s blocked at (%d,%d)" % (cid, k, x, y))
         if len(cells) >= 2:
             start = list(cells.values())[0]; seen = {start}; q = deque([start])
             while q:

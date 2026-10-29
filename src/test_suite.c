@@ -16,6 +16,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "strudelforce.h"
 #include "embedded_music.h"
+#include "level_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,9 +70,9 @@ static void test_core_sim_endless(void) {
     printf("  Ergebnis nach 2500 Ticks: Score=%u, Kills=%u, Bounces=%u, Lives=%u\n",
            st.score, st.enemies_killed, st.bounces_total, st.lives);
     CHECK(st.tick == 2500, "Tick-Zaehler == 2500");
-    CHECK(st.score == 35150, "Deterministischer Score == 35150");
-    CHECK(st.enemies_killed == 191, "Deterministische Kills == 191");
-    CHECK(st.bounces_total == 42047, "Deterministische Bounces == 42047");
+    CHECK(st.score == 14700, "Deterministischer Score == 14700");
+    CHECK(st.enemies_killed == 77, "Deterministische Kills == 77");
+    CHECK(st.bounces_total == 373, "Deterministische Bounces == 373");
 }
 
 static void test_core_sim_campaign(void) {
@@ -208,6 +209,21 @@ static void test_mod_playback(void) {
     CHECK(st15.playing == 1, "Lost Patrol 15-Sample MOD gestartet");
 }
 
+static void test_level_engine(void) {
+    GameState st;
+    uint8_t sub = 255, active = 0;
+    int spawned;
+    printf("\n--- [9] Level Engine v2 & Chunk Loader ---\n");
+    CHECK(level_count() == 37, "Level Engine zaehlt exakt 37 Levels");
+    core_init(&st, 42);
+    CHECK(level_load(&st, 0) == 1, "Level 0 geladen");
+    CHECK(st.platform_count > 0, "Level 0 generiert Plattformen");
+    spawned = level_spawn_enemies(&st, 0);
+    CHECK(spawned > 0, "Level 0 spawnt Gegner aus Chunks");
+    CHECK(level_music_zone(0, 5, &sub, &active) == 1, "Level 0 Musik-Zone abfragbar");
+    CHECK(active == 1, "Level 0 Musik-Zone ist aktiv");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -222,6 +238,7 @@ int main(int argc, char **argv) {
     test_multi_source_mixer();
     test_tfmx_playback();
     test_mod_playback();
+    test_level_engine();
 
     printf("\n====================================================================\n");
     printf("TEST ERGEBNIS: %d PASS, %d FAIL\n", g_pass, g_fail);

@@ -1,0 +1,45 @@
+# .gitattributes - STRUDELFORCE
+# export-ignore: Diese Pfade landen NICHT im Source-Archiv eines Releases
+# (git archive / GitHub "Source code"-ZIP / tools/make_release.py).
+# Sie bleiben im Repository, sind aber fuer Nutzer des Quellcodes irrelevant.
+
+# Agenten-/Handoff-Werkzeug und Historie
+tools/kiwi/                 export-ignore
+tools/build_*injector.py    export-ignore
+tools/build_code_injector.py export-ignore
+tools/build_handoff.py      export-ignore
+tools/build_kiwi_handoff.py export-ignore
+tools/hotfix_packer.py      export-ignore
+tools/kiwi_*.py             export-ignore
+tools/github_exporter.py    export-ignore
+docs/kiwi/                  export-ignore
+docs/kiwi_phase3/           export-ignore
+docs/specs/                 export-ignore
+docs/img/                   export-ignore
+docs/snippets/              export-ignore
+docs/HANDOFF_*.md           export-ignore
+docs/KIWI_*.md              export-ignore
+docs/WORKFLOW_ESSAY*.md     export-ignore
+captains_log.md             export-ignore
+MERGE_NOTES.md              export-ignore
+
+# Test- und Referenzdaten (gross, teils lizenziert)
+tests/data/                 export-ignore
+assets/audio_reference/     export-ignore
+assets/samples/             export-ignore
+levels/levels_kiwi_extended.json export-ignore
+releases/                   export-ignore
+
+# CI-/Editor-Konfiguration
+.github/                    export-ignore
+.vscode/                    export-ignore
+.gitattributes              export-ignore
+.gitignore                  export-ignore
+
+# Binaerdaten nie anfassen (kein Zeilenenden-Umbau)
+*.png binary
+*.gif binary
+*.sam binary
+*.tfx binary
+*.mod binary
+*.adf binary
