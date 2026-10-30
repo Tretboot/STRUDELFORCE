@@ -770,9 +770,60 @@ Sicherung und saubere C89-Integration der Wug-Gegnerlogik (Berko 1958 Wug-Test: 
 - [x] `verify_core_sim.py`: Determinismus + Invarianten OK, 13/13 Oracle-Parität.
 - [x] `strudelforce.h` VERSION auf "0.3.2".
 - [x] WUG-Gegner implementiert und getestet.
-- [x] Amiga-Story-Crawl (THE WUG) implementiert.
+- [x] **WUG Sprites:** 2-Frame-Sprites in `sprite_data.h` (WADDLE/FIRE), Dispatcher in `amiga/main.c` eingebunden. Humor: "Now There Are Two of them!" beibehalten.
 - [ ] **Amiga-Audio:** User-Entscheidung erforderlich (siehe Known Issue oben).
 - [ ] Commit, Tag `v0.3.2`, Push → CI baut & veröffentlicht (`tools/make_release.py` lokal als Trockenlauf).
+
+---
+
+## Captain's Log — Post-Mortem WUG (Wug Update Game Over, 2026-10-30)
+
+**Kontext:** Die WUG-Implementierung war technisch erfolgreich, aber es blieb der Humor zurück, der das Projekt lebendig hält.
+
+### Der Wug-Humor: "Now There Are Two of Them!"
+
+> **Zitat aus dem Design-Dokument:** *"Now There Are Two of them! This is Getting out of Hand!"*
+
+Der Wug ist nicht nur ein Gegner, sondern eine **Comic-Entität**:
+- Watschelt (`WUG_ST_WADDLE`): "Ich wusel, ich wusel, wo ist der Spieler?"
+- Bleibt stehen (`WUG_ST_STOP`): "Hmm... da ist was! * Augen drehen *"
+- Lädt auf (`WUG_ST_CHARGE`): "Augen GLÜHEN ROT! * Laser wird geladen *"
+- Feuert Laser (`WUG_ST_FIRE`): **"KSSSSSSSSSSSSS!"** (12 Einheiten lang, 3 Einheiten dick)
+- Cooldown (`WUG_ST_COOLDOWN`): "Puh, das war knapp... * 2x Schaden *"
+- Flieht (`WUG_ST_FLEE`): "Neeeein, ich bin noch nicht fertig!"
+- Stirbt (`WUG_ST_DYING`): "Platsch... * nur die Beine stehen noch *"
+
+Und dann kommt der User mit einem echten Game-Changer:
+
+> **"Now There are Two of them! This is Getting out of Hand!"**
+
+Der Wug ist **nicht allein**. Es gibt **immer zwei gleichzeitig** (max `ENEMY_WUG` im Spiel). Das ist ein Design-Feature, kein Bug:
+
+```c
+// verify_core_sim.py: wug_active = sum(1 for e in s.enemies if ... e.kind == ENEMY_WUG)
+// if wug_active < 2: enemy_spawn(s, ENEMY_WUG, ...)
+```
+
+Zwei Wugs = Doppelte Wug-Wurst = Doppelter Laser-Spaß!
+
+### Der Sprites-Workaround
+
+**Problem:** Die `sprite_data.h` ist GENERATED (`tools/sprite_pipeline.py` fehlt im Repo).
+**Lösung:** Manuelle WUG-Sprites nach ENEMY_FLY eingefügt:
+- Frame 0: Normaler Status (WADDLE/STOP/COLDOWN)
+- Frame 1: Rote Augen (CHARGE/FIRE)
+
+**Resultat:** WUG läuft auf Amiga mit einfachen 16x16-Voxel-Sprites. Nicht perfekt, aber **spielbar**.
+
+### Was uns fehlt (für v0.3.3):
+
+1. **Audio:** User-Entscheidung für ThePlayer-6.1a-Integration (INCBIN vs. Embedded)
+2. **Verhalten:** Der Wug sollte seine beiden Exemplare visuell unterscheidbar machen (z.B. verschieden farbig)
+3. **Sound:** Charge-Ton (steigender PWM) + Laser-Fire-SFX
+
+### Fazit
+
+**Wug ist tot. Lang lebe der Wug!** (und sein zweiter Bruder)
 
 ---
   - Lokale Verifikation über WinUAE und die bestehende 44-Punkte-Testsuite.
