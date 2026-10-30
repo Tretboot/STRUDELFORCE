@@ -79,6 +79,7 @@ CAMPAIGN_WAVES_PER_LEVEL = 3
 LEVEL_CLEAR_TICKS = 150
 PROJ_PELLET, PROJ_BOUNCE, PROJ_ENEMY = 0, 1, 2
 ENEMY_WALKER, ENEMY_SHOOTER, ENEMY_TANK = 0, 1, 2
+ENEMY_WUG = 3  # v0.3.2: Wug (spiegelt src/strudelforce.h)
 
 
 def fix16_from_int(v):
@@ -144,6 +145,8 @@ class GameState:
         self.part_head = 0
         self.rng_state = seed if seed else 1
         self.shots_fired = 0
+        self.wug_headbutts = 0
+        self.wug_two_dialog = 0
         self.enemies_killed = 0
         self.bounces_total = 0
         self.laser_len = 0
@@ -163,7 +166,17 @@ class Projectile:
 
 class Enemy:
     __slots__ = ('x', 'y', 'vx', 'active', 'kind', 'hp', 'score_val',
-                 'xp_val', 'hit_timer', 'shoot_timer')
+                 'xp_val', 'hit_timer', 'shoot_timer', 'state', 'state_timer', 'facing')
+
+# v0.3.2: Wug-Zustandsautomat (spiegelt src/strudelforce.h 1:1)
+WUG_ST_WADDLE = 0
+WUG_ST_STOP = 1
+WUG_ST_CHARGE = 2
+WUG_ST_FIRE = 3
+WUG_ST_COOLDOWN = 4
+WUG_ST_FLEE = 5
+WUG_ST_DYING = 6
+WUG_FLEE_SPEED = int(0.75 * 65536)
 
 
 class Particle:
@@ -172,6 +185,13 @@ class Particle:
 
 class Pickup:
     __slots__ = ('x', 'y', 'active')
+
+
+def core_campaign_biome(s):
+    # v0.3.2: spiegelt C 1:1 (src/game_logic.c: uint8_t core_campaign_biome(const GameState *s))
+    if s.mode == MODE_CAMPAIGN and 1 <= s.campaign_level <= CAMPAIGN_LEVELS:
+        return s.campaign_level - 1
+    return 0
 
 
 def proj_spawn(s, x, y, vx, vy, kind, level, damage, life):
@@ -195,10 +215,16 @@ def enemy_spawn(s, kind, x):
     e.active, e.kind = 1, kind
     e.hit_timer, e.shoot_timer = 0, 40
     # Balancing (2026-10-27): Grunts/Shooter = 1 Treffer, Tank (Mini-Boss) = 15
+    e.state, e.state_timer, e.facing = 0, 0, 1
     if kind == ENEMY_WALKER:
         e.hp, e.score_val, e.xp_val = 1, 100, 10
     elif kind == ENEMY_SHOOTER:
         e.hp, e.score_val, e.xp_val = 1, 250, 20
+    elif kind == ENEMY_WUG:
+        e.hp, e.score_val, e.xp_val = 12, 150, 20  # v0.3.2 Balancing-Iter 2a: 4->12
+        e.state = WUG_ST_WADDLE
+        e.state_timer = 120 + (s.rng() & 119)
+        e.facing = -1 if e.x > s.px else 1
     else:
         e.hp, e.score_val, e.xp_val = 15, 500, 40
 
@@ -253,8 +279,18 @@ def wave_spawn(s):
             kind = ENEMY_SHOOTER
         if s.wave >= 3 and i == n - 1:
             kind = ENEMY_TANK
-        enemy_spawn(s, kind,
-                    fix16_from_int(1) if i % 2 == 0 else s.world_w - fix16_from_int(1))
+        enemy_spawn(s, kind, fix16_from_int(1) if i % 2 == 0 else s.world_w - fix16_from_int(1))
+    # v0.3.2: Wug-Wellen-Spawn (max 2, ab Welle 2, Biome-Gate)
+    if s.wave >= 2:
+        wug_active = sum(1 for e in s.enemies if e is not None and e.active and e.kind == ENEMY_WUG)
+        spawn_wug = True
+        if s.mode == MODE_CAMPAIGN:
+            b = core_campaign_biome(s)
+            spawn_wug = (b != 1)
+        if spawn_wug:
+            while wug_active < 2:
+                enemy_spawn(s, ENEMY_WUG, s.world_w - fix16_from_int(1) if s.px < s.world_w // 2 else fix16_from_int(1))
+                wug_active += 1
     wave_pickup_spawn(s)
 
 
@@ -338,11 +374,11 @@ def player_fire(s):
         if pierce:
             for i in hit_list:
                 e = s.enemies[i]
-                e.hp = max(0, e.hp - dmg)
+                enemy_damage(s, e, dmg)
                 part_burst(s, e.x, e.y + 65536, 3, 4)
         elif nearest >= 0:
             e = s.enemies[nearest]
-            e.hp = max(0, e.hp - dmg)
+            enemy_damage(s, e, dmg)
             part_burst(s, e.x, e.y + 65536, 3, 4)
     else:  # WEAPON_BOUNCE
         lvl = s.weapon_level
@@ -436,6 +472,9 @@ def proj_update(s):
             if adx < PLAYER_HALF_W + 65536 and ady < PLAYER_HALF_H + 65536:
                 p.active = 0
                 player_hurt(s, p.damage)
+                if p.damage >= 20:
+                    s.pvy = int(1.5 * 65536)
+                    s.on_ground = False
         else:
             for e in s.enemies:
                 if e is None or not e.active:
@@ -445,10 +484,21 @@ def proj_update(s):
                 dy = p.y - e.y
                 ady = -dy if dy < 0 else dy
                 if adx < 2 * 65536 and ady < 2 * 65536:
-                    e.hp = max(0, e.hp - p.damage)
+                    enemy_damage(s, e, p.damage)
                     p.active = 0
                     part_burst(s, p.x, p.y, 3, 4)
                     break
+
+
+def enemy_damage(s, e, dmg):
+    # v0.3.2: generischer Feind-Schaden mit Wug-Sonderregeln (spiegelt C 1:1)
+    if not e.active:
+        return
+    if e.kind == ENEMY_WUG and e.state == WUG_ST_COOLDOWN:
+        dmg *= 2
+    e.hp = e.hp - dmg if e.hp > dmg else 0
+    if e.kind == ENEMY_WUG and e.hp > 0 and e.state not in (WUG_ST_FLEE, WUG_ST_CHARGE, WUG_ST_FIRE):
+        e.state = WUG_ST_FLEE
 
 
 def enemy_update(s):
@@ -464,6 +514,44 @@ def enemy_update(s):
             continue
         if e.hit_timer > 0:
             e.hit_timer -= 1
+        # v0.3.2: Wug-Zustandsautomat
+        if e.kind == ENEMY_WUG:
+            wdx = s.px - e.x
+            wdir = 1 if wdx > 0 else (-1 if wdx < 0 else 0)
+            e.facing = -wdir if e.state == WUG_ST_FLEE else wdir
+            if e.state == WUG_ST_FLEE:
+                e.x += WUG_FLEE_SPEED if e.facing > 0 else -WUG_FLEE_SPEED
+                if e.x < fix16_from_int(1):
+                    e.x = fix16_from_int(1); e.state = WUG_ST_WADDLE; e.state_timer = 120 + (s.rng() & 119)
+                elif e.x > s.world_w - fix16_from_int(1):
+                    e.x = s.world_w - fix16_from_int(1); e.state = WUG_ST_WADDLE; e.state_timer = 120 + (s.rng() & 119)
+            else:
+                e.state_timer -= 1
+                if e.state == WUG_ST_WADDLE:
+                    e.x += fix16_from_int(1) // 2 if e.facing > 0 else -fix16_from_int(1) // 2
+                    if e.x < fix16_from_int(1): e.x = fix16_from_int(1)
+                    if e.x > s.world_w - fix16_from_int(1): e.x = s.world_w - fix16_from_int(1)
+                    if e.state_timer == 0: e.state = WUG_ST_STOP; e.state_timer = 30
+                elif e.state == WUG_ST_STOP:
+                    if e.state_timer == 0: e.state = WUG_ST_CHARGE; e.state_timer = 60
+                elif e.state == WUG_ST_CHARGE:
+                    if e.state_timer == 0: e.state = WUG_ST_FIRE; e.state_timer = 40
+                elif e.state == WUG_ST_FIRE:
+                    if e.state_timer == 39:
+                        proj_spawn(s, e.x, e.y + 65536,
+                                   fix16_from_int(8) if e.facing > 0 else -fix16_from_int(8), 0,
+                                   PROJ_ENEMY, 0, 25, 150)
+                    if e.state_timer == 0: e.state = WUG_ST_COOLDOWN; e.state_timer = 50
+                elif e.state == WUG_ST_COOLDOWN:
+                    if e.state_timer == 0: e.state = WUG_ST_WADDLE; e.state_timer = 120 + (s.rng() & 119)
+                else:
+                    e.state = WUG_ST_WADDLE; e.state_timer = 120
+            cdx = s.px - e.x; acdx = -cdx if cdx < 0 else cdx
+            cdy = s.py - e.y; acdy = -cdy if cdy < 0 else cdy
+            if acdx < PLAYER_HALF_W + 65536 and acdy < PLAYER_HALF_H + 65536 and e.hit_timer == 0:
+                e.hit_timer = 30
+                player_hurt(s, 10)
+            continue
         dx = s.px - e.x
         dirn = 1 if dx > 0 else (-1 if dx < 0 else 0)
         spd = 26214 if e.kind == ENEMY_TANK else 52428  # 0.4*65536=26214.4->26214, 0.8*65536=52428.8->52428
@@ -596,6 +684,18 @@ def core_tick(s, input_mask):
         s.pvy = -MAX_FALL_FP
     s.px += s.pvx
     s.py += s.pvy
+    # v0.3.2: Wug-Headbutt (spiegelt C 1:1; pvy<0 = fallend, Fuessel am Wug-Kopf)
+    if s.pvy < 0:
+        for e in s.enemies:
+            if e is None or not e.active or e.kind != ENEMY_WUG:
+                continue
+            hdx = s.px - e.x; ahdx = -hdx if hdx < 0 else hdx
+            head = e.y + 65536
+            if ahdx < fix16_from_int(1) + 32768 and s.py <= head + 32768:
+                enemy_damage(s, e, 5)
+                s.pvy = JUMP_V_FP // 2
+                s.on_ground = False
+                s.wug_headbutts += 1
     if s.py <= 0:
         s.py = 0
         if s.pvy < 0:
@@ -635,7 +735,7 @@ def core_tick(s, input_mask):
                 if adx > fix16_from_int(5) or ady > fix16_from_int(5):
                     continue
                 if dir8_from_vec(dx, dy) == d8:
-                    e.hp = max(0, e.hp - 1)
+                    enemy_damage(s, e, 1)
 
     if (input_mask & INPUT_FIRE) and s.fire_cooldown == 0:
         player_fire(s)
@@ -643,6 +743,11 @@ def core_tick(s, input_mask):
     if s.tick % SHIELD_REGEN_TICK == 0 and s.shield < 100:
         s.shield += 1
 
+    # v0.3.2: "Always two there are"
+    if not s.wug_two_dialog:
+        wc = sum(1 for e in s.enemies if e is not None and e.active and e.kind == ENEMY_WUG)
+        if wc >= 2:
+            s.wug_two_dialog = 1
     proj_update(s)
     enemy_update(s)
     pickup_update(s)

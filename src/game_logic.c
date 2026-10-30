@@ -39,6 +39,7 @@
 #define BOUNCE_COOLDOWN  15
 #define BEAM_DAMAGE_TICK 4
 #define WAVE_INTRO_TICKS 100
+#define WUG_FLEE_SPEED   FIX(0.75) /* v0.3.2: Wug flieht schneller als WADDLE */
 #define SHIELD_REGEN_TICK 10
 #define MAX_BOUNCES      4
 
@@ -80,6 +81,9 @@ const SFBiomeDef sf_biomedefs[SF_BIOME_COUNT] = {
     { FIX(120), FIX(-700), 14, 1, FIX(1100), SF_GROUND_Y - FIX(16), "user_music/the_great_bath_chest.strudel" },
     { FIX(200), FIX(-600), 4,  0, 0, 0, "user_music/sector1_storm.strudel" }
 };
+
+/* Forward-Deklaration v0.3.2 C89 */
+static void enemy_damage(GameState *s, Enemy *e, int16_t dmg);
 
 /* ================= Fixed-Point Arithmetik ================= */
 
@@ -286,6 +290,11 @@ static void enemy_spawn(GameState *s, uint8_t kind, fix16_t x) {
         e->hp = 1; e->score_val = 100; e->xp_val = 10;
     } else if (kind == ENEMY_SHOOTER) {
         e->hp = 1; e->score_val = 250; e->xp_val = 20;
+    } else if (kind == ENEMY_WUG) {
+        e->hp = 12; e->score_val = 150; e->xp_val = 20; /* v0.3.2: Wug (Balancing-Iter 2a: 4->12, 4x Laser-L1) */
+        e->state = WUG_ST_WADDLE;
+        e->state_timer = 120 + (uint16_t)(core_rng(s) & 119); /* 120-240 Ticks (RNG) */
+        e->facing = (e->x > s->px) ? -1 : 1;
     } else {
         e->hp = 15; e->score_val = 500; e->xp_val = 40; /* Mini-Boss */
     }
@@ -344,6 +353,27 @@ static void wave_spawn(GameState *s) {
         if (s->wave >= 3 && i == n - 1) kind = ENEMY_TANK;
         enemy_spawn(s, kind, (i % 2 == 0) ? fix16_from_int(1)
                                            : s->world_w - fix16_from_int(1));
+    }
+    /* v0.3.2: Wug-Wellen-Spawn (max 2, ab Welle 2, Biome-Gate: kein Great Bath) */
+    if (s->wave >= 2) {
+        int wug_active = 0;
+        int wi;
+        for (wi = 0; wi < MAX_ENEMIES; wi++)
+            if (s->enemies[wi].active && s->enemies[wi].kind == ENEMY_WUG) wug_active++;
+        if (s->mode == MODE_CAMPAIGN) {
+            int b = core_campaign_biome(s);
+            if (b != 1) { /* Great Bath (unterwasser) = kein Wug */
+                while (wug_active < 2) {
+                    enemy_spawn(s, ENEMY_WUG, (s->px < s->world_w / 2) ? s->world_w - fix16_from_int(1) : fix16_from_int(1));
+                    wug_active++;
+                }
+            }
+        } else {
+            while (wug_active < 2) {
+                enemy_spawn(s, ENEMY_WUG, (s->px < s->world_w / 2) ? s->world_w - fix16_from_int(1) : fix16_from_int(1));
+                wug_active++;
+            }
+        }
     }
     wave_pickup_spawn(s);
 }
@@ -434,12 +464,12 @@ static void player_fire(GameState *s) {
         if (pierce) {
             for (i = 0; i < hit_count; i++) {
                 Enemy *e = &s->enemies[hit_list[i]];
-                e->hp = (e->hp > (uint16_t)dmg) ? (uint16_t)(e->hp - (uint16_t)dmg) : 0;
+                enemy_damage(s, e, (int16_t)dmg);
                 part_burst(s, e->x, e->y + FIX(1), 3, 4);
             }
         } else if (nearest >= 0) {
             Enemy *e = &s->enemies[nearest];
-            e->hp = (e->hp > (uint16_t)dmg) ? (uint16_t)(e->hp - (uint16_t)dmg) : 0;
+            enemy_damage(s, e, (int16_t)dmg);
             part_burst(s, e->x, e->y + FIX(1), 3, 4);
         }
     } else {
@@ -534,6 +564,10 @@ static void proj_update(GameState *s) {
             if (dx < PLAYER_HALF_W + FIX(1) && dy < PLAYER_HALF_H + FIX(1)) {
                 p->active = 0;
                 player_hurt(s, (uint16_t)p->damage);
+                if (p->damage >= 20) { /* v0.3.2: Wug-Laser (25 Dmg) => Knockback (Schwelle 20) */
+                    s->pvy = FIX(1.5);
+                    s->on_ground = 0;
+                }
             }
         } else {
             int j;
@@ -544,13 +578,24 @@ static void proj_update(GameState *s) {
                 dx = p->x - e->x; if (dx < 0) dx = -dx;
                 dy = p->y - e->y; if (dy < 0) dy = -dy;
                 if (dx < FIX(2) && dy < FIX(2)) {
-                    e->hp = (e->hp > (uint16_t)p->damage) ? (uint16_t)(e->hp - (uint16_t)p->damage) : 0;
+                    enemy_damage(s, e, p->damage);
                     p->active = 0;
                     part_burst(s, p->x, p->y, 3, 4);
                     break;
                 }
             }
         }
+    }
+}
+
+/* v0.3.2: generischer Feind-Schaden mit Wug-Sonderregeln (COOLDOWN=2x, FLEE bei Verwundung). */
+static void enemy_damage(GameState *s, Enemy *e, int16_t dmg) {
+    if (!e->active) return;
+    if (e->kind == ENEMY_WUG && e->state == WUG_ST_COOLDOWN) dmg *= 2; /* erschopft: 2x Schaden */
+    e->hp = (e->hp > (uint16_t)dmg) ? (uint16_t)(e->hp - (uint16_t)dmg) : 0;
+    if (e->kind == ENEMY_WUG && e->hp > 0 &&
+        e->state != WUG_ST_FLEE && e->state != WUG_ST_CHARGE && e->state != WUG_ST_FIRE) {
+        e->state = WUG_ST_FLEE;   /* verletzt -> laeuft weg (Turrican-2-Walker) */
     }
 }
 
@@ -568,6 +613,58 @@ static void enemy_update(GameState *s) {
             continue;
         }
         if (e->hit_timer > 0) e->hit_timer--;
+        /* v0.3.2: Wug-Zustandsautomat (eigene Bewegung, ueberspringt Walker-Logik) */
+        if (e->kind == ENEMY_WUG) {
+            fix16_t wdx = s->px - e->x;
+            int8_t  wdir = (wdx > 0) ? 1 : ((wdx < 0) ? -1 : 0);
+            e->facing = (e->state == WUG_ST_FLEE) ? (int8_t)(-wdir) : wdir;
+            if (e->state == WUG_ST_FLEE) {
+                fix16_t fs = WUG_FLEE_SPEED;
+                e->x += (e->facing > 0) ? fs : -fs;
+                if (e->x < fix16_from_int(1)) { e->x = fix16_from_int(1); e->state = WUG_ST_WADDLE; e->state_timer = 120 + (uint16_t)(core_rng(s) & 119); }
+                else if (e->x > s->world_w - fix16_from_int(1)) { e->x = s->world_w - fix16_from_int(1); e->state = WUG_ST_WADDLE; e->state_timer = 120 + (uint16_t)(core_rng(s) & 119); }
+            } else {
+                e->state_timer--;
+                switch (e->state) {
+                case WUG_ST_WADDLE:
+                    e->x += (e->facing > 0) ? FIX(0.5) : -FIX(0.5);
+                    if (e->x < fix16_from_int(1)) e->x = fix16_from_int(1);
+                    if (e->x > s->world_w - fix16_from_int(1)) e->x = s->world_w - fix16_from_int(1);
+                    if (e->state_timer == 0) { e->state = WUG_ST_STOP; e->state_timer = 30; }
+                    break;
+                case WUG_ST_STOP:
+                    if (e->state_timer == 0) { e->state = WUG_ST_CHARGE; e->state_timer = 60; }
+                    break;
+                case WUG_ST_CHARGE:
+                    if (e->state_timer == 0) { e->state = WUG_ST_FIRE; e->state_timer = 40; }
+                    break;
+                case WUG_ST_FIRE:
+                    if (e->state_timer == 39) {
+                        proj_spawn(s, e->x, e->y + FIX(1),
+                                   (e->facing > 0) ? FIX(8) : -FIX(8), 0,
+                                   PROJ_ENEMY, 0, 25, 150); /* riesiger Wug-Laser: 25 Schaden */
+                    }
+                    if (e->state_timer == 0) { e->state = WUG_ST_COOLDOWN; e->state_timer = 50; }
+                    break;
+                case WUG_ST_COOLDOWN:
+                    if (e->state_timer == 0) { e->state = WUG_ST_WADDLE; e->state_timer = 120 + (uint16_t)(core_rng(s) & 119); }
+                    break;
+                default:
+                    e->state = WUG_ST_WADDLE; e->state_timer = 120;
+                    break;
+                }
+            }
+            {
+                fix16_t cdx = s->px - e->x; if (cdx < 0) cdx = -cdx;
+                fix16_t cdy = s->py - e->y; if (cdy < 0) cdy = -cdy;
+                if (cdx < PLAYER_HALF_W + FIX(1) && cdy < PLAYER_HALF_H + FIX(1)
+                        && e->hit_timer == 0) {
+                    e->hit_timer = 30;
+                    player_hurt(s, 10);
+                }
+            }
+            continue;
+        }
         {
             fix16_t dx = s->px - e->x;
             int8_t dir = (dx > 0) ? 1 : ((dx < 0) ? -1 : 0);
@@ -701,6 +798,26 @@ void core_tick(GameState *s, uint16_t input) {
         if (s->pvy < -MAX_FALL_FP) s->pvy = -MAX_FALL_FP;
         s->px += s->pvx;
         s->py += s->pvy;
+
+        /* v0.3.2: Wug-Headbutt (von oben springen: pvy<0, Fuessel am Wug-Kopf -> 5 Schaden = 1-Hit-Kill + Bounce) */
+        if (s->pvy < 0) {
+            int hb;
+            for (hb = 0; hb < MAX_ENEMIES; hb++) {
+                Enemy *e = &s->enemies[hb];
+                if (!e->active || e->kind != ENEMY_WUG) continue;
+                {
+                    fix16_t hdx = s->px - e->x; if (hdx < 0) hdx = -hdx;
+                    fix16_t head = e->y + FIX(1);
+                    if (hdx < FIX(1.5) && s->py <= head + FIX(0.5)) {
+                        enemy_damage(s, e, 5);
+                        s->pvy = JUMP_V_FP / 2; /* Bounce nach oben */
+                        s->on_ground = 0;
+                        s->wug_headbutts++;
+                    }
+                }
+            }
+        }
+
         if (s->py <= 0) {
             s->py = 0;
             if (s->pvy < 0) s->pvy = 0;
@@ -755,7 +872,7 @@ void core_tick(GameState *s, uint16_t input) {
                     ady = (dy > 0) ? dy : -dy;
                     if (adx > fix16_from_int(5) || ady > fix16_from_int(5)) continue;
                     if (core_dir8_from_vec(dx, dy) == d8) {
-                        e->hp = (e->hp > 1) ? (uint16_t)(e->hp - 1) : 0;
+                        enemy_damage(s, e, 1); /* v0.3.2: Beam 1 Schaden/Tick (Wug: COOLDOWN 2x) */
                     }
                 }
             }
@@ -767,6 +884,14 @@ void core_tick(GameState *s, uint16_t input) {
     }
 
     if (s->tick % SHIELD_REGEN_TICK == 0 && s->shield < 100) s->shield++;
+
+    /* v0.3.2: "Always two there are" - 1x-Dialog wenn 2 Wug gleichzeitig */
+    if (!s->wug_two_dialog) {
+        int wc = 0, di;
+        for (di = 0; di < MAX_ENEMIES; di++)
+            if (s->enemies[di].active && s->enemies[di].kind == ENEMY_WUG) wc++;
+        if (wc >= 2) s->wug_two_dialog = 1;
+    }
 
     proj_update(s);
     enemy_update(s);

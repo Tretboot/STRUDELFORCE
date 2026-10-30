@@ -70,9 +70,9 @@ static void test_core_sim_endless(void) {
     printf("  Ergebnis nach 2500 Ticks: Score=%u, Kills=%u, Bounces=%u, Lives=%u\n",
            st.score, st.enemies_killed, st.bounces_total, st.lives);
     CHECK(st.tick == 2500, "Tick-Zaehler == 2500");
-    CHECK(st.score == 14700, "Deterministischer Score == 14700");
-    CHECK(st.enemies_killed == 77, "Deterministische Kills == 77");
-    CHECK(st.bounces_total == 373, "Deterministische Bounces == 373");
+    CHECK(st.score == 43300, "Deterministischer Score == 43300 (v0.3.2 Wug)");
+    CHECK(st.enemies_killed == 245, "Deterministische Kills == 245 (v0.3.2 Wug)");
+    CHECK(st.bounces_total == 47833, "Deterministische Bounces == 47833 (v0.3.2 Wug)");
 }
 
 static void test_core_sim_campaign(void) {

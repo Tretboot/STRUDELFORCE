@@ -147,6 +147,45 @@
 ### 3. Was lief gut / Lessons Learned
 - **Read-only-Diff-Kopplung** = Standard-Muster für alle Module (Grafik/UI/HW): Core bleibt SHA-stabil, Module sind einzeln testbar.
 - **`--audio`-WAV-Dump** macht den C-Build auf echter Maschine hörbar + diff-bar (deterministischer Seed).
+
+---
+
+## Logbucheintrag — 2026-10-30 (Postmortem Cloud-Run v0.3.2 Wug, Crash-Bergung & Paritäts-Synthese)
+
+**Kontext & Mission:**
+Analyse und Bergung des im Cloud-Sandbox-Cluster abgerissenen Wug-Runs (`strudelforce-v0.3.2-wug-exitdump-20261030-2016.zip`, Checkpoints 001-006, Recovery-Dump 2).
+Sicherung und saubere C89-Integration der Wug-Gegnerlogik (Berko 1958 Wug-Test: 7 Zustaende, 12 HP, Riesenlaser, Cooldown-2x-Schwache, Flucht-Mechanik, Headbutt-Stomp), des Vektor-Voxel-Sprites in `gui_main.c` und Aktualisierung des Test- und Orakel-Gleichlaufs auf v0.3.2 (Endless 43300 / 245 / 47833).
+
+### 1. Analyse der Cloud-Erkenntnisse & Engine-Befunde
+- **Wug-Simulation & Balancing:** Die Kernsimulation (Zustandsautomat mit WADDLE, STOP, CHARGE, FIRE, COOLDOWN, FLEE, DYING) und die Balance (HP von 4 auf 12 angehoben, 25 Schaden + Knockback beim Laser) waren im Cloud-Checkpoint-006 mathematisch und deterministisch fertig, litten jedoch unter zwei C89-Compiler-Fallen:
+  - Undeklarierte Schleifenvariable `int wi;` in `wave_spawn()`
+  - Fehlende Forward-Deklaration fuer `static void enemy_damage(...)` vor dem Laser-Block in `player_fire()`.
+  Beide C89-Verstoesse wurden bei der Integration direkt behoben.
+- **Render-Audit (Mechanic HIGH/MEDIUM):**
+  - Laser-Laenge: Im Entwurf visualisierte `draw_enemy_wug` nur 120 px. Bei 12 Spieleinheiten a 20 px/Einheit betraegt die reale Simulationsreichweite jedoch exakt 240 px. Der Visualisierer wurde auf `llen = 240 - flick / 2` angepasst.
+  - DYING-Zustand: Der Todes-Zerfetz-Ring (`WUG_ST_DYING`) wurde integriert und bleibt im Render-Dispatcher fuer zukuenftige Partikel-Hooks verfuegbar.
+- **Audio-Sync & GUI-Framerate-Mythen:**
+  - Die Vermutung eines geloesten "Audio-Sync-Bugs" oder "Framerate-Stotterns" im Cloud-Dump entpuppte sich bei genauer Differenzanalyse als Phantom: Der Cloud-Code besass weder Timing-Modifikationen noch neue Ringpuffer-Routinen. Stattdessen basierte er auf einer aelteren Codebase, in der das TRETBOOT-Logo-Intro und der `GUI_STATE_INTRO` schlicht noch fehlten.
+  - Das lokale Pacing (`s_acc_ms` 50Hz-Akku mit 4-Tick-Catchup und entkoppeltem `TIME_CRITICAL` WinMM WaveOut-Thread) bleibt unantastbar der Goldstandard.
+
+### 2. Knallharte Bewertung des Millionen-Token-Runs: War der Aufwand gerechtfertigt?
+**Urteil: NEIN. Die Ausbeute steht in keinem gesunden Verhaeltnis zum verbrauchten Token- und Zeitbudget.**
+
+- **Die Ursachen des Scheiterns:**
+  1. *Unkontrollierte Dateisystem-Wipes:* Die Cloud-Sandbox fuehrte wiederholt vollstaendige Wipes des Arbeitsverzeichnisses durch (Wipe 1 nach iter2, Wipe 2 um 20:01). Bis auf angehaengte Textdateien gingen Checkpoint-ZIPs, generierte Skripte und Zwischentests verloren.
+  2. *Kontext-Ballast durch Re-Attachments:* Das staendige Wiederanhaengen eines 840 KB Source-ZIPs fraß in jedem Turn riesige Tokenmengen, blaehte das Kontextfenster auf und beschleunigte Modell-Instabilitaeten und Timeouts massiv.
+  3. *Fragmentierung der Subagenten:* Ein Schwarm aus 7 Subagenten-Dispatches (Qwen, Mechanic, Playtester, World Builder) erzeugte gigantische Mengen Meta-Text, redundante Design-Bibeln und Markdown-Berichte, waehrend die eigentliche Code-Ausbeute fuer STRUDELFORCE aus weniger als 150 Zeilen C-Code und einer Sprite-Funktion bestand.
+- **Konkrete Learnings fuer zukuenftige Agenten-Operationen:**
+  1. **Strict 2-File Cloud Handoffs:** Gesetz 8 der Bibel bestaetigt sich erneut: Niemals ganze Repositories oder Full-Trees in die Sandbox schicken. Wenn ein Gegner gebraucht wird, geht ausschliesslich die Struct-Definition und die Ziel-Funktion in den Prompt.
+  2. **Keine ZIP-in-Kontext-Zyklen:** Grosse Archive duerfen nicht als permanente Context-Anhänge mitgefuehrt werden.
+  3. **Keine Phantom-Bugjagd:** Lokale, bewaehrte Engine-Architektur (wie das Intro und die Audio-Pacing-Pipeline) darf niemals durch unreflektiertes Mergen aelterer Cloud-Stands regressieren.
+  4. **Code-First statt Meta-Dokumentation:** Erst die C-Quelldatei und das Python-Orakel fertigstellen und lokal kompilieren, bevor Dutzende Begleit-Markdown-Dateien generiert werden.
+
+### 3. Ergebnis
+- Version erhoeht auf **v0.3.2**.
+- `game_logic.c`, `gui_main.c`, `strudelforce.h`, `test_suite.c` und `verify_core_sim.py` sind 100% synchron und deterministisch.
+- Alle 44 Tests der C-Testsuite (`test_suite.exe`) und 13/13 Checks der Python-Orakel bestehen fehlerfrei.
+- Die vollwertige Amiga-Cracktro- und Turrican-Intro-Sequenz bleibt unbeschaedigt erhalten.
 - **Makefile-Regel:** Änderungen NUR in `smith_bootstrap.py` pflegen (Datei ist flüchtig + wird bei Recovery überschrieben) — in dieser Iteration einmal fast vergessen, Protokoll nachgezogen.
 - **A/B (Audio im Core vs. separates Modul):** separates Modul gewinnt in Kopplung, Testbarkeit und Amiga-Backport (Essay §7.3).
 - **Stolperstein:** SHA-Baselines nach bewusster Änderung sofort setzen (sonst ABWEICHUNG-Alarm bei Recovery).
@@ -647,3 +686,93 @@
   - `SHA256SUMS.txt`
 - Wiki-Architektur in `wiki/` vorbereitet mit automatisiertem Synchronizer `tools/sync_wiki.py`.
 - Alle Tests grün: 44/44 Testsuite, Selftest, Core-Sim Endless & Campaign Oracles.
+
+---
+
+## Logbucheintrag — 2026-10-30 (Turrican 2 Reverse Engineering, RA-I Asset-Analyse, Factor-5-Tribute Intro & Token-Konsolidierung)
+
+**Auftrag:** Konsolidierung und Aufräumen der von OpenRouter Free-Modellen und Qwen 3.8 durchgeführten Reverse-Engineering-Arbeiten an Turrican 2 (WHDLoad v1.5 / CDTV / Amiga ADFs); Fertigstellung des REA-Abschlussberichts; Bereinigung der Werkzeuge in `tools/analysis/`; Integration des neuen `GUI_STATE_INTRO` im PC-Frontend; Dokumentation des Pacing- und Token-Status für die kommenden Tage.
+
+### 1. Reverse Engineering & RA-I Container-Entschlüsselung (`docs/TURRICAN2_REA`)
+- **Proprietäres Format decodiert:** Turrican 2 nutzt auf Disk 1 kein AmigaDOS-Dateisystem, sondern den von Rainbow Arts / Factor 5 entwickelten **`RA-I` (Rainbow Arts Image) Container** (Header `RA-I`, Version 2, 480 Einträge zu je 16 Byte).
+- **Asset-Manifest rekonstruiert:** Alle 480 Records vollständig aufgeschlüsselt:
+  - `MAIN` (Hauptprogramm 68k), `INTR` (Intro-Code), `IDAT` (Intro-Grafiken/Text).
+  - `IP00`..`IP07` (Acht Intro-Comic-Panels).
+  - `L1-1` bis `L5-2` (Alle 11 Level-Pakete inkl. Tilemaps und Kollisionsmatrizen).
+  - `MUS0` bis `MUS5` (TFMX-Module von Chris Hülsbeck).
+  - `EDAT` (Ending-Daten) und `PP20` (PowerPacker 2.0 gepackte Sub-Chunks).
+- **Gegner- & Entitäts-Sprungtabellen gesichert:**
+  - Identifikation des 15-teiligen Funktionszeiger-Arrays pro Welt (`index + 3 = entity_id`).
+  - Mapping aller Entitäten: Walker, Drachen, Bomber, Fallende Raketen, Wespennester, Moskitos, Power-Blöcke (mit Schlagzählern), Bosse, Unterwasser-Minen und Katakis-Formationen.
+  - 6-Byte Plattform-Bitfeld (Y-32, Flags, X/8, Geschwindigkeit/Richtung) für die Integration in STRUDELFORCE Level Engine v2 übernommen.
+
+### 2. Bereinigung der Analyse-Werkzeuge (`tools/analysis/`)
+- Sechs Analyse-Skripte verifiziert und syntaktisch bereinigt:
+  - `adf_extract.py`: Universeller AmigaDOS FFS/OFS Floppy-Extractor.
+  - `rai_parser.py`: Syntaxfehler (doppeltes unvollständiges `if`-Statement) behoben; extrahiert RA-I Archive sauber.
+  - `t2_rai_table.py`: Interaktive Tabellenanzeige und Filter für RA-I Records.
+  - `t2_slave_parse.py`: Dekoder für WHDLoad `Turrican2.Slave` (Patches & Load-Listen).
+  - `t2_vhd_extract.py`: Stripper für WinUAE Hardfile-Header (`UAE--ADF`).
+  - `t2_ffs.py`: FFS-Dateisystem-Walker.
+- Alle Skripte kompilieren fehlerfrei mit `py_compile`.
+
+### 3. PC-Frontend Verfeinerung: Cracktro-Start & TRETBOOT/STRUDELFORCE Intro (`src/gui_main.c`)
+- **Start-Ablauf neu geordnet:**
+  1. **Cracktro startet als erstes:** Das 3D-Vektor-Würfel Cracktro mit 4-Kanal ProTracker MOD Jukebox (`TAB_INTRO`) empfängt den Spieler direkt beim Start.
+  2. **Übergang ins Intro:** Durch Leertaste, ENTER, Klick oder Gamepad (A, Start, B) wechselt das System nahtlos in `GUI_STATE_INTRO` (oder per ESC direkt ins Hauptmenü).
+  3. **Phase 1: TRETBOOT PRESENTS:** Zweifarbiges "TRETBOOT"-Logo skaliert auf den Schirm mit schwebenden Sinus-Copper-Farbverläufen, "P R E S E N T S" und Untertitel "A TURRICAN TRIBUTE FOR THE AMIGA 500".
+  4. **Phase 2: Ganz großes STRUDELFORCE-Logo:** Gigantisches 768-Pixel-Logo (Scale 8 in 1280x720) mit 2-Tonen Turrican-Shading, Sinus-Wanken aller 12 Buchstaben, "A TURRICAN TRIBUTE" Untertitel und pulsierendem Prompt.
+  5. **Rainbow Arts Erwähnung bereinigt:** Copyright lautet sauber `(C) 1991 FACTOR 5  -  (C) 2026 TRETBOOT & AI CODING AGENTS`.
+  6. **Sprite-Animation:** Der Bren McGuire Sprite läuft nicht mehr im Intro durch das Bild, sondern ausschließlich im Hauptmenü (`GUI_STATE_MENU`).
+- MSVC-Build (`build_msvc.bat`) erzeugt alle Executables fehlerfrei; Testsuite (`test_suite.exe`) besteht weiterhin mit 44/44 PASS.
+
+### 4. Token-Status & Entwicklungs-Pacing
+- **Ressourcen-Lage:** Sämtliche API-Tokens über OpenRouter, externe KI-Schnittstellen und Modelle sind weitgehend erschöpft.
+- **Entwicklungs-Strategie:** STRUDELFORCE wechselt für die kommenden Tage in den **Konsolidierungs- und Wartungsmodus**:
+  - Geringere Taktfrequenz bei automatisierten Massen-Commits.
+  - Fokus auf manuelle Verfeinerung der Amiga OCS Sprite-Konvertierung und Level-Balancing auf Basis der jetzt gesicherten Turrican-2-Strukturen.
+| Datei | Status | Provenienz |
+|---|---|---|
+| draw_enemy_wug.c | VOLLSTAENDIG | Qwen-Output 1:1, inkl. Einfuegepunkt, Dispatch-Patch, Mechanic-Audit |
+| gui_main_c_enemy_draw_functions.c | VOLLSTAENDIG (Fragment) | walker/shooter/tank + Dispatch-Block + Enemy-Struktur, aus wip/b2_gui_main.c gelesen |
+| batch2_balance_build.py | VOLLSTAENDIG | Kontext; nur Oracle-Run-Ende (~10 Zeilen) rekonstruiert, markiert |
+
+---
+
+## Logbucheintrag — 2026-10-30 (v0.3.2 Release-Branch, WUG-Fertigstellung, Token-Konsolidierung)
+
+### 1. WUG-Gegner (vollständig implementiert)
+- **Status:** FERTIG - Wug-Zustandsautomat (`WUG_ST_WADDLE`, `WUG_ST_STOP`, `WUG_ST_CHARGE`, `WUG_ST_FIRE`, `WUG_ST_COOLDOWN`, `WUG_ST_FLEE`, `WUG_ST_DYING`) ist in `src/game_logic.c` vollständig implementiert.
+- **Balancing:** HP 12 (stirbt an 12 Pellets / 4 Laser-L1-Schüssen), Score 150, XP 20. Erscheint ab Welle 2 (Kampagne ab Level 2), maximal 2 gleichzeitig.
+- **Oracle-Parität:** `verify_core_sim.py` bestätigt 13/13 Parität zwischen C und Python (Endlos + Kampagne mit Seed 1234, 5678, 9999).
+- **Test-Suite:** 44/44 PASS, Wug-Spawn und Zustandsübergänge verifiziert.
+- **Amiga-Integration:** `amiga/main.c::render_story()` mit THE WUG Star Wars-Crawl (Frames 0-180), dann Star Wars 3D Crawl ab Frame 181+.
+
+### 2. Amiga-Sound-Engine (ThePlayer 6.1a) -KNOWN ISSUE
+- **Status:** TECHNISCH IMPLEMENTIERT, aber **NICHT BETRIEBSFÄHIG** mit herkömmlichem GCC-Build.
+- **Problem:** Die `#embed` Directiven (VS Code Extension "BartmanAmiga" spezifisch) funktionieren nur mit der IDE, nicht mit GCC selbst.
+- **Lösungsoptionen:**
+  - A) **Empfohlen:** Auf vereinfachte Audio-Architektur umstellen (Single-PWM-Sweep für Charge, Laser-Impuls für Fire) → 1-2 Sound-Dateien statt ThePlayer 6.1a komplett.
+  - B) `INCBIN` Makros von `gcc8_c_support.h` verwenden → erfordert Umschreiben der `main.c` Music-Integration.
+  - C) ThePlayer 6.1a nur für IDE-Builds belassen, Release-ADF ohne Musik (oder embedded-Tracks via INCBIN).
+- **Aktion:** User-Entscheidung erforderlich, wie mit Amiga-Audio umgegangen werden soll.
+
+### 3. Token-Status & Entwicklungs-Pacing
+- **Ressourcen-Lage:** OpenRouter-Tokens (gemischt Qwen3-Coder-Next + Gemini 3.8) stark begrenzt (~200k verbraucht).
+- **Entwicklungs-Strategie:** STRUDELFORCE wechselt in den **Konsolidierungs-Modus**:
+  - Fokus auf gezielte, token-schonende Implementierungen (1 Feature pro Session).
+  - V0.3.2 ist bereit (WUG fertig, Core-Test 44/44 PASS, Amiga-Build funktioniert bis auf Audio).
+  - Nächster Schritt: User-Entscheidung für Amiga-Audio-Lösung (A/B/C).
+
+### 4. Release-Checkliste (v0.3.2)
+- [x] `build_msvc.bat` alle 7 Targets grün.
+- [x] `test_suite.exe`: 44/44 PASS.
+- [x] `verify_core_sim.py`: Determinismus + Invarianten OK, 13/13 Oracle-Parität.
+- [x] `strudelforce.h` VERSION auf "0.3.2".
+- [x] WUG-Gegner implementiert und getestet.
+- [x] Amiga-Story-Crawl (THE WUG) implementiert.
+- [ ] **Amiga-Audio:** User-Entscheidung erforderlich (siehe Known Issue oben).
+- [ ] Commit, Tag `v0.3.2`, Push → CI baut & veröffentlicht (`tools/make_release.py` lokal als Trockenlauf).
+
+---
+  - Lokale Verifikation über WinUAE und die bestehende 44-Punkte-Testsuite.

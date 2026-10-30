@@ -19,7 +19,7 @@
 #ifndef STRUDELFORCE_H
 #define STRUDELFORCE_H
 
-#define STRUDELFORCE_VERSION "0.3.1"
+#define STRUDELFORCE_VERSION "0.3.2"
 
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
@@ -120,7 +120,19 @@ enum {
 enum {
     ENEMY_WALKER  = 0,
     ENEMY_SHOOTER = 1,
-    ENEMY_TANK    = 2
+    ENEMY_TANK    = 2,
+    ENEMY_WUG     = 3   /* Wug (Wug Test, Berko 1958) - v0.3.2 */
+};
+
+/* Wug-Zustandsautomat (v0.3.2) */
+enum {
+    WUG_ST_WADDLE   = 0, /* watschelt zum Spieler (0.5 E/T) */
+    WUG_ST_STOP     = 1, /* steht, wendet sich zu (30 T) */
+    WUG_ST_CHARGE   = 2, /* Augen gluehen, Telegraph (60 T) */
+    WUG_ST_FIRE     = 3, /* feuert riesigen Laser (40 T) */
+    WUG_ST_COOLDOWN = 4, /* erschopft, 2x Schaden (50 T) */
+    WUG_ST_FLEE     = 5, /* verletzt -> laeuft weg (Turrican-2) */
+    WUG_ST_DYING    = 6  /* zerschoessen -> platzt (nur Beine) */
 };
 
 /* Spielzustaende */
@@ -205,6 +217,9 @@ typedef struct {
     uint16_t xp_val;
     uint16_t hit_timer;
     uint16_t shoot_timer;
+    uint8_t  state;       /* WUG_ST_* (nur ENEMY_WUG) */
+    uint16_t state_timer; /* Ticks im Zustand (nur ENEMY_WUG) */
+    int8_t   facing;      /* -1|+1 Richtung Spieler (nur ENEMY_WUG) */
 } Enemy;
 
 typedef struct {
@@ -273,6 +288,8 @@ typedef struct GameState {
 
     /* Statistiken */
     uint32_t shots_fired;
+    uint16_t wug_headbutts;  /* v0.3.2: Headbutt-Kills (Wug-Test-Stat) */
+    uint8_t  wug_two_dialog; /* v0.3.2: 1x "now there are two of them!" */
     uint32_t enemies_killed;
     uint32_t bounces_total;
 

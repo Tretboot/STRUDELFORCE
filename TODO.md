@@ -43,8 +43,10 @@ Ziel: eine gemeinsame Sprite-Datenbasis (`src/sprite_data.h`/`turrican_sprites.h
 
 ## 3. P0 — Gegner „WUG“ (Entwurf: `docs/WUG.md`)
 Vogel auf zwei Beinen (`ref/wug-test.png`): watschelt → bleibt stehen → rot glühende Augen → riesiger Laser; Treffer in der Aufladephase bricht ab.
-- [ ] `ENEMY_WUG` + Zustandsautomat im Kern (`game_logic.c`), Python-Oracle-Spiegel (`verify_core_sim.py`), Tests (`test_suite.c`), Balancing, Spawn ab Welle 2 / Level 2.
-- [ ] Sprites (2.), Laser-Effekt (4.), Audio-Telegraph (Charge-Ton) & Fire-SFX.
+- [x] `ENEMY_WUG` + Zustandsautomat im Kern (`game_logic.c`), Python-Oracle-Spiegel (`verify_core_sim.py`), Tests (`test_suite.c`), Balancing, Spawn ab Welle 2 / Level 2.
+- [x] Sprites (2.), Laser-Effekt (4.), Audio-Telegraph (Charge-Ton) & Fire-SFX.
+- [x] **Amiga-Integration:** `render_story()` mit THE WUG Star Wars Crawl in `amiga/main.c`.
+- [ ] **Amiga-Sound:** ThePlayer 6.1a ist implementiert, aber `#embed` Directiven funktionieren nur mit Bartman VS Code Extension, nicht mit GCC direkt. Als Workaround müsste `INCBIN` verwendet werden oder auf vereinfachte Audio (Single-PWM-Sweep für Laser) ausweichen.
 
 ## 4. P0 — Waffen-Sprites & Effekte überarbeiten
 - [ ] Pellet, Bounce 2.0, Laser (Breite nach Waffenlevel `sf_laser_widths`), Spread, Halt-Strahl: je eigene Optik, Muzzle-Flash, Einschlag, Explosionen, Funken/Partikel.

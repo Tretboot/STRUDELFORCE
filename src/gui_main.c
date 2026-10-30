@@ -37,7 +37,7 @@
 #include "turrican_sprites.h"
 #include "embedded_credits.h"
 
-#define GAME_VERSION "0.3.1"
+#define GAME_VERSION "0.3.2"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -56,7 +56,8 @@ typedef enum {
 } GuiTab;
 
 /* ================= GUI State Machine =================
- * MENU -> LOADING -> GAME -> (GAMEOVER -> LOADING -> GAME | MENU)
+ * INTRO -> MENU -> LOADING -> GAME -> (GAMEOVER -> LOADING -> GAME | MENU)
+ * INTRO = Turrican-artiges TRETBOOT-Logo-Intro beim Start (wie Original).
  * STUDIO = F1-F4-Tools (Jukebox/Strudel/Intro), pausiert das Spiel.
  * CREDITS = scrollender Abspann. ESC fuehrt immer zurueck zum MENU. */
 typedef enum {
@@ -68,10 +69,12 @@ typedef enum {
     GUI_STATE_CREDITS,
     GUI_STATE_MANUAL,
     GUI_STATE_CONTROLS,
-    GUI_STATE_STORY
+    GUI_STATE_STORY,
+    GUI_STATE_INTRO        /* TRETBOOT-Logo-Intro vor dem Hauptmenue */
 } GuiState;
 
 static GuiState s_gui_state = GUI_STATE_STUDIO; /* Startet direkt im Amiga Cracktro Intro! */
+static int s_intro_tick = 0;                   /* Intro-Fortschritt (50Hz-Ticks) */
 static int s_menu_index = 0;        /* aktiver Hauptmenue-Punkt */
 static int s_active_mode = MODE_CAMPAIGN; /* Hauptmodus: Kampagne mit 5 Welten & Plattformen */
 static int s_exp_mode = 0;           /* 0 = Integrierte ROM-Tracks (Default!), 1 = Lokale Dateien/Ordner */
@@ -325,6 +328,7 @@ typedef struct {
 
 #define GAME_SEED 1234u              /* fixer Seed: deterministische Läufe */
 #define LOAD_DURATION 120            /* ~2.4 Sekunden Loading-Screen */
+#define INTRO_DURATION 750           /* ~15 Sekunden TRETBOOT-Logo-Intro (oder Taste -> Menu) */
 
 /* Framebuffer */
 static uint32_t s_pixels[WIN_W * WIN_H];
@@ -1842,7 +1846,14 @@ static void pad_menu_poll(void) {
     poll_gamepad();
     if (!s_pad.connected) return;
 
-    if (s_gui_state == GUI_STATE_MENU) {
+    if (s_gui_state == GUI_STATE_INTRO) {
+        /* Intro: A / Start / B -> sofort ins Hauptmenue */
+        if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start) || (s_pad.btn_morph && !prev_b)) {
+            s_intro_tick = 0;
+            s_gui_state = GUI_STATE_MENU;
+            music_play_embedded(0, 0);
+        }
+    } else if (s_gui_state == GUI_STATE_MENU) {
         if (s_pad.up && !prev_up)
             s_menu_index = (s_menu_index + MENU_ITEM_COUNT - 1) % MENU_ITEM_COUNT;
         if (s_pad.down && !prev_down)
@@ -1897,7 +1908,8 @@ static void pad_menu_poll(void) {
         }
     } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_INTRO) {
         if ((s_pad.btn_fire && !prev_a) || (s_pad.btn_start && !prev_start) || (s_pad.btn_morph && !prev_b)) {
-            s_gui_state = GUI_STATE_MENU;
+            s_intro_tick = 0;
+            s_gui_state = GUI_STATE_INTRO;
         }
     } else if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_GRAPHICS) {
         if (s_pad.up && !prev_up) {
@@ -2365,17 +2377,93 @@ static void draw_title(int cx, int cy, const char *text, int scale) {
     int n = (int)strlen(text);
     int x0 = cx - (n * 8 * scale) / 2;
     int i;
+    int sh = (scale >= 6) ? 4 : 2;
     for (i = 0; i < n; i++) {
-        float oy = sinf((float)i * 0.45f + (float)s_gui_frame * 0.07f) * 6.0f;
+        float oy = sinf((float)i * 0.45f + (float)s_gui_frame * 0.07f) * (scale >= 6 ? 8.0f : 6.0f);
         int x = x0 + i * 8 * scale;
         int y = cy + (int)oy;
-        draw_char(x + 2, y + 2, text[i], 0xFF2800, scale);              /* Schatten */
+        draw_char(x + sh, y + sh, text[i], 0xFF2800, scale);              /* Schatten */
         draw_char_2tone(x, y, text[i], 0xFFFF7020, 0xFFD02010, scale);  /* 2-Ton  */
     }
 }
 
 /* Forward (Definition unten, vor biome_palettes) */
 static void draw_bg_structure(int sx, int base_y, int slot, int biome, uint32_t col);
+
+/* --- GUI_STATE_INTRO: Turrican-artiges Intro (TRETBOOT PRESENTS -> STRUDELFORCE) ---
+ * Wie der Original-Turrican-2-Opener:
+ * 1. Dunkler Schirm mit Amiga-Copper-Baendern
+ * 2. "TRETBOOT" Logo in 2-Ton-Schrift (Scale 5) mit "P R E S E N T S" + Untertitel
+ * 3. Danach ganz gross das "STRUDELFORCE" Logo (Scale 8, 768px, 2-Ton Turrican-Look mit Sinus-Wanken)
+ * 4. Uebergangslos ins Hauptmenue bei beliebiger Taste/Button oder nach Ablauf */
+static void render_state_intro(void) {
+    int t = s_intro_tick;
+    int i;
+    int cx = WIN_W / 2;
+
+    clear_screen(0x000004);
+
+    /* Langsam wandernde Copper-Gradient-Baender (Amiga-Copper aus dem Original-Intro) */
+    {
+        float y1 = 360.0f + 170.0f * sinf((float)s_gui_frame * 0.030f);
+        float y2 = 360.0f + 190.0f * sinf((float)s_gui_frame * 0.050f + 1.8f);
+        for (i = 0; i < WIN_H; i++) {
+            float r = 4.0f, g = 2.0f, b = 10.0f;
+            float d1 = fabsf((float)i - y1);
+            if (d1 < 70.0f) { float k = 1.0f - d1 / 70.0f; r += 70.0f * k; g += 12.0f * k; b += 18.0f * k; }
+            float d2 = fabsf((float)i - y2);
+            if (d2 < 70.0f) { float k = 1.0f - d2 / 70.0f; r += 8.0f * k; g += 45.0f * k; b += 100.0f * k; }
+            draw_rect(0, i, WIN_W, 1, ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
+        }
+    }
+
+    if (t < 220) {
+        /* --- TEIL 1 (t = 0..219, ~4.4s): TRETBOOT PRESENTS --- */
+        if (t < 75) {
+            int sc = 1 + t / 15;
+            if (sc > 5) sc = 5;
+            draw_title(cx, 270, "TRETBOOT", sc);
+        } else {
+            draw_title(cx, 250, "TRETBOOT", 5);
+            if (t >= 90) {
+                const char *pres = "P R E S E N T S";
+                draw_string(cx - (int)strlen(pres) * 4, 380, pres, 0xFFC08040, 1);
+            }
+            if (t >= 130) {
+                const char *sub = "A TURRICAN TRIBUTE FOR THE AMIGA 500";
+                draw_string(cx - (int)strlen(sub) * 4, 412, sub, 0xFF7090B0, 1);
+            }
+        }
+    } else {
+        /* --- TEIL 2 (t >= 220): GANZ GROSS DAS STRUDELFORCE LOGO --- */
+        int sf_t = t - 220;
+        int sc = 4 + sf_t / 12;
+        if (sc > 8) sc = 8; /* Maximaler Scale 8 = 768px Breite in 1280x720! */
+
+        draw_title(cx, 230, "STRUDELFORCE", sc);
+
+        if (sf_t >= 40) {
+            const char *tag = "A  T U R R I C A N  T R I B U T E";
+            draw_string(cx - (int)strlen(tag) * 8, 360, tag, 0xFF00E0FF, 2);
+        }
+        if (sf_t >= 80) {
+            const char *eng = "100% 50HZ PAL AMIGA ENGINE  *  CYBER-PAULA TFMX AUDIO";
+            draw_string(cx - (int)strlen(eng) * 4, 415, eng, 0xFF80A0C0, 1);
+        }
+        if (sf_t >= 110 && ((s_gui_frame / 25) % 2 == 0)) {
+            const char *hint = "[ BELIEBIGE TASTE : HAUPTMENUE ]";
+            draw_string(cx - (int)strlen(hint) * 4, 480, hint, 0xFFFF8020, 1);
+        }
+    }
+
+    /* Copyright-Zeile: FACTOR 5 Tribute, Rainbow Arts gestrichen */
+    if (t >= 80) {
+        const char *cr = "(C) 1991 FACTOR 5  -  (C) 2026 TRETBOOT & AI CODING AGENTS";
+        draw_string(WIN_W - (int)strlen(cr) * 8 - 16, WIN_H - 44, cr, 0xFF505050, 1);
+    }
+
+    render_status_bar();
+}
 
 /* --- GUI_STATE_MENU: Hauptmenue (Turrican-2-Style) --- */
 static void render_state_menu(void) {
@@ -3534,6 +3622,114 @@ static void draw_enemy_tank(int ex, int ey, int hp, int max_hp, int frame, int d
     draw_string(bar_x + 4, bar_y - 9, "TANK [BOSS]", 0xFFC040, 1);
 }
 
+/* ============================================================================
+ * draw_enemy_wug - WUG RENDER (v0.3.2, Berko 1958 Wug Test Hommage)
+ * 7 Zustaende: WADDLE, STOP, CHARGE (rot gluehend), FIRE (Riesenlaser),
+ *             COOLDOWN (2x Schaden), FLEE (Turrican-2 Flucht), DYING.
+ * ============================================================================ */
+static void draw_enemy_wug(int ex, int ey, int state, int state_timer, int facing, int frame) {
+    uint32_t body_main = 0x38A060;
+    uint32_t body_hi   = 0x60D090;
+    uint32_t body_dark = 0x185838;
+    uint32_t beak      = 0xFFB020;
+    int step, bob, lean, k, r, cx, cy;
+    int leg_a, leg_b, spread, eye_col, eye_x, eye_y, beak_x, beak_y, tip_x, tip_y;
+    int flick, llen, lx, ly;
+
+    if (state == WUG_ST_DYING) {
+        /* DYING: nur noch die beiden angespreizten Beine + expandierender Zerfetz-Ring */
+        draw_line(ex - 2, ey, ex - 5, ey + 12, body_dark);
+        draw_line(ex + 2, ey, ex + 5, ey + 12, body_dark);
+        set_pixel(ex - 5, ey + 12, body_dark);
+        set_pixel(ex + 5, ey + 12, body_dark);
+        r = 4 + state_timer;
+        if (r > 22) r = 22;
+        for (k = 0; k < 12; k++) {
+            cx = (k % 3 == 0) ? 0 : ((k % 3 == 1) ? r : -r);
+            cy = (k % 3 == 0) ? ((k < 6) ? -r : r) : ((k % 3 == 1) ? -r : r);
+            set_pixel(ex + cx, ey - 6 + cy, body_dark);
+        }
+        return;
+    }
+
+    /* Gangphase: WADDLE 4-Schritt-Gang, FLEE doppelt so schnell, sonst Stand */
+    step = (state == WUG_ST_FLEE) ? (frame / 3) % 4 : ((state == WUG_ST_WADDLE) ? (frame / 5) % 4 : 0);
+    leg_a = (step == 0 || step == 2) ? 3 : 0;
+    leg_b = (step == 1 || step == 3) ? 3 : 0;
+    spread = (state == WUG_ST_FIRE) ? 5 : ((state == WUG_ST_FLEE) ? 4 : 2);
+
+    /* Koerpersenkung je Zustand: WADDLE wippt, CHARGE duckt, COOLDOWN haengt, FLEE/FIRE lehnt */
+    bob  = (state == WUG_ST_WADDLE && (frame / 8) % 2 == 1) ? -1 : 0;
+    lean = (state == WUG_ST_WADDLE) ? facing : ((state == WUG_ST_FIRE) ? -facing * 2 : ((state == WUG_ST_FLEE) ? -facing * 3 : 0));
+    ey  += (state == WUG_ST_CHARGE) ? 2 : ((state == WUG_ST_COOLDOWN) ? 3 : bob);
+
+    /* Zwei duenne Beine mit kleinen Krallen (Bein A hinten, Bein B vorne) */
+    draw_line(ex - facing * spread, ey, ex - facing * (spread + 2) - facing * leg_a, ey + 10, body_dark);
+    set_pixel(ex - facing * (spread + 2) - facing * leg_a, ey + 10, body_dark);
+    set_pixel(ex - facing * (spread + 2) - facing * leg_a + facing, ey + 10, body_dark);
+    draw_line(ex + facing * spread, ey, ex + facing * (spread + 2) + facing * leg_b, ey + 10, body_main);
+    set_pixel(ex + facing * (spread + 2) + facing * leg_b, ey + 10, body_main);
+    set_pixel(ex + facing * (spread + 2) + facing * leg_b + facing, ey + 10, body_main);
+
+    /* Rundlicher Koerperrumpf (14px) mit Lichtkante, Schwanz-Zipfel zeigt nach hinten */
+    draw_voxel(ex - 7 + lean, ey - 12, 14, 12, 3, body_main);
+    draw_rect(ex - 5 + lean, ey - 11, 10, 2, body_hi);
+    if (state == WUG_ST_FLEE) {
+        draw_line(ex - facing * 7 + lean, ey - 8, ex - facing * 12 + lean, ey - 14, body_dark);
+    } else {
+        draw_line(ex - facing * 7 + lean, ey - 6, ex - facing * 12 + lean, ey - 9, body_dark);
+    }
+
+    /* Spitzer Schnabel (COOLDOWN: 2px haengend) */
+    beak_y = ey - 8 + ((state == WUG_ST_COOLDOWN) ? 2 : 0);
+    beak_x = (facing > 0) ? ex + 7 + lean : ex - 7 + lean - 6;
+    draw_line(beak_x, beak_y, beak_x + facing * 6, beak_y + 1, beak);
+    draw_line(beak_x, beak_y + 2, beak_x + facing * 6, beak_y + 1, beak);
+    tip_x = beak_x + facing * 6;
+    tip_y = beak_y + 1;
+
+    /* Ein Auge pro Seite: nur das sichtbare, Pupille schaut in facing-Richtung */
+    eye_x = ex + facing * 3 + lean;
+    eye_y = ey - 9;
+    if (state == WUG_ST_CHARGE) {
+        eye_col = ((state_timer / 4) % 2 == 0) ? 0xFF2020 : 0xFFFF40;
+    } else if (state == WUG_ST_COOLDOWN) {
+        eye_col = 0x304030;
+    } else {
+        eye_col = 0xFFFFFF;
+    }
+    set_pixel(eye_x, eye_y, eye_col);
+    set_pixel(eye_x + facing, eye_y, (state == WUG_ST_CHARGE || state == WUG_ST_COOLDOWN) ? eye_col : 0x101810);
+
+    /* CHARGE: Funken-Set-Pixel an der Schnabelspitze (nur Pulsphase 1) */
+    if (state == WUG_ST_CHARGE && (state_timer / 4) % 2 == 1) {
+        set_pixel(tip_x + facing, tip_y - 1, 0xFFFF40);
+        set_pixel(tip_x + facing * 2, tip_y + 1, 0xFFB020);
+    }
+
+    /* FIRE: horizontaler Riesenlaser, 8px aussen / 4px Kern, Flackern per (frame*7)%12
+     * Sim-Laenge = 12 Einh. * 20 px/Einh. = 240 px */
+    if (state == WUG_ST_FIRE) {
+        flick = (frame * 7) % 12;
+        llen  = 240 - flick / 2;
+        lx = (facing > 0) ? tip_x : tip_x - llen;
+        ly = tip_y - 4;
+        draw_rect(lx, ly, llen, 8, 0xFF3020);
+        draw_rect(lx, ly + 2, llen, 4, 0xFFFFFF);
+    }
+
+    /* COOLDOWN: zwei dampfende Set-Pixel ueber dem Kopf, Position wechselt alle 6 Ticks */
+    if (state == WUG_ST_COOLDOWN) {
+        if ((frame / 6) % 2 == 0) {
+            set_pixel(ex - 2 + lean, ey - 15, 0x809090);
+            set_pixel(ex + 2 + lean, ey - 17, 0x809090);
+        } else {
+            set_pixel(ex + 2 + lean, ey - 15, 0x809090);
+            set_pixel(ex - 2 + lean, ey - 17, 0x809090);
+        }
+    }
+}
+
 static float s_cam_x = 0.0f;
 static float s_cam_y = 0.0f;
 
@@ -3939,6 +4135,8 @@ static void render_tab_game(void) {
             draw_enemy_shooter(ex, ey, s_game.tick + i * 7, edir);
         } else if (e->kind == ENEMY_TANK) {
             draw_enemy_tank(ex, ey, e->hp, 15, s_game.tick, edir);
+        } else if (e->kind == ENEMY_WUG) {
+            draw_enemy_wug(ex, ey, e->state, e->state_timer, e->facing, s_game.tick);
         } else {
             draw_enemy_walker(ex, ey, s_game.tick + i * 5, edir);
         }
@@ -4817,7 +5015,7 @@ static void render_tab_intro(void) {
     draw_string(WIN_W / 2 - 250, 440, "COMMODORE AMIGA 500 * 50HZ PAL CORE * CYBER-PAULA TFMX AUDIO", 0xFFE040, 1);
 
     if ((s_gui_frame / 20) % 2 == 0) {
-        const char *ent_msg = ">>> DRUECKE LEERTASTE / ENTER / START FUERS HAUPTMENUE <<<";
+        const char *ent_msg = ">>> DRUECKE LEERTASTE / ENTER / START FUERS INTRO <<<";
         draw_string(WIN_W / 2 - (int)strlen(ent_msg) * 4, 465, ent_msg, 0x00FFFF, 1);
     }
 
@@ -4888,6 +5086,14 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             }
             if (wParam == VK_F11 || (wParam == VK_RETURN && (GetKeyState(VK_MENU) & 0x8000))) {
                 toggle_fullscreen(hWnd);
+                return 0;
+            }
+
+            /* Intro: beliebige Taste (auch ESC/ENTER/Leertaste) -> Hauptmenue */
+            if (s_gui_state == GUI_STATE_INTRO) {
+                s_intro_tick = 0;
+                s_gui_state = GUI_STATE_MENU;
+                music_play_embedded(0, 0); /* Hauptmenue-Musik (Apidya Meadow) */
                 return 0;
             }
 
@@ -4964,8 +5170,14 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 /* Tastatur-Kuerzel fuer Studio-Tabs */
             if (s_gui_state == GUI_STATE_STUDIO) {
                 if (s_current_tab == TAB_INTRO) {
-                    if (wParam == VK_RETURN || wParam == VK_SPACE || wParam == VK_ESCAPE) {
+                    if (wParam == VK_RETURN || wParam == VK_SPACE) {
+                        s_intro_tick = 0;
+                        s_gui_state = GUI_STATE_INTRO;
+                        return 0;
+                    }
+                    if (wParam == VK_ESCAPE) {
                         s_gui_state = GUI_STATE_MENU;
+                        music_play_embedded(0, 0);
                         return 0;
                     }
                     if (wParam == 'M' || wParam == 'N') {
@@ -5331,6 +5543,19 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                 if (s_story_tick < 110) s_story_tick = 110;
                 else if (s_story_tick < 180) s_story_tick = 180;
                 else s_gui_state = GUI_STATE_GAME;
+                return 0;
+            }
+            /* Klick im Cracktro -> zum Intro */
+            if (s_gui_state == GUI_STATE_STUDIO && s_current_tab == TAB_INTRO && my >= 36) {
+                s_intro_tick = 0;
+                s_gui_state = GUI_STATE_INTRO;
+                return 0;
+            }
+            /* Klick im Intro -> sofort ins Hauptmenue */
+            if (s_gui_state == GUI_STATE_INTRO) {
+                s_intro_tick = 0;
+                s_gui_state = GUI_STATE_MENU;
+                music_play_embedded(0, 0);
                 return 0;
             }
             /* Top Tabs (nur im Studio-State sichtbar) */
@@ -6377,7 +6602,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             /* Frame rendern (nur wenn mindestens 1 Tick gelaufen ist) */
             if (ticks_done > 0) {
                 s_gui_frame++;
-                if (s_gui_state == GUI_STATE_MENU) {
+                if (s_gui_state == GUI_STATE_INTRO) {
+                    s_intro_tick++;
+                    if (s_intro_tick >= INTRO_DURATION) {
+                        s_intro_tick = 0;
+                        s_gui_state = GUI_STATE_MENU;
+                        music_play_embedded(0, 0); /* Hauptmenue-Musik (Apidya Meadow) */
+                    }
+                    render_state_intro();
+                } else if (s_gui_state == GUI_STATE_MENU) {
                     render_state_menu();
                 } else if (s_gui_state == GUI_STATE_LOADING) {
                     s_loading_ticks++;
