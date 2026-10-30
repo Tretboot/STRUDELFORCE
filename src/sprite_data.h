@@ -53,6 +53,7 @@ enum {
     SF_SPR_PLAYER_LASER, SF_SPR_PLAYER_AIM_UP,
     SF_SPR_ENEMY_WALK, SF_SPR_ENEMY_SHOOT,
     SF_SPR_ENEMY_TANK, SF_SPR_ENEMY_FLY,
+    SF_SPR_ENEMY_WUG,
     SF_SPR_ICON_0, SF_SPR_ICON_1, SF_SPR_ICON_2, SF_SPR_ICON_3,
     SF_SPR_ICON_4, SF_SPR_ICON_5, SF_SPR_ICON_6, SF_SPR_ICON_7,
     SF_SPR_ICON_8, SF_SPR_ICON_9, SF_SPR_ICON_10,
@@ -1833,6 +1834,53 @@ static const uint8_t ENEMY_FLY_3_PX[506] = {
 static const SFSprite ENEMY_FLY_3 = { 22, 23, 8, 11, 22, ENEMY_FLY_3_PAL, ENEMY_FLY_3_PX };
 static const SFAnim ENEMY_FLY_ANIM = { 4, 25, { &ENEMY_FLY_0, &ENEMY_FLY_1, &ENEMY_FLY_2, &ENEMY_FLY_3 } };
 
+/* ENEMY_WUG: Wug (Berko 1958 Wug Test) - 16x16 Voxel-Darstellung (2 Frames) */
+/* WUG Frame 0: WADDLE/STOP/COLDOWN - normaler Status */
+static const uint8_t ENEMY_WUG_0_PAL[SF_SPRITE_MAX_SUBPAL] = { 3, 6, 9, 7, 4, 0, 1 };
+static const uint8_t ENEMY_WUG_0_PX[256] = {
+    /* y=0  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=1  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=2  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=3  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=4  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=5  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=6  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=7  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=8  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=9  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=10 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=11 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=12 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=13 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=14 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=15 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+};
+static const SFSprite ENEMY_WUG_0 = { 16, 16, 7, 8, 15, ENEMY_WUG_0_PAL, ENEMY_WUG_0_PX };
+
+/* WUG Frame 1: CHARGE/FIRE - rot glühende Augen */
+static const uint8_t ENEMY_WUG_1_PAL[SF_SPRITE_MAX_SUBPAL] = { 3, 6, 9, 7, 4, 5, 1 };  /* 5 = rot für glühende Augen */
+static const uint8_t ENEMY_WUG_1_PX[256] = {
+    /* y=0  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=1  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=2  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=3  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=4  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=5  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=6  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=7  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=8  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=9  */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=10 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=11 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=12 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=13 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=14 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    /* y=15 */ 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+};
+static const SFSprite ENEMY_WUG_1 = { 16, 16, 7, 8, 15, ENEMY_WUG_1_PAL, ENEMY_WUG_1_PX };
+
+static const SFAnim ENEMY_WUG_ANIM = { 2, 25, { &ENEMY_WUG_0, &ENEMY_WUG_1 } };
+
 /* ICON_0: Item-Icon 0 (Referenz B0 F0) (1 Frames, 14x13) */
 static const uint8_t ICON_0_0_PAL[SF_SPRITE_MAX_SUBPAL] = { 3, 6, 11, 5, 8, 7, 4, 1 };
 static const uint8_t ICON_0_0_PX[182] = {
@@ -2171,6 +2219,7 @@ static const SFAnim *const SF_SPRITES[SF_SPR_COUNT] = {
     &ENEMY_SHOOT_ANIM,/* Shooter Schusszyklus (Referenz B2 F10-15) */
     &ENEMY_TANK_ANIM,/* Tank Mini-Boss (Referenz B5 F0-2) */
     &ENEMY_FLY_ANIM,/* Flyer Schwimmzyklus (Referenz B6 F0-3) */
+    &ENEMY_WUG_ANIM,/* Wug (Berko 1958 Wug Test) - 2 Frames (WADDLE/FIRE) */
     &ICON_0_ANIM,/* Item-Icon 0 (Referenz B0 F0) */
     &ICON_1_ANIM,/* Item-Icon 1 (Referenz B0 F1) */
     &ICON_2_ANIM,/* Item-Icon 2 (Referenz B0 F2) */
@@ -2189,7 +2238,7 @@ static const SFAnim *const SF_SPRITES[SF_SPR_COUNT] = {
 };
 
 static const uint16_t SF_SPRITE_ANIM_FPS[SF_SPR_COUNT] = {
-    25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25,
+    25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25,
 };
 
 #endif /* SPRITE_DATA_H */

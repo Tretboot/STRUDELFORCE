@@ -901,6 +901,9 @@ static void render_gameplay(const GameState *s)
         case ENEMY_TANK:
             draw_anim(ex, ey, &ENEMY_TANK_ANIM, (s->tick + i * 5) / 5, flip);
             break;
+        case ENEMY_WUG:
+            draw_anim(ex, ey, &ENEMY_WUG_ANIM, (s->tick + i * 6) / 6, flip);
+            break;
         default:
             draw_anim(ex, ey, &ENEMY_WALK_ANIM, (s->tick + i * 4) / 4, flip);
             break;
