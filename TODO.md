@@ -46,6 +46,7 @@ Vogel auf zwei Beinen (`ref/wug-test.png`): watschelt → bleibt stehen → rot 
 - [x] `ENEMY_WUG` + Zustandsautomat im Kern (`game_logic.c`), Python-Oracle-Spiegel (`verify_core_sim.py`), Tests (`test_suite.c`), Balancing, Spawn ab Welle 2 / Level 2.
 - [x] Sprites (2.), Laser-Effekt (4.), Audio-Telegraph (Charge-Ton) & Fire-SFX.
 - [x] **Amiga-Integration:** `render_story()` mit THE WUG Star Wars Crawl in `amiga/main.c`.
+- [x] **WUG Sprites:** 2-Frame-Sprites in `sprite_data.h` (WADDLE/FIRE), Dispatcher in `amiga/main.c` eingebunden. Fallback: `draw_enemy_wug()` im PC-Port nutzt Voxel-Optik.
 - [ ] **Amiga-Sound:** ThePlayer 6.1a ist implementiert, aber `#embed` Directiven funktionieren nur mit Bartman VS Code Extension, nicht mit GCC direkt. Als Workaround müsste `INCBIN` verwendet werden oder auf vereinfachte Audio (Single-PWM-Sweep für Laser) ausweichen.
 
 ## 4. P0 — Waffen-Sprites & Effekte überarbeiten
